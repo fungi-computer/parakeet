@@ -1,0 +1,268 @@
+/*
+ * Parakeet retains the Dashboard conversation surface. Caps supplies the
+ * shared component vocabulary. This entry compiles the complete foundation
+ * and chat composition: consumers load it instead of an additional Caps sheet.
+ */
+@import "@fungi.computer/caps/tailwind.css";
+
+@source "./";
+
+@plugin "@tailwindcss/typography";
+
+@layer components {
+  .chat-composer {
+    border-top: 1px solid var(--color-base-300);
+  }
+}
+
+:root {
+  --prose-max-width: 80ch;
+  --tool-error-rail: #fff7a0;
+}
+
+.prose {
+  max-width: var(--prose-max-width);
+}
+
+.prose pre,
+.prose table {
+  max-width: none;
+}
+
+.text-dim {
+  color: var(--stipe-fg-muted);
+}
+
+.message-body {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  overflow-wrap: break-word;
+}
+
+.chat-composer {
+  background: var(--color-base-100);
+  flex-shrink: 0;
+}
+
+.chat-composer .composer-body {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.chat-composer .composer-footer {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
+}
+
+.chat-composer .parakeet-slash-label {
+  min-width: 7rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.chat-composer .parakeet-slash-match {
+  background: none;
+  color: var(--color-primary);
+}
+
+.chat-composer .parakeet-slash-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--stipe-fg-muted);
+}
+
+.chat-composer .parakeet-slash-keys {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--stipe-fg-muted);
+}
+
+.chat-composer .parakeet-slash-hint {
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--stipe-fg-muted);
+}
+
+.chat-composer [data-disabled="true"] {
+  opacity: 0.5;
+}
+
+.chat-composer .parakeet-command-notice[data-tone="error"] {
+  color: var(--color-error);
+}
+
+.chat-composer .parakeet-command-notice[data-tone="success"] {
+  color: var(--color-success);
+}
+
+.chat-composer .parakeet-key-hints {
+  margin: 0;
+  padding: 0 0.75rem 0.25rem;
+  background: var(--color-base-200);
+  font-family: var(--font-sans);
+  font-size: 0.6rem;
+  color: var(--stipe-fg-muted);
+}
+
+.chat-composer .footer-divider {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--stipe-fg-muted);
+}
+
+/* TanStack Highlight's retained Catppuccin theme. The token selectors are
+   emitted here with Parakeet's browser CSS instead of injected by a host. */
+html:not([data-theme]),
+[data-theme="latte"] {
+  --th-token: #4c4f69;
+  --th-attr: #df8e1d;
+  --th-code-inline: #ea76cb;
+  --th-command: #8839ef;
+  --th-comment: #9ca0b0;
+  --th-deleted: #d20f39;
+  --th-function: #1e66f5;
+  --th-heading: #1e66f5;
+  --th-inserted: #40a02b;
+  --th-keyword: #8839ef;
+  --th-link: #1e66f5;
+  --th-literal: #fe640b;
+  --th-meta: #9ca0b0;
+  --th-number: #fe640b;
+  --th-operator: #5c5f77;
+  --th-property: #179299;
+  --th-selector: #7287fd;
+  --th-string: #40a02b;
+  --th-tag: #d20f39;
+  --th-type: #df8e1d;
+  --th-variable: #4c4f69;
+}
+
+[data-theme="mocha"] {
+  --th-token: #cdd6f4;
+  --th-attr: #f9e2af;
+  --th-code-inline: #f5c2e7;
+  --th-command: #cba6f7;
+  --th-comment: #6c7086;
+  --th-deleted: #f38ba8;
+  --th-function: #89b4fa;
+  --th-heading: #89b4fa;
+  --th-inserted: #a6e3a1;
+  --th-keyword: #cba6f7;
+  --th-link: #89b4fa;
+  --th-literal: #fab387;
+  --th-meta: #6c7086;
+  --th-number: #fab387;
+  --th-operator: #a6adc8;
+  --th-property: #94e2d5;
+  --th-selector: #b4befe;
+  --th-string: #a6e3a1;
+  --th-tag: #f38ba8;
+  --th-type: #f9e2af;
+  --th-variable: #cdd6f4;
+}
+
+pre.tm-code,
+pre.th-code {
+  overflow-x: auto;
+  padding: 0;
+  background: var(--stipe-surface);
+  color: var(--th-token);
+}
+
+.th-token {
+  color: var(--th-token);
+}
+.th-keyword {
+  color: var(--th-keyword);
+  font-style: italic;
+}
+.th-string {
+  color: var(--th-string);
+}
+.th-comment {
+  color: var(--th-comment);
+}
+.th-function {
+  color: var(--th-function);
+}
+.th-type {
+  color: var(--th-type);
+}
+.th-property {
+  color: var(--th-property);
+}
+.th-tag {
+  color: var(--th-tag);
+}
+.th-attr {
+  color: var(--th-attr);
+}
+.th-literal {
+  color: var(--th-literal);
+}
+.th-number {
+  color: var(--th-number);
+}
+.th-variable {
+  color: var(--th-variable);
+}
+.th-operator {
+  color: var(--th-operator);
+}
+.th-inserted {
+  color: var(--th-inserted);
+}
+.th-deleted {
+  color: var(--th-deleted);
+}
+.th-meta {
+  color: var(--th-meta);
+}
+.th-heading {
+  color: var(--th-heading);
+}
+.th-link {
+  color: var(--th-link);
+}
+.th-code-inline {
+  color: var(--th-code-inline);
+}
+.th-selector {
+  color: var(--th-selector);
+}
+.th-command {
+  color: var(--th-command);
+}
+.th-line {
+  display: inline-block;
+  min-width: 100%;
+  width: max-content;
+}
+
+.markdown-renderer code:not([class^="language-"]) {
+  background: var(--stipe-surface-selected);
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0 0.2em;
+}
+
+.tm-code,
+.th-code {
+  font-family: var(--font-mono);
+}

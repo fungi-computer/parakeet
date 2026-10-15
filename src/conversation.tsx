@@ -1,0 +1,1147 @@
+import { noAuthor, type ParakeetAuthorOf } from "./core/author-labels.js";
+import { nanoid } from "@fungi.computer/cairn";
+import {
+  type PromptDelivery,
+  type SessionActivity,
+  type SessionCompactionMarker,
+  type SessionCompactionNotice,
+  type SessionContext,
+  type SessionExtensionSlots,
+  type SessionMessage,
+  type SessionPendingPrompts,
+  type SessionSnapshot,
+} from "@fungi.computer/shiitake/client";
+import type { ClientEntryV1 } from "@fungi.computer/shiitake/client-entry";
+import {
+  createClientContributions,
+  type ClientContribution,
+} from "./core/client-contributions.js";
+import {
+  createParakeetInteractions,
+  type ParakeetInteractions,
+} from "./commands/interactions.js";
+import type { WhistleExecutionOutcome } from "@fungi.computer/whistle";
+import {
+  CancelledError,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import {
+  atom,
+  createStore,
+  type Atom,
+  type PrimitiveAtom,
+  type WritableAtom,
+} from "jotai/vanilla";
+import {
+  atomWithInfiniteQuery,
+  atomWithMutation,
+  atomWithQuery,
+} from "jotai-tanstack-query";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
+
+import {
+  buildDurableTimeline,
+  buildTimelineTail,
+  type PromptRequestIdOf,
+} from "./core/build-timeline.js";
+import {
+  mergeCompactionNotices,
+  mergeCompactions,
+  mergeMessages,
+} from "./core/session-projection.js";
+import {
+  sessionHistoryQueryOptions,
+  sessionQueryOptions,
+} from "./core/session-query.js";
+import {
+  sameSessionViewState,
+  sessionActivityStatus,
+  sessionViewState,
+  type SessionViewState,
+} from "./core/session-view-state.js";
+import { isCancelledOutcome } from "./commands/run.js";
+import type { ParakeetSession } from "./session.js";
+import type { LocalPromptAdmission, TimelineItem } from "./store/types.js";
+import { reportFailure } from "./lib/failure.js";
+
+const noMessages: readonly SessionMessage[] = Object.freeze([]);
+const noCompactions: readonly SessionCompactionMarker[] = Object.freeze([]);
+const noCompactionNotices: readonly SessionCompactionNotice[] = Object.freeze(
+  [],
+);
+
+const noClients: readonly ClientEntryV1[] = Object.freeze([]);
+const noContributions: readonly ClientContribution[] = Object.freeze([]);
+const noSlots: SessionExtensionSlots = Object.freeze({});
+const noPending: SessionPendingPrompts = Object.freeze({
+  total: 0,
+  hasMore: false,
+  prompts: Object.freeze([]),
+});
+type SubmittedPromptAdmission = LocalPromptAdmission &
+  Readonly<{
+    submittedDraft: string;
+    submittedDraftRevision: number;
+  }>;
+const connecting: ParakeetObservation = Object.freeze({ status: "connecting" });
+const live: ParakeetObservation = Object.freeze({ status: "live" });
+
+/** Stable model identity presented by the current Session. */
+export type ParakeetModel = Readonly<{
+  /** Provider model identifier. */
+  model: string;
+  /** Provider identifier. */
+  provider: string;
+}>;
+
+/** Aggregate usage presented by the current Session timeline. */
+export type ParakeetUsage = Readonly<{
+  /** Accumulated provider cost. */
+  cost: number;
+  /** Accumulated token count. */
+  tokens: number;
+}>;
+
+/** Conversation activity presented by Parakeet. */
+export type ParakeetStatus =
+  | "connecting"
+  | "cancelling"
+  | "error"
+  | "idle"
+  | "queued"
+  | "retrying"
+  | "sending"
+  | "streaming"
+  | "thinking"
+  | "disconnected";
+
+/** Owner activity with the connection states shown while observation opens. */
+export type ParakeetSessionViewState =
+  | SessionViewState
+  | Readonly<{
+      /** Session observation is opening. */
+      kind: "connecting";
+    }>
+  | Readonly<{
+      /** Session observation is unavailable. */
+      kind: "disconnected";
+      /** Reason suitable for presentation. */
+      cause: string;
+    }>;
+
+/** Health of the current Session observation. */
+export type ParakeetObservation =
+  | Readonly<{
+      /** Observation is opening. */
+      status: "connecting";
+    }>
+  | Readonly<{
+      /** Observation is current. */
+      status: "live";
+    }>
+  | Readonly<{
+      /** Observation failed and can be reopened. */
+      status: "unavailable";
+      /** Sanitized reason suitable for presentation. */
+      reason: string;
+    }>;
+
+/** Stable history and replaceable work rendered by a conversation client. */
+export type TimelineController = Readonly<{
+  /** Durable-backed rows whose identity is stable across progress revisions. */
+  settled: readonly TimelineItem[];
+  /** Replaceable progress, queued, and optimistic rows. */
+  tail: readonly TimelineItem[];
+  /** Last actually rendered durable row for each loaded command. */
+  commandAnchors: ReadonlyMap<string, string>;
+  /** Current owner-admitted prompts, independent of the visible history page. */
+  queued: SessionPendingPrompts;
+  /** Whether more admitted prompts exist beyond this projection. */
+  pendingHasMore: boolean;
+  /** Whether older history remains, unloaded, before `settled[0]`. */
+  hasMoreHistory: boolean;
+  /** An older history page is currently loading. */
+  loadingOlderHistory: boolean;
+  /** Load the next older history page; a no-op while one is in flight. */
+  loadOlderHistory: () => void;
+  /** Whether a newer evicted page lies beyond the retained history window. */
+  hasNewerHistory: boolean;
+  /** Refetch the nearest newer page after browsing backward. */
+  loadNewerHistory: () => void;
+  /** Keep the currently read page visible while the live tail advances. */
+  pinVisibleHistory: () => void;
+  /** Return to the live page and release paged history. */
+  jumpToLatest: () => void;
+  /** Newest durable assistant model identity. */
+  model?: ParakeetModel | undefined;
+  /** Accumulated durable usage. */
+  usage?: ParakeetUsage | undefined;
+}>;
+
+/** Draft and prompt operations for the current conversation. */
+export type ComposerController = Readonly<{
+  /** Stop the current turn. Queued prompts keep draining; the draft is unchanged. */
+  cancel: () => Promise<void>;
+  /** Current local input. */
+  draft: string;
+  /** Typed reason the latest prompt did not complete. */
+  failure: "admission" | "failed" | "cancelled" | "interrupted" | undefined;
+  /** Current send could not enter the bounded local admission queue. */
+  admissionError: "queue_full" | undefined;
+  /** Retry the exact most recent failed prompt. */
+  retry: () => void;
+  /** Remove one failed local admission from this conversation. */
+  dismissFailed: (requestId: string) => void;
+  /** Submit the current draft with the requested delivery intent. */
+  send: (delivery?: PromptDelivery) => void;
+  /**
+   * Run a host command, such as Whistle slash dispatch, for the current draft.
+   * Parakeet clears the draft only when the command handled it without
+   * declining (a refused replacement keeps the text) and the draft was
+   * not edited while the command ran.
+   */
+  submitCommand: (
+    run: (draft: string) => Promise<WhistleExecutionOutcome | undefined>,
+  ) => Promise<WhistleExecutionOutcome | undefined>;
+  /** Replace the local input. */
+  setDraft: (value: string) => void;
+}>;
+
+/** Session activity, observation, and Agent-lifetime controls. */
+export type StatusController = Readonly<{
+  /** Owner-issued identity of the running or queued Session command. */
+  commandId: string | undefined;
+  /** Health of the shared Session observation. */
+  observation: ParakeetObservation;
+  /** Reopen the shared Session observation. */
+  reconnect: () => Promise<ParakeetReconnectOutcome>;
+  /** Current conversation activity. */
+  status: ParakeetStatus;
+  /** Owner state, or a typed client connection state when the owner is unreachable. */
+  viewState: ParakeetSessionViewState;
+  /** Context use as the Session's compaction measures it, once known. */
+  context: SessionContext | undefined;
+}>;
+
+/** Result of retrying the shared Session observation. */
+export type ParakeetReconnectOutcome =
+  | Readonly<{
+      /** No reconnect was needed. */
+      kind: "nothing_to_reconnect";
+      /** Existing observation state. */
+      state: "connected" | "connecting";
+    }>
+  | Readonly<{
+      /** Session observation reopened. */
+      kind: "reconnected";
+    }>
+  | Readonly<{
+      /** Reopening failed. */
+      kind: "failed";
+      /** Reason suitable for presentation. */
+      cause: string;
+    }>;
+
+const MAX_UNRESOLVED_LOCAL_ADMISSIONS = 32;
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error && cause.message.trim().length > 0
+    ? cause.message
+    : "Prompt admission failed";
+}
+
+function observationCause(cause: unknown): string {
+  const message =
+    cause instanceof Error && cause.message.trim().length > 0
+      ? cause.message.trim()
+      : "Session history is unavailable";
+  return message.slice(0, 500);
+}
+
+/**
+ * Show Shiitake's Session status as-is; local admission state only refines an
+ * owner-reported `idle`.
+ */
+function composerStatus(
+  snapshot: SessionSnapshot | undefined,
+  admissions: readonly LocalPromptAdmission[],
+  failure: ComposerController["failure"],
+): ParakeetStatus {
+  if (snapshot === undefined) return "connecting";
+  const view = sessionViewState(snapshot);
+  const status = sessionActivityStatus(view);
+  if (status !== "idle") return status;
+  if (failure !== undefined || view.kind === "error") return "error";
+  if (admissions.some(({ status: state }) => state === "accepted"))
+    return "queued";
+  if (admissions.some(({ status: state }) => state === "admitting"))
+    return "sending";
+  return status;
+}
+
+function newestDurableCommandId(
+  messages: SessionSnapshot["messages"] | undefined,
+): string | undefined {
+  if (messages === undefined) return undefined;
+  let newest: { commandId: string; sequence: number } | undefined;
+  for (const message of messages) {
+    if (message.value.role !== "user" || message.commandId === null) continue;
+    if (newest === undefined || message.sequence > newest.sequence)
+      newest = { commandId: message.commandId, sequence: message.sequence };
+  }
+  return newest?.commandId;
+}
+
+function newestDurablePrompt(
+  messages: SessionSnapshot["messages"],
+  commandId: string,
+): string | undefined {
+  const message = messages.find(
+    (candidate) =>
+      candidate.commandId === commandId && candidate.value.role === "user",
+  );
+  if (message?.value.role !== "user") return undefined;
+  const content = message.value.content;
+  const text = Array.isArray(content)
+    ? content
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n")
+    : content;
+  return text.trim() === "" ? undefined : text;
+}
+
+function createConversationAtoms(
+  session: ParakeetSession,
+  queryClient: QueryClient,
+  authorOf: ParakeetAuthorOf,
+) {
+  const queryAtom = atomWithQuery(
+    () => sessionQueryOptions(session),
+    () => queryClient,
+  );
+  const snapshotAtom = atom((get) => get(queryAtom).data?.snapshot);
+
+  const pinnedHistoryAtom = atom<SessionSnapshot | undefined>(undefined);
+  const historyBeforeAtom = atom(
+    (get) =>
+      (get(pinnedHistoryAtom) ?? get(snapshotAtom))?.oldestCursor ?? null,
+  );
+  const historyAtom = atomWithInfiniteQuery(
+    (get) => sessionHistoryQueryOptions(session, get(historyBeforeAtom)),
+    () => queryClient,
+  );
+  const hasMoreHistoryAtom = atom((get) => {
+    const history = get(historyAtom);
+    return history.data === undefined
+      ? get(historyBeforeAtom) !== null
+      : history.hasNextPage;
+  });
+  const loadingOlderHistoryAtom = atom((get) => get(historyAtom).isFetching);
+  const hasNewerHistoryAtom = atom((get) => {
+    const history = get(historyAtom);
+    return history.hasPreviousPage || history.data?.newerOverflow === true;
+  });
+  const loadOlderHistoryAtom = atom(null, (get) => {
+    if (!get(hasMoreHistoryAtom) || get(loadingOlderHistoryAtom)) return;
+    void get(historyAtom)
+      .fetchNextPage({ cancelRefetch: false, throwOnError: true })
+      .catch((cause: unknown) => {
+        if (!(cause instanceof CancelledError))
+          reportFailure("read older Session history", cause);
+      });
+  });
+  const jumpToLatestAtom = atom(null, (_get, set) => {
+    set(pinnedHistoryAtom, undefined);
+    void queryClient.resetQueries({
+      queryKey: sessionHistoryQueryOptions(session).queryKey,
+      exact: true,
+    });
+  });
+  const loadNewerHistoryAtom = atom(null, (get, set) => {
+    const history = get(historyAtom);
+    if (history.isFetching) return;
+    if (!history.hasPreviousPage) {
+      if (get(hasNewerHistoryAtom)) set(jumpToLatestAtom);
+      return;
+    }
+    void history
+      .fetchPreviousPage({ cancelRefetch: false, throwOnError: true })
+      .catch((cause: unknown) => {
+        if (!(cause instanceof CancelledError))
+          reportFailure("read newer Session history", cause);
+      });
+  });
+  const pinVisibleHistoryAtom = atom(null, (get, set) => {
+    if (get(pinnedHistoryAtom) === undefined)
+      set(pinnedHistoryAtom, get(snapshotAtom));
+  });
+
+  const messagesAtom = atom((get) => {
+    const history = get(historyAtom);
+    const live = get(snapshotAtom)?.messages ?? noMessages;
+    const pages =
+      history.data?.pages.flatMap((page) => page.messages) ?? noMessages;
+    const pinned = get(pinnedHistoryAtom)?.messages ?? noMessages;
+    if (pages.length === 0)
+      return pinned.length === 0 ? live : mergeMessages(pinned, live);
+    return get(hasNewerHistoryAtom)
+      ? pages
+      : mergeMessages(mergeMessages(pages, pinned), live);
+  });
+  const compactionsAtom = atom((get) => {
+    const history = get(historyAtom);
+    const live = get(snapshotAtom)?.compactions ?? noCompactions;
+    const pages =
+      history.data?.pages.flatMap(
+        (page) => page.compactions ?? noCompactions,
+      ) ?? noCompactions;
+    const pinned = get(pinnedHistoryAtom)?.compactions ?? noCompactions;
+    if (pages.length === 0)
+      return pinned.length === 0 ? live : mergeCompactions(pinned, live);
+    return get(hasNewerHistoryAtom)
+      ? pages
+      : mergeCompactions(mergeCompactions(pages, pinned), live);
+  });
+  const compactionNoticesAtom = atom((get) => {
+    const history = get(historyAtom);
+    const live = get(snapshotAtom)?.compactionNotices ?? noCompactionNotices;
+    const pages =
+      history.data?.pages.flatMap(
+        (page) => page.compactionNotices ?? noCompactionNotices,
+      ) ?? noCompactionNotices;
+    const pinned =
+      get(pinnedHistoryAtom)?.compactionNotices ?? noCompactionNotices;
+    if (pages.length === 0)
+      return pinned.length === 0 ? live : mergeCompactionNotices(pinned, live);
+    return get(hasNewerHistoryAtom)
+      ? pages
+      : mergeCompactionNotices(mergeCompactionNotices(pages, pinned), live);
+  });
+  const newestCommandAtom = atom(
+    (get) =>
+      get(queryAtom).data?.latestPrompt?.[0] ??
+      newestDurableCommandId(get(messagesAtom)),
+  );
+  const pendingAtom = atom((get) => get(snapshotAtom)?.pending ?? noPending);
+  const extensionsAtom = atom(
+    (get): SessionExtensionSlots => get(snapshotAtom)?.extensions ?? noSlots,
+  );
+  let liveToolActivity: SessionActivity | undefined;
+  const toolActivityAtom = atom((get) => {
+    const query = get(queryAtom);
+    const activity = get(snapshotAtom)?.activity;
+    if (
+      query.isError ||
+      query.data?.observation !== "live" ||
+      activity?.queue.state !== "running" ||
+      activity.activeTool === null
+    ) {
+      liveToolActivity = undefined;
+      return undefined;
+    }
+    if (
+      liveToolActivity?.queue.state === "running" &&
+      liveToolActivity.queue.commandId === activity.queue.commandId &&
+      liveToolActivity.activeTool === activity.activeTool
+    )
+      return liveToolActivity;
+    liveToolActivity = activity;
+    return liveToolActivity;
+  });
+  /** Each accepted local prompt's request identity, by its owner command. */
+  const promptRequestIdsAtom = atom<ReadonlyMap<string, string>>(new Map());
+  const requestIdOfAtom = atom((get): PromptRequestIdOf => {
+    const requestIds = get(promptRequestIdsAtom);
+    return (commandId) => requestIds.get(commandId);
+  });
+  const durableAtom = atom((get) =>
+    buildDurableTimeline(
+      get(messagesAtom),
+      get(compactionsAtom),
+      get(toolActivityAtom),
+      authorOf,
+      get(requestIdOfAtom),
+      get(compactionNoticesAtom),
+    ),
+  );
+  const draftAtom = atom("");
+  const draftRevisionAtom = atom(0);
+  const rawAdmissionsAtom = atom<readonly SubmittedPromptAdmission[]>([]);
+  const latestSubmissionIdAtom = atom<string | undefined>(undefined);
+  const admissionsAtom = atom((get) => {
+    const knownCommandIds = new Set([
+      ...get(durableAtom).commandIds,
+      ...get(pendingAtom).prompts.map(({ commandId }) => commandId),
+    ]);
+    return get(rawAdmissionsAtom).filter(
+      (admission) =>
+        admission.status === "failed" ||
+        admission.commandId === undefined ||
+        !knownCommandIds.has(admission.commandId),
+    );
+  });
+  const admissionErrorAtom = atom<"queue_full" | undefined>(undefined);
+  const setDraftAtom = atom(null, (get, set, value: string) => {
+    if (get(draftAtom) !== value)
+      set(draftRevisionAtom, (revision) => revision + 1);
+    set(draftAtom, value);
+    set(admissionErrorAtom, undefined);
+  });
+  /** The one owner of "clear the draft after submit" for prompts and commands. */
+  const clearSubmittedDraftAtom = atom(
+    null,
+    (get, set, submitted: Readonly<{ draft: string; revision: number }>) => {
+      if (get(draftRevisionAtom) !== submitted.revision) return;
+      set(draftAtom, (current) => (current === submitted.draft ? "" : current));
+    },
+  );
+  const abortAtom = atomWithMutation(
+    () => ({
+      mutationFn: (commandId: string) =>
+        session.command({ type: "cancel", commandId }),
+    }),
+    () => queryClient,
+  );
+
+  const tailAtom = atom((get) => {
+    if (get(hasNewerHistoryAtom)) return [];
+    const snapshot = get(snapshotAtom);
+    const pending = get(pendingAtom);
+    return buildTimelineTail(
+      get(durableAtom),
+      snapshot?.progress ?? null,
+      pending.prompts,
+      get(admissionsAtom),
+      authorOf,
+      get(requestIdOfAtom),
+    );
+  });
+  const timelineAtom = atom<
+    Omit<
+      TimelineController,
+      | "loadOlderHistory"
+      | "loadNewerHistory"
+      | "jumpToLatest"
+      | "pinVisibleHistory"
+    >
+  >((get) => {
+    const durable = get(durableAtom);
+    const base = {
+      pendingHasMore: get(pendingAtom).hasMore,
+      queued: get(pendingAtom),
+      commandAnchors: durable.commandAnchors,
+      hasMoreHistory: get(hasMoreHistoryAtom),
+      hasNewerHistory: get(hasNewerHistoryAtom),
+      loadingOlderHistory: get(loadingOlderHistoryAtom),
+      settled: durable.items,
+      tail: get(tailAtom),
+    };
+    return durable.model === undefined || durable.usage === undefined
+      ? base
+      : { ...base, model: durable.model, usage: durable.usage };
+  });
+
+  const failureAtom = atom<ComposerController["failure"]>((get) => {
+    const admissions = get(admissionsAtom);
+    const snapshot = get(snapshotAtom);
+    const pending = get(pendingAtom);
+    const latestSubmission = get(rawAdmissionsAtom).find(
+      ({ requestId }) => requestId === get(latestSubmissionIdAtom),
+    );
+    const promptPending =
+      pending.prompts.length > 0 ||
+      admissions.some(({ status }) => status !== "failed");
+    if (
+      latestSubmission?.status === "failed" &&
+      snapshot !== undefined &&
+      sessionActivityStatus(sessionViewState(snapshot)) === "idle" &&
+      !promptPending
+    )
+      return "admission";
+    if (
+      latestSubmission?.status === "admitting" ||
+      (latestSubmission?.status === "accepted" &&
+        !get(durableAtom).commandIds.has(latestSubmission.commandId ?? "") &&
+        !pending.prompts.some(
+          ({ commandId }) => commandId === latestSubmission.commandId,
+        ))
+    )
+      return undefined;
+    if (promptPending) return undefined;
+    const newestCommandId = get(newestCommandAtom);
+    const outcome = snapshot?.terminals.find(
+      ({ commandId }) => commandId === newestCommandId,
+    )?.outcome;
+    return outcome === "completed" ? undefined : outcome;
+  });
+  const observationAtom = atom<ParakeetObservation>((get) => {
+    const query = get(queryAtom);
+    if (query.isError)
+      return {
+        status: "unavailable",
+        reason:
+          query.error instanceof Error && query.error.message.trim().length > 0
+            ? query.error.message
+            : "Session history is unavailable",
+      };
+    return query.data?.observation === "live" ? live : connecting;
+  });
+  const statusAtom = atom((get) => {
+    if (get(observationAtom).status === "unavailable") return "disconnected";
+    if (get(observationAtom).status === "connecting") return "connecting";
+    return composerStatus(
+      get(snapshotAtom),
+      get(admissionsAtom),
+      get(failureAtom),
+    );
+  });
+  const contextAtom = atom(
+    (get): SessionContext | undefined => get(snapshotAtom)?.context,
+  );
+  const commandIdAtom = atom((get) => {
+    const queue = get(snapshotAtom)?.activity.queue;
+    return queue?.state === "idle" ? undefined : queue?.commandId;
+  });
+  let ownerView: SessionViewState | undefined;
+  const viewStateAtom = atom((get): ParakeetSessionViewState => {
+    const observation = get(observationAtom);
+    if (observation.status === "unavailable")
+      return { kind: "disconnected", cause: observation.reason };
+    if (observation.status === "connecting") return { kind: "connecting" };
+    if (get(failureAtom) === "admission") {
+      const failed = [...get(rawAdmissionsAtom)]
+        .reverse()
+        .find((admission) => admission.status === "failed");
+      return {
+        kind: "error",
+        cause: (failed?.error ?? "Prompt admission failed").slice(0, 200),
+      };
+    }
+    const snapshot = get(snapshotAtom);
+    if (snapshot === undefined) return { kind: "connecting" };
+    const next = sessionViewState(snapshot);
+    // Keep the readout stable while its meaning is unchanged.
+    if (ownerView !== undefined && sameSessionViewState(ownerView, next))
+      return ownerView;
+    ownerView = next;
+    return next;
+  });
+
+  const dispatchAdmissionAtom = atom(
+    null,
+    (get, set, admission: SubmittedPromptAdmission) => {
+      void session
+        .command({
+          type: "prompt",
+          text: admission.content,
+          requestId: admission.requestId,
+          delivery: admission.delivery,
+        })
+        .then((accepted) => {
+          if (accepted.status === "recorded") {
+            set(rawAdmissionsAtom, (current) =>
+              current.filter(
+                (candidate) => candidate.requestId !== admission.requestId,
+              ),
+            );
+            set(clearSubmittedDraftAtom, {
+              draft: admission.submittedDraft,
+              revision: admission.submittedDraftRevision,
+            });
+            return;
+          }
+          set(promptRequestIdsAtom, (current) =>
+            new Map(current).set(accepted.commandId, admission.requestId),
+          );
+          set(rawAdmissionsAtom, (current) =>
+            current.map((candidate) =>
+              candidate.requestId === admission.requestId
+                ? {
+                    requestId: candidate.requestId,
+                    content: candidate.content,
+                    submittedDraft: candidate.submittedDraft,
+                    submittedDraftRevision: candidate.submittedDraftRevision,
+                    delivery: candidate.delivery,
+                    commandId: accepted.commandId,
+                    status: "accepted",
+                  }
+                : candidate,
+            ),
+          );
+          const admissions = get(rawAdmissionsAtom);
+          const admissionIndex = admissions.findIndex(
+            (candidate) => candidate.requestId === admission.requestId,
+          );
+          const hasNewerMatchingAdmission = admissions
+            .slice(admissionIndex + 1)
+            .some(
+              (candidate) =>
+                candidate.status === "admitting" &&
+                candidate.submittedDraft === admission.submittedDraft,
+            );
+          if (!hasNewerMatchingAdmission)
+            set(clearSubmittedDraftAtom, {
+              draft: admission.submittedDraft,
+              revision: admission.submittedDraftRevision,
+            });
+        })
+        .catch((cause: unknown) => {
+          set(rawAdmissionsAtom, (current) =>
+            current.map((candidate) =>
+              candidate.requestId === admission.requestId
+                ? {
+                    ...candidate,
+                    status: "failed",
+                    error: errorMessage(cause),
+                  }
+                : candidate,
+            ),
+          );
+        });
+    },
+  );
+  const sendAtom = atom(
+    null,
+    (get, set, delivery: PromptDelivery = "steer") => {
+      const draft = get(draftAtom);
+      const content = draft.trim();
+      if (content === "") return;
+      const admissions = get(admissionsAtom);
+      const draftRevision = get(draftRevisionAtom);
+      const rawAdmissions = get(rawAdmissionsAtom);
+      if (
+        rawAdmissions.some(
+          (admission) =>
+            admission.status === "admitting" &&
+            admission.submittedDraft === draft &&
+            admission.submittedDraftRevision === draftRevision,
+        )
+      )
+        return;
+      const unresolved = admissions.filter(({ status }) => status !== "failed");
+      if (unresolved.length >= MAX_UNRESOLVED_LOCAL_ADMISSIONS) {
+        set(admissionErrorAtom, "queue_full");
+        return;
+      }
+      const admission: SubmittedPromptAdmission = {
+        content,
+        delivery,
+        requestId: nanoid(),
+        submittedDraft: draft,
+        submittedDraftRevision: draftRevision,
+        status: "admitting",
+      };
+      set(rawAdmissionsAtom, [...admissions, admission]);
+      set(latestSubmissionIdAtom, admission.requestId);
+      set(admissionErrorAtom, undefined);
+      set(dispatchAdmissionAtom, admission);
+    },
+  );
+  const submitCommandAtom = atom(
+    null,
+    async (
+      get,
+      set,
+      run: (draft: string) => Promise<WhistleExecutionOutcome | undefined>,
+    ): Promise<WhistleExecutionOutcome | undefined> => {
+      const submitted = {
+        draft: get(draftAtom),
+        revision: get(draftRevisionAtom),
+      };
+      const outcome = await run(submitted.draft);
+      if (outcome?.status === "handled" && !isCancelledOutcome(outcome))
+        set(clearSubmittedDraftAtom, submitted);
+      return outcome;
+    },
+  );
+  const retryAtom = atom(null, (get, set) => {
+    const admissions = get(admissionsAtom);
+    if (get(failureAtom) === "interrupted" || get(failureAtom) === "failed") {
+      const snapshot = get(snapshotAtom);
+      const commandId = get(newestCommandAtom);
+      if (snapshot === undefined || commandId === undefined) return;
+      const content =
+        newestDurablePrompt(snapshot.messages, commandId) ??
+        get(queryAtom).data?.latestPrompt?.[1];
+      if (content === undefined) return;
+      if (
+        admissions.filter(({ status }) => status !== "failed").length >=
+        MAX_UNRESOLVED_LOCAL_ADMISSIONS
+      ) {
+        set(admissionErrorAtom, "queue_full");
+        return;
+      }
+      const retry: SubmittedPromptAdmission = {
+        content,
+        delivery: "followUp",
+        requestId: nanoid(),
+        submittedDraft: content,
+        submittedDraftRevision: get(draftRevisionAtom),
+        status: "admitting",
+      };
+      set(rawAdmissionsAtom, [...get(rawAdmissionsAtom), retry]);
+      set(latestSubmissionIdAtom, retry.requestId);
+      set(admissionErrorAtom, undefined);
+      set(dispatchAdmissionAtom, retry);
+      return;
+    }
+    const admission = admissions
+      .filter((candidate) => candidate.status === "failed")
+      .at(-1);
+    if (admission === undefined) return;
+    if (
+      admissions.filter(({ status }) => status !== "failed").length >=
+      MAX_UNRESOLVED_LOCAL_ADMISSIONS
+    ) {
+      set(admissionErrorAtom, "queue_full");
+      return;
+    }
+    const retry: SubmittedPromptAdmission = {
+      content: admission.content,
+      delivery: admission.delivery,
+      requestId: admission.requestId,
+      submittedDraft: admission.submittedDraft,
+      submittedDraftRevision: admission.submittedDraftRevision,
+      status: "admitting",
+    };
+    set(rawAdmissionsAtom, (current) =>
+      current.map((candidate) =>
+        candidate.requestId === admission.requestId ? retry : candidate,
+      ),
+    );
+    set(latestSubmissionIdAtom, retry.requestId);
+    set(admissionErrorAtom, undefined);
+    set(dispatchAdmissionAtom, retry);
+  });
+  const dismissFailedAtom = atom(null, (get, set, requestId: string) => {
+    const admissions = get(rawAdmissionsAtom);
+    const remaining = admissions.filter(
+      (admission) =>
+        admission.requestId !== requestId || admission.status !== "failed",
+    );
+    if (remaining.length === admissions.length) return;
+    set(rawAdmissionsAtom, remaining);
+    if (get(latestSubmissionIdAtom) === requestId)
+      set(latestSubmissionIdAtom, remaining.at(-1)?.requestId);
+  });
+  let cancellation: Promise<void> | undefined;
+  const cancelAtom = atom(null, (get): Promise<void> => {
+    if (cancellation !== undefined) return cancellation;
+    const queue = get(snapshotAtom)?.activity.queue;
+    if (queue?.state !== "running") return Promise.resolve();
+    const operation = get(abortAtom)
+      .mutateAsync(queue.commandId)
+      .then(() => undefined);
+    const tracked = operation.finally(() => {
+      if (cancellation === tracked) cancellation = undefined;
+    });
+    cancellation = tracked;
+    return tracked;
+  });
+  let reconnecting: Promise<ParakeetReconnectOutcome> | undefined;
+  const reconnectAtom = atom(null, (get): Promise<ParakeetReconnectOutcome> => {
+    const observation = get(observationAtom);
+    if (observation.status !== "unavailable")
+      return Promise.resolve({
+        kind: "nothing_to_reconnect",
+        state: observation.status === "live" ? "connected" : "connecting",
+      });
+    if (reconnecting !== undefined) return reconnecting;
+    const query = queryClient.getQueryCache().find({
+      queryKey: sessionQueryOptions(session).queryKey,
+    });
+    if (query === undefined)
+      return Promise.resolve({
+        kind: "failed",
+        cause: "Session observation is unavailable",
+      });
+    const priorData = query.state.dataUpdateCount;
+    const priorError = query.state.errorUpdateCount;
+    const retry = new Promise<ParakeetReconnectOutcome>((resolve) => {
+      let unsubscribe: () => void = () => undefined;
+      let settled = false;
+      const finish = (outcome: ParakeetReconnectOutcome) => {
+        if (settled) return;
+        settled = true;
+        unsubscribe();
+        clearTimeout(timeout);
+        resolve(outcome);
+      };
+      const inspect = () => {
+        if (
+          query.state.dataUpdateCount > priorData &&
+          queryClient.getQueryData(sessionQueryOptions(session).queryKey)
+            ?.observation === "live"
+        ) {
+          finish({ kind: "reconnected" });
+          return;
+        }
+        if (query.state.errorUpdateCount > priorError)
+          finish({
+            kind: "failed",
+            cause: observationCause(query.state.error),
+          });
+      };
+      unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+        if (event.query === query) inspect();
+      });
+      const timeout = setTimeout(() => {
+        finish({
+          kind: "failed",
+          cause: "Session history did not reopen within 10 seconds",
+        });
+      }, 10_000);
+      // A live stream does not settle its refetch promise until the watch closes.
+      // The first new snapshot above is the reconnect acknowledgment.
+      void get(queryAtom)
+        .refetch({ cancelRefetch: true })
+        .catch((cause: unknown) => {
+          finish({ kind: "failed", cause: observationCause(cause) });
+        });
+      inspect();
+    });
+    reconnecting = retry.finally(() => {
+      reconnecting = undefined;
+    });
+    return reconnecting;
+  });
+
+  return {
+    abortAtom,
+    commandIdAtom,
+    contextAtom,
+    admissionErrorAtom,
+    admissionsAtom,
+    cancelAtom,
+    draftAtom,
+    dismissFailedAtom,
+    extensionsAtom,
+    failureAtom,
+    jumpToLatestAtom,
+    loadOlderHistoryAtom,
+    loadNewerHistoryAtom,
+    observationAtom,
+    pinVisibleHistoryAtom,
+    queryAtom,
+    reconnectAtom,
+    retryAtom,
+    setDraftAtom,
+    sendAtom,
+    snapshotAtom,
+    statusAtom,
+    viewStateAtom,
+    submitCommandAtom,
+    timelineAtom,
+  };
+}
+
+type ConversationAtoms = ReturnType<typeof createConversationAtoms>;
+type ConversationScope = Readonly<{
+  atoms: ConversationAtoms;
+  session: ParakeetSession;
+  store: ReturnType<typeof createStore>;
+  contributions: PrimitiveAtom<readonly ClientContribution[]>;
+  interactions: ParakeetInteractions;
+}>;
+const ConversationContext = createContext<ConversationScope | null>(null);
+
+function useConversationScope(): ConversationScope {
+  const scope = useContext(ConversationContext);
+  if (scope === null)
+    throw new Error("Parakeet hooks require a ParakeetProvider");
+  return scope;
+}
+
+function useStoreAtom<Value>(atom: Atom<Value>): Value {
+  const { store } = useConversationScope();
+  const subscribe = useCallback(
+    (listener: () => void) => store.sub(atom, listener),
+    [atom, store],
+  );
+  const snapshot = useCallback(() => store.get(atom), [atom, store]);
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
+function useStoreSetter<Args extends unknown[], Result>(
+  atom: WritableAtom<unknown, Args, Result>,
+): (...args: Args) => Result {
+  const { store } = useConversationScope();
+  return useCallback(
+    (...args: Args) => store.set(atom, ...args),
+    [atom, store],
+  );
+}
+
+/** Own one renderer-neutral conversation scope over the existing query cache. */
+export function ParakeetProvider({
+  children,
+  session,
+  clients = noClients,
+  interactionStore,
+  authorOf = noAuthor,
+}: Readonly<{
+  children: ReactNode;
+  session: ParakeetSession;
+  clients?: readonly ClientEntryV1[] | undefined;
+  interactionStore?: ParakeetInteractions | undefined;
+  /**
+   * Read the author to show from a message's opaque host metadata. Absent,
+   * lines show no author.
+   */
+  authorOf?: ParakeetAuthorOf | undefined;
+}>) {
+  const queryClient = useQueryClient();
+  const scope = useMemo(
+    () => ({
+      atoms: createConversationAtoms(session, queryClient, authorOf),
+      session,
+      store: createStore(),
+      contributions: atom(noContributions),
+      interactions: interactionStore ?? createParakeetInteractions(),
+    }),
+    [queryClient, session, interactionStore, authorOf],
+  );
+  useEffect(() => {
+    const owner = createClientContributions(clients, (entryId, error) => {
+      reportFailure(`client contribution ${entryId}`, error);
+      scope.interactions.report({ tone: "error", message: error.message });
+    });
+    const publish = () => {
+      scope.store.set(scope.contributions, owner.snapshot());
+    };
+    const unsubscribe = owner.subscribe(publish);
+    const update = () => {
+      owner.update(scope.store.get(scope.atoms.extensionsAtom));
+    };
+    const unobserve = scope.store.sub(scope.atoms.extensionsAtom, update);
+    update();
+    return () => {
+      unobserve();
+      owner.dispose();
+      unsubscribe();
+    };
+  }, [clients, scope]);
+  return (
+    <ConversationContext.Provider value={scope}>
+      {children}
+    </ConversationContext.Provider>
+  );
+}
+
+/** Read stable history and replaceable live work. */
+export function useTimeline(): TimelineController {
+  const { atoms } = useConversationScope();
+  const base = useStoreAtom(atoms.timelineAtom);
+  const loadOlderHistory = useStoreSetter(atoms.loadOlderHistoryAtom);
+  const loadNewerHistory = useStoreSetter(atoms.loadNewerHistoryAtom);
+  const jumpToLatest = useStoreSetter(atoms.jumpToLatestAtom);
+  const pinVisibleHistory = useStoreSetter(atoms.pinVisibleHistoryAtom);
+  return useMemo(
+    () => ({
+      ...base,
+      jumpToLatest,
+      loadNewerHistory,
+      loadOlderHistory,
+      pinVisibleHistory,
+    }),
+    [base, jumpToLatest, loadNewerHistory, loadOlderHistory, pinVisibleHistory],
+  );
+}
+
+/** Read and mutate the current conversation draft and prompt. */
+export function useComposer(): ComposerController {
+  const { atoms } = useConversationScope();
+  const draft = useStoreAtom(atoms.draftAtom);
+  const failure = useStoreAtom(atoms.failureAtom);
+  const admissionError = useStoreAtom(atoms.admissionErrorAtom);
+  const setDraft = useStoreSetter(atoms.setDraftAtom);
+  const send = useStoreSetter(atoms.sendAtom);
+  const submitCommand = useStoreSetter(atoms.submitCommandAtom);
+  const retry = useStoreSetter(atoms.retryAtom);
+  const retryLatest = useCallback(() => {
+    retry();
+  }, [retry]);
+  const dismissFailed = useStoreSetter(atoms.dismissFailedAtom);
+  const cancel = useStoreSetter(atoms.cancelAtom);
+  return useMemo(
+    () => ({
+      admissionError,
+      cancel,
+      draft,
+      dismissFailed,
+      failure,
+      retry: retryLatest,
+      send,
+      setDraft,
+      submitCommand,
+    }),
+    [
+      admissionError,
+      cancel,
+      draft,
+      dismissFailed,
+      failure,
+      retryLatest,
+      send,
+      setDraft,
+      submitCommand,
+    ],
+  );
+}
+
+/** Dismiss a failed prompt without subscribing the timeline to composer edits. */
+export function useDismissFailedPrompt(): (requestId: string) => void {
+  const { atoms } = useConversationScope();
+  return useStoreSetter(atoms.dismissFailedAtom);
+}
+
+/** The Session this conversation observes. */
+export function useParakeetSession(): ParakeetSession {
+  return useConversationScope().session;
+}
+
+/** Read the Session's extension slots, including advertised command catalogs. */
+export function useExtensionSlots(): SessionExtensionSlots {
+  return useStoreAtom(useConversationScope().atoms.extensionsAtom);
+}
+
+/** Read Session activity and operate its observation. */
+export function useStatus(): StatusController {
+  const { atoms } = useConversationScope();
+  const commandId = useStoreAtom(atoms.commandIdAtom);
+  const status = useStoreAtom(atoms.statusAtom);
+  const viewState = useStoreAtom(atoms.viewStateAtom);
+  const observation = useStoreAtom(atoms.observationAtom);
+  const reconnect = useStoreSetter(atoms.reconnectAtom);
+  const context = useStoreAtom(atoms.contextAtom);
+  return useMemo(
+    () => ({
+      commandId,
+      context,
+      observation,
+      reconnect,
+      status,
+      viewState,
+    }),
+    [commandId, context, observation, reconnect, status, viewState],
+  );
+}
+
+/** Presentation admitted once from the selected Session's already observed slots. */
+export function useClientContributions(): readonly ClientContribution[] {
+  return useStoreAtom(useConversationScope().contributions);
+}
+
+/** The selected Session's ordinary command interaction owner. */
+export function useParakeetInteractions(): ParakeetInteractions {
+  return useConversationScope().interactions;
+}

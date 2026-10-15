@@ -1,0 +1,482 @@
+import {
+  noAuthor,
+  type ParakeetAuthor,
+  type ParakeetAuthorOf,
+} from "./author-labels.js";
+import type {
+  SessionActivity,
+  SessionCompactionMarker,
+  SessionCompactionNotice,
+  SessionMessage,
+  SessionPendingPrompt,
+  SessionProgress,
+} from "@fungi.computer/shiitake/client";
+
+import type {
+  AssistantMessageItem,
+  LocalPromptAdmission,
+  ProjectedItem,
+  TimelineItem,
+  ToolItem,
+  UserMessageItem,
+} from "../store/types.js";
+import { completedMessageIds } from "./session-projection.js";
+import { ToolArgumentsSchema } from "./tool-contract.js";
+import { assistantMessageVisible } from "./assistant-visibility.js";
+import { groupToolCalls } from "./tool-groups.js";
+
+/**
+ * One ordering source feeding the durable timeline: an exact message, a
+ * compaction divider, or a compaction notice. Markers sort immediately
+ * before the message at the same `sequence` (tie 0 beats tie 1 beats tie 2),
+ * matching the Woodstock boundary they mark; a notice sits at its own entry's
+ * sequence, like a message.
+ */
+type TimelineSource =
+  | Readonly<{
+      sequence: number;
+      tie: 0;
+      kind: "marker";
+      marker: SessionCompactionMarker;
+    }>
+  | Readonly<{
+      sequence: number;
+      tie: 1;
+      kind: "message";
+      message: SessionMessage;
+    }>
+  | Readonly<{
+      sequence: number;
+      tie: 2;
+      kind: "notice";
+      notice: SessionCompactionNotice;
+    }>;
+
+function orderedSources(
+  messages: readonly SessionMessage[],
+  compactions: readonly SessionCompactionMarker[],
+  notices: readonly SessionCompactionNotice[],
+): readonly TimelineSource[] {
+  const sources: TimelineSource[] = [
+    ...messages.map((message): TimelineSource => ({
+      sequence: message.sequence,
+      tie: 1,
+      kind: "message",
+      message,
+    })),
+    ...compactions.map((marker): TimelineSource => ({
+      sequence: marker.sequence,
+      tie: 0,
+      kind: "marker",
+      marker,
+    })),
+    ...notices.map((notice): TimelineSource => ({
+      sequence: notice.sequence,
+      tie: 2,
+      kind: "notice",
+      notice,
+    })),
+  ];
+  return sources.sort(
+    (left, right) => left.sequence - right.sequence || left.tie - right.tie,
+  );
+}
+
+export type TimelineProjection = Readonly<{
+  items: readonly TimelineItem[];
+  model?: Readonly<{ model: string; provider: string }>;
+  usage?: Readonly<{ cost: number; tokens: number }>;
+}>;
+
+/**
+ * The client request identity of a prompt this composer submitted, by its
+ * owner-issued command, so one row keeps its identity from submit to durable.
+ */
+export type PromptRequestIdOf = (commandId: string) => string | undefined;
+
+const noRequestId: PromptRequestIdOf = () => undefined;
+
+/** Carry a local prompt's request identity onto its owner-reported row. */
+function withRequestId(
+  item: UserMessageItem,
+  requestId: string | undefined,
+): UserMessageItem {
+  return requestId === undefined ? item : { ...item, requestId };
+}
+
+export type DurableTimelineProjection = TimelineProjection &
+  Readonly<{
+    completedMessageIds: ReadonlySet<string>;
+    commandIds: ReadonlySet<string>;
+    commandAnchors: ReadonlyMap<string, string>;
+  }>;
+
+function userText(
+  content: Extract<SessionMessage["value"], { role: "user" }>["content"],
+): string {
+  return Array.isArray(content)
+    ? content
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n")
+    : content;
+}
+
+function toolItem(
+  call: Extract<
+    Extract<SessionMessage["value"], { role: "assistant" }>["content"][number],
+    { type: "toolCall" }
+  >,
+  startedAt: number,
+): ToolItem {
+  return {
+    args: ToolArgumentsSchema.parse(call.arguments),
+    id: call.id,
+    kind: "tool",
+    name: call.name,
+    startedAt,
+    status: "unknown",
+  };
+}
+
+function progressItem(progress: SessionProgress): AssistantMessageItem {
+  const base: AssistantMessageItem = {
+    id: progress.messageId,
+    kind: "assistant_message",
+    pending: true,
+    text: progress.text,
+  };
+  return progress.thinking === ""
+    ? base
+    : { ...base, thinking: progress.thinking };
+}
+
+type AssistantProjection = Readonly<{
+  items: readonly ProjectedItem[];
+  model: NonNullable<TimelineProjection["model"]>;
+  usage: NonNullable<TimelineProjection["usage"]>;
+}>;
+
+type AssistantBlocks = Readonly<{
+  text: readonly string[];
+  thinking: readonly string[];
+  tools: readonly ToolItem[];
+}>;
+
+function collectAssistantBlocks(
+  value: Extract<SessionMessage["value"], { role: "assistant" }>,
+): AssistantBlocks {
+  const text: string[] = [];
+  const thinking: string[] = [];
+  const tools: ToolItem[] = [];
+  for (const block of value.content) {
+    if (block.type === "text") text.push(block.text);
+    if (block.type === "thinking") thinking.push(block.thinking);
+    if (block.type === "toolCall") tools.push(toolItem(block, value.timestamp));
+  }
+  return { text, thinking, tools };
+}
+
+function assistantMessageItem(
+  id: string,
+  value: Extract<SessionMessage["value"], { role: "assistant" }>,
+  blocks: AssistantBlocks,
+): AssistantMessageItem | undefined {
+  if (
+    blocks.text.length === 0 &&
+    blocks.thinking.length === 0 &&
+    blocks.tools.length > 0
+  )
+    return undefined;
+
+  const item: AssistantMessageItem = {
+    id,
+    isError: value.stopReason === "error" || value.stopReason === "aborted",
+    kind: "assistant_message",
+    pending: false,
+    at: value.timestamp,
+    text:
+      blocks.text.length === 0
+        ? value.stopReason === "error"
+          ? "This run couldn’t finish."
+          : value.stopReason === "aborted"
+            ? "The run was cancelled."
+            : ""
+        : blocks.text.join(""),
+    usage: {
+      cost: value.usage.cost.total,
+      tokens: value.usage.totalTokens,
+    },
+  };
+  return blocks.thinking.length === 0
+    ? item
+    : { ...item, thinking: blocks.thinking.join("\n") };
+}
+
+function projectAssistant(
+  id: string,
+  value: Extract<SessionMessage["value"], { role: "assistant" }>,
+  author?: ParakeetAuthor,
+): AssistantProjection {
+  const blocks = collectAssistantBlocks(value);
+  const message = assistantMessageItem(id, value, blocks);
+  return {
+    items:
+      message === undefined
+        ? blocks.tools
+        : [{ ...message, author }, ...blocks.tools],
+    model: { model: value.model, provider: value.provider },
+    usage: { cost: value.usage.cost.total, tokens: value.usage.totalTokens },
+  };
+}
+
+function appendAssistant(
+  items: ProjectedItem[],
+  toolIndexes: Map<string, number>,
+  assistant: AssistantProjection,
+): void {
+  for (const item of assistant.items) {
+    if (item.kind === "tool") toolIndexes.set(item.id, items.length);
+    items.push(item);
+  }
+}
+
+function completeTool(
+  items: ProjectedItem[],
+  toolIndexes: ReadonlyMap<string, number>,
+  value: Extract<SessionMessage["value"], { role: "toolResult" }>,
+): void {
+  const toolIndex = toolIndexes.get(value.toolCallId);
+  if (toolIndex === undefined) return;
+  const tool = items[toolIndex];
+  if (tool?.kind !== "tool") return;
+  items[toolIndex] = {
+    ...tool,
+    result: value,
+    status: value.isError ? "error" : "completed",
+  };
+}
+
+/**
+ * Project one durable Session revision into timeline rows, folding consecutive
+ * tool calls into groups. `compactions` places one divider row immediately
+ * before the message it marks; `notices` places a short row at a compaction
+ * that changed nothing. The model's own context is unaffected by this purely
+ * client-side projection.
+ */
+export function buildDurableTimeline(
+  messages: readonly SessionMessage[],
+  compactions: readonly SessionCompactionMarker[] = [],
+  activity?: SessionActivity,
+  authorOf: ParakeetAuthorOf = noAuthor,
+  requestIdOf: PromptRequestIdOf = noRequestId,
+  notices: readonly SessionCompactionNotice[] = [],
+): DurableTimelineProjection {
+  const items: ProjectedItem[] = [];
+  const toolIndexes = new Map<string, number>();
+  const commandIds = new Set<string>();
+  const itemCommands = new Map<string, Set<string>>();
+  let model: TimelineProjection["model"];
+  let tokens = 0;
+  let cost = 0;
+
+  for (const source of orderedSources(messages, compactions, notices)) {
+    if (source.kind === "marker") {
+      items.push({
+        id: source.marker.id,
+        kind: "compaction_divider",
+        at: source.marker.at,
+        tokensBefore: source.marker.tokensBefore,
+        tokensAfter: source.marker.tokensAfter,
+      });
+      continue;
+    }
+    if (source.kind === "notice") {
+      items.push({
+        id: source.notice.id,
+        kind: "compaction_notice",
+        at: source.notice.at,
+        trigger: source.notice.trigger,
+        result: source.notice.result,
+        diagnostic: source.notice.diagnostic,
+      });
+      continue;
+    }
+    const message = source.message;
+    const value = message.value;
+    if (message.commandId !== null) commandIds.add(message.commandId);
+    const firstItem = items.length;
+    switch (value.role) {
+      case "user": {
+        const commandId = message.commandId ?? message.id;
+        const confirmed: UserMessageItem = {
+          id: message.id,
+          kind: "user_message",
+          commandId,
+          status: "confirmed",
+          at: value.timestamp,
+          text: userText(value.content),
+          author: authorOf(message.meta),
+          origin: message.origin,
+        };
+        items.push(withRequestId(confirmed, requestIdOf(commandId)));
+        break;
+      }
+      case "assistant": {
+        const assistant = projectAssistant(
+          message.id,
+          value,
+          authorOf(message.meta),
+        );
+        model = assistant.model;
+        tokens += assistant.usage.tokens;
+        cost += assistant.usage.cost;
+        appendAssistant(items, toolIndexes, assistant);
+        break;
+      }
+      case "toolResult":
+        completeTool(items, toolIndexes, value);
+        if (message.commandId !== null) {
+          const commands =
+            itemCommands.get(value.toolCallId) ?? new Set<string>();
+          commands.add(message.commandId);
+          itemCommands.set(value.toolCallId, commands);
+        }
+        break;
+    }
+    if (message.commandId !== null) {
+      for (const item of items.slice(firstItem))
+        itemCommands.set(item.id, new Set([message.commandId]));
+    }
+  }
+
+  // A durable call without a result is not evidence that it still runs.
+  // Only the current command's last matching call can borrow live tool activity.
+  const queue = activity?.queue;
+  if (queue?.state === "running" && activity?.activeTool !== null) {
+    let currentCommand = false;
+    let toolIndex = -1;
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (item?.kind === "user_message") {
+        currentCommand = item.commandId === queue.commandId;
+        if (currentCommand) toolIndex = -1;
+      }
+      if (
+        currentCommand &&
+        item?.kind === "tool" &&
+        item.status === "unknown" &&
+        item.name === activity?.activeTool
+      )
+        toolIndex = index;
+    }
+    const active = items[toolIndex];
+    if (active?.kind === "tool")
+      items[toolIndex] = { ...active, status: "running" };
+  }
+  const grouped = groupToolCalls(items);
+  const commandAnchors = new Map<string, string>();
+  for (const row of grouped) {
+    if (row.kind === "assistant_message" && !assistantMessageVisible(row))
+      continue;
+    const members = row.kind === "tool_group" ? row.tools : [row];
+    for (const member of members)
+      for (const command of itemCommands.get(member.id) ?? [])
+        commandAnchors.set(command, row.id);
+  }
+  const base = {
+    commandAnchors,
+    completedMessageIds: completedMessageIds(messages),
+    items: grouped,
+    commandIds,
+  };
+  return model === undefined
+    ? base
+    : { ...base, model, usage: { cost, tokens } };
+}
+
+/** Project replaceable live work without copying settled history. */
+export function buildTimelineTail(
+  durable: DurableTimelineProjection,
+  progress: SessionProgress | null,
+  queued: readonly SessionPendingPrompt[],
+  admissions: readonly LocalPromptAdmission[] = [],
+  authorOf: ParakeetAuthorOf = noAuthor,
+  requestIdOf: PromptRequestIdOf = noRequestId,
+): readonly TimelineItem[] {
+  const visibleProgress =
+    progress === null ||
+    durable.completedMessageIds.has(progress.messageId) ||
+    (progress.text === "" && progress.thinking === "")
+      ? undefined
+      : progress;
+  if (
+    admissions.length === 0 &&
+    visibleProgress === undefined &&
+    queued.length === 0
+  )
+    return [];
+
+  const items: TimelineItem[] = [];
+  if (visibleProgress !== undefined) items.push(progressItem(visibleProgress));
+  const queuedCommandIds = new Set(queued.map(({ commandId }) => commandId));
+  for (const prompt of queued) {
+    if (durable.commandIds.has(prompt.commandId)) continue;
+    const waiting: UserMessageItem = {
+      id: prompt.commandId,
+      kind: "user_message",
+      commandId: prompt.commandId,
+      status: "queued",
+      delivery: prompt.delivery,
+      text: prompt.text,
+      origin: prompt.origin,
+      author: authorOf(prompt.meta),
+    };
+    items.push(withRequestId(waiting, requestIdOf(prompt.commandId)));
+  }
+  for (const admission of admissions) {
+    if (
+      admission.commandId !== undefined &&
+      (queuedCommandIds.has(admission.commandId) ||
+        durable.commandIds.has(admission.commandId))
+    )
+      continue;
+    const baseItem = {
+      id: admission.requestId,
+      kind: "user_message",
+      requestId: admission.requestId,
+      status:
+        admission.status === "failed"
+          ? "failed"
+          : admission.status === "accepted"
+            ? "accepted"
+            : "pending",
+      delivery: admission.delivery,
+      text: admission.content,
+    } satisfies Omit<UserMessageItem, "commandId" | "error">;
+    const commandItem =
+      admission.commandId === undefined
+        ? baseItem
+        : { ...baseItem, commandId: admission.commandId };
+    const item: UserMessageItem =
+      admission.error === undefined
+        ? commandItem
+        : { ...commandItem, error: admission.error };
+    items.push(item);
+  }
+  return items;
+}
+
+/** Overlay live progress and an optimistic prompt over stable durable rows. */
+export function buildTimeline(
+  durable: DurableTimelineProjection,
+  progress: SessionProgress | null,
+  queued: readonly SessionPendingPrompt[],
+  admissions: readonly LocalPromptAdmission[] = [],
+): TimelineProjection {
+  const tail = buildTimelineTail(durable, progress, queued, admissions);
+  if (tail.length === 0) return durable;
+  const items = [...durable.items, ...tail];
+  if (durable.model === undefined || durable.usage === undefined)
+    return { items };
+  return { items, model: durable.model, usage: durable.usage };
+}

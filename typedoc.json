@@ -1,0 +1,14 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "extends": "../../tooling/docs/typedoc.base.json",
+  "name": "@fungi.computer/parakeet",
+  "entryPoints": ["src/index.tsx", "src/headless.ts", "src/commands/slash.ts"],
+  "intentionallyNotExported": [
+    "ToolResultMessage",
+    "ModelPreferenceOwner",
+    "SessionCommandRuntime",
+    "SessionCommandSession"
+  ],
+  "tsconfig": "tsconfig.json",
+  "out": "docs/api"
+}

@@ -1,0 +1,135 @@
+{
+  "name": "@fungi.computer/parakeet",
+  "version": "0.0.0",
+  "private": false,
+  "description": "Standalone React composer for a typed Shiitake Session",
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./headless": {
+      "types": "./dist/headless.d.ts",
+      "import": "./dist/headless.js"
+    },
+    "./agent-head": {
+      "types": "./dist/agent-head.d.ts",
+      "import": "./dist/agent-head.js"
+    },
+    "./slash": {
+      "types": "./dist/commands/slash.d.ts",
+      "import": "./dist/commands/slash.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./tailwind.css": "./src/styles.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "src/styles.css",
+    "docs/api"
+  ],
+  "scripts": {
+    "lint": "eslint src test workbench vitest.config.ts --max-warnings=0 && ../../node_modules/.bin/oxlint --config ../../oxlint.config.ts --deny-warnings src test workbench vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm run clean && tsc -p tsconfig.build.json && pnpm run build:css",
+    "sync:injected": "node --input-type=module --eval \"import { access } from 'node:fs/promises'; await access('dist/headless.d.ts');\"",
+    "build:css": "tailwindcss -i src/styles.css -o dist/styles.css",
+    "clean": "node --input-type=module --eval \"import { rm } from 'node:fs/promises'; await rm('dist', { recursive: true, force: true });\"",
+    "test": "vitest run --config vitest.config.ts",
+    "test:composer-materials": "node test/browser/composer-materials.mjs",
+    "browser:contract": "pnpm run build:css && node test/browser/contract.mjs",
+    "docs": "tsx ../../tooling/repository/src/docs/cli.ts check --root ../..",
+    "docs:write": "tsx ../../tooling/repository/src/docs/cli.ts write --root ../..",
+    "pack": "mkdir -p ../../.botanical/parakeet-pack && pnpm pack --pack-destination ../../.botanical/parakeet-pack",
+    "smoke": "node test/stranger/runtime.mjs",
+    "format:check": "node ../../tooling/repository/scripts/format-package-check.mjs",
+    "lint:anti-slop": "node ../../tooling/repository/scripts/lint-package-anti-slop.mjs",
+    "browser:client-inspections": "pnpm run build:css && node test/browser/client-inspections.mjs",
+    "stranger": "tsx ../../tooling/repository/src/artifacts/cli.ts --repo-root ../.. .",
+    "prepack": "node scripts/prepare-package.mjs"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.102.8",
+    "react": "^18.2.0 || ^19.2.0",
+    "react-dom": "^18.2.0 || ^19.2.0"
+  },
+  "devDependencies": {
+    "@fungi.computer/parakeet-testing": "workspace:*",
+    "@ladle/react": "5.1.1",
+    "@tailwindcss/cli": "4.2.1",
+    "@tailwindcss/typography": "0.5.19",
+    "@tanstack/react-query": "5.102.8",
+    "@types/node": "24.13.3",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.3",
+    "effect": "4.0.2",
+    "esbuild": "0.28.2",
+    "playwright": "1.62.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "@fungi.computer/cairn": "workspace:*",
+    "@fungi.computer/caps": "workspace:*",
+    "@fungi.computer/knapsack": "workspace:*",
+    "@fungi.computer/shiitake": "workspace:*",
+    "@fungi.computer/sigils": "workspace:*",
+    "@fungi.computer/sprite": "workspace:*",
+    "@fungi.computer/sprite-zdog": "workspace:*",
+    "@fungi.computer/whistle": "workspace:*",
+    "@tanstack/markdown": "0.0.12",
+    "@tanstack/react-virtual": "3.14.10",
+    "diff": "8.0.4",
+    "jotai": "2.20.3",
+    "jotai-tanstack-query": "0.11.0",
+    "lucide-react": "0.460.0",
+    "strip-ansi": "7.2.0",
+    "zod": "4.4.3",
+    "@fungi.computer/gills": "workspace:*"
+  },
+  "dependenciesMeta": {
+    "@fungi.computer/caps": {
+      "injected": true
+    }
+  },
+  "botanical": {
+    "role": "package",
+    "operations": {
+      "lint": "required",
+      "typecheck": "required",
+      "build": "required",
+      "test": "required",
+      "docs": "required",
+      "pack": "required",
+      "smoke": "required",
+      "stranger": "required"
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fungi-computer/parakeet.git"
+  },
+  "publishConfig": {
+    "directory": ".botanical/package",
+    "linkDirectory": false
+  },
+  "fungi": {
+    "build": {
+      "stylesheet": {
+        "input": "src/styles.css",
+        "output": "dist/styles.css"
+      }
+    }
+  }
+}

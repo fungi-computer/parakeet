@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // Turbo restores dist without running pnpm's post-build injection hook.
+    // Run the maintained hook even on a cache hit, before injected consumers.
+    "sync:injected": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "outputs": [],
+    },
+  },
+}
