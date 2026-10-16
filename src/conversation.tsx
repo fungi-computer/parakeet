@@ -477,17 +477,36 @@ function createConversationAtoms(
   const draftRevisionAtom = atom(0);
   const rawAdmissionsAtom = atom<readonly SubmittedPromptAdmission[]>([]);
   const latestSubmissionIdAtom = atom<string | undefined>(undefined);
+  const observedCommandIdsAtom = atom(
+    (get) =>
+      new Set([
+        ...get(durableAtom).commandIds,
+        ...get(pendingAtom).prompts.map(({ commandId }) => commandId),
+        ...(get(snapshotAtom)?.terminals.map(({ commandId }) => commandId) ??
+          []),
+      ]),
+  );
   const admissionsAtom = atom((get) => {
-    const knownCommandIds = new Set([
-      ...get(durableAtom).commandIds,
-      ...get(pendingAtom).prompts.map(({ commandId }) => commandId),
-    ]);
+    const knownCommandIds = get(observedCommandIdsAtom);
     return get(rawAdmissionsAtom).filter(
       (admission) =>
         admission.status === "failed" ||
         admission.commandId === undefined ||
         !knownCommandIds.has(admission.commandId),
     );
+  });
+  /** Retire a successful local admission only after owner identity is observed. */
+  const reconcileAdmissionsAtom = atom(null, (get, set) => {
+    const knownCommandIds = get(observedCommandIdsAtom);
+    set(rawAdmissionsAtom, (current) => {
+      const unresolved = current.filter(
+        ({ status, commandId }) =>
+          status !== "accepted" ||
+          commandId === undefined ||
+          !knownCommandIds.has(commandId),
+      );
+      return unresolved.length === current.length ? current : unresolved;
+    });
   });
   const admissionErrorAtom = atom<"queue_full" | undefined>(undefined);
   const setDraftAtom = atom(null, (get, set, value: string) => {
@@ -572,6 +591,9 @@ function createConversationAtoms(
       (latestSubmission?.status === "accepted" &&
         !get(durableAtom).commandIds.has(latestSubmission.commandId ?? "") &&
         !pending.prompts.some(
+          ({ commandId }) => commandId === latestSubmission.commandId,
+        ) &&
+        !snapshot?.terminals.some(
           ({ commandId }) => commandId === latestSubmission.commandId,
         ))
     )
@@ -688,6 +710,7 @@ function createConversationAtoms(
                 candidate.status === "admitting" &&
                 candidate.submittedDraft === admission.submittedDraft,
             );
+          set(reconcileAdmissionsAtom);
           if (!hasNewerMatchingAdmission)
             set(clearSubmittedDraftAtom, {
               draft: admission.submittedDraft,
@@ -930,8 +953,10 @@ function createConversationAtoms(
     loadOlderHistoryAtom,
     loadNewerHistoryAtom,
     observationAtom,
+    observedCommandIdsAtom,
     pinVisibleHistoryAtom,
     queryAtom,
+    reconcileAdmissionsAtom,
     reconnectAtom,
     retryAtom,
     setDraftAtom,
@@ -1010,6 +1035,21 @@ export function ParakeetProvider({
     }),
     [queryClient, session, interactionStore, authorOf],
   );
+  useEffect(() => {
+    // The live page is bounded: after a later reset an observed command may no
+    // longer be present. Retire its local row once, not just while it is visible.
+    const reconcile = () => {
+      scope.store.set(scope.atoms.reconcileAdmissionsAtom);
+    };
+    const unobserve = scope.store.sub(
+      scope.atoms.observedCommandIdsAtom,
+      reconcile,
+    );
+    reconcile();
+    return () => {
+      unobserve();
+    };
+  }, [scope]);
   useEffect(() => {
     const owner = createClientContributions(clients, (entryId, error) => {
       reportFailure(`client contribution ${entryId}`, error);

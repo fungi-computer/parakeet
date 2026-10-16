@@ -215,6 +215,30 @@ it("keeps one dimmed row per prompt until the Agent takes it, then snaps it in p
   expect(dimmed(second)).toBe(true);
   expect(host.textContent).not.toMatch(statusWords);
 
+  // A bounded reconnect can retain the owner's terminal without the older
+  // message page. The accepted row must not remain an optimistic ghost.
+  await act(async () => {
+    live.push(
+      sessionFrame({
+        kind: "update",
+        delivery: "live",
+        cursor: "after-second-terminal",
+        messages: [],
+        terminals: [{ commandId: "command-second", outcome: "completed" }],
+        pending: { total: 0, prompts: [], hasMore: false },
+        status: "idle",
+      }),
+    );
+    await Promise.resolve();
+  });
+  await settle();
+  expect(
+    [
+      ...host.querySelectorAll<HTMLElement>('[data-parakeet-entry="user"]'),
+    ].filter((row) => row.textContent.includes("Second while busy")),
+  ).toHaveLength(0);
+  expect(rowOf("First while busy")).toBe(first);
+
   await act(async () => {
     root.unmount();
     await Promise.resolve();

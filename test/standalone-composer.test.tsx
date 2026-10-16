@@ -1021,6 +1021,87 @@ it("retains observed history and reopens a failed Session watch", async () => {
   expect(container.textContent).toContain("Recovered");
 });
 
+it("keeps an unresolved admission through reconnect, then retires its exact terminal", async () => {
+  const firstChanges = frameQueue();
+  const secondChanges = frameQueue();
+  const changes = [firstChanges, secondChanges];
+  const commands: PromptCommand[] = [];
+  let watches = 0;
+  const baseline = sessionSnapshot({ status: "idle" });
+  const session: ParakeetSession = {
+    address: "test://parakeet/reconnect-admission",
+    command: commandHandler((input) => {
+      commands.push(input);
+      return Promise.resolve({
+        status: "accepted",
+        commandId: "owner-reconnect",
+      });
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(baseline),
+    watch: () => {
+      const current = changes[watches++];
+      if (current === undefined) throw new Error("Unexpected watch");
+      return watch(current, baseline);
+    },
+  };
+  const container = render(session);
+  await settle();
+  await settle(() => {
+    const input = container.querySelector('input[aria-label="Draft"]');
+    if (!(input instanceof HTMLInputElement)) throw new Error("Missing draft");
+    change(input, "A repeated message");
+    container.querySelector<HTMLButtonElement>("button")?.click();
+  });
+  await settle();
+  expect(commands).toHaveLength(1);
+  expect(container.querySelector('[data-state="accepted"]')?.textContent).toBe(
+    "A repeated message",
+  );
+  await settle(() => {
+    firstChanges.fail(new Error("Watch disconnected"));
+  });
+  await settle();
+  await settle(() => {
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Reconnect")
+      ?.click();
+  });
+  await settle();
+  expect(watches).toBe(2);
+  expect(commands).toHaveLength(1);
+  expect(container.querySelector('[data-state="accepted"]')?.textContent).toBe(
+    "A repeated message",
+  );
+  await settle(() => {
+    secondChanges.push(
+      sessionFrame({
+        kind: "update",
+        delivery: "live",
+        cursor: "after-terminal",
+        messages: [],
+        terminals: [{ commandId: "owner-reconnect", outcome: "completed" }],
+        pending: { total: 0, prompts: [], hasMore: false },
+        status: "idle",
+      }),
+    );
+  });
+  await settle();
+  expect(container.querySelector('[data-kind="user_message"]')).toBeNull();
+  expect(commands).toHaveLength(1);
+  await settle(() => {
+    secondChanges.push({
+      kind: "reset",
+      reason: "history_unavailable",
+      cursor: "after-bounded-reset",
+      baseline,
+    });
+  });
+  await settle();
+  expect(container.querySelector('[data-kind="user_message"]')).toBeNull();
+  expect(commands).toHaveLength(1);
+});
+
 it("returns a typed cause when a failed Session watch cannot reconnect", async () => {
   const firstChanges = frameQueue();
   const outcomes: ParakeetReconnectOutcome[] = [];

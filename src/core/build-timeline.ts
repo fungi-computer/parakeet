@@ -416,8 +416,7 @@ export function buildTimelineTail(
   )
     return [];
 
-  const items: TimelineItem[] = [];
-  if (visibleProgress !== undefined) items.push(progressItem(visibleProgress));
+  const items: UserMessageItem[] = [];
   const queuedCommandIds = new Set(queued.map(({ commandId }) => commandId));
   for (const prompt of queued) {
     if (durable.commandIds.has(prompt.commandId)) continue;
@@ -463,7 +462,18 @@ export function buildTimelineTail(
         : { ...commandItem, error: admission.error };
     items.push(item);
   }
-  return items;
+  // Group only unresolved input; settled history and live progress keep their
+  // places. Filtering preserves the owner's order within each delivery group.
+  return [
+    ...(visibleProgress === undefined ? [] : [progressItem(visibleProgress)]),
+    ...items.filter(
+      (item) => item.status !== "failed" && item.delivery === "steer",
+    ),
+    ...items.filter(
+      (item) => item.status !== "failed" && item.delivery === "followUp",
+    ),
+    ...items.filter((item) => item.status === "failed"),
+  ];
 }
 
 /** Overlay live progress and an optimistic prompt over stable durable rows. */

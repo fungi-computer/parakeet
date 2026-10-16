@@ -174,7 +174,7 @@ it("projects exact Pi messages, tool results, and optimistic identity", () => {
   expect(projection.usage).toEqual({ cost: 0.03, tokens: 5 });
 });
 
-it("keeps owner queue order ahead of later unmatched local admissions", () => {
+it("keeps owner queue order ahead of later local admissions within one delivery group", () => {
   const tail = buildTimelineTail(
     buildDurableTimeline([]),
     null,
@@ -189,7 +189,7 @@ it("keeps owner queue order ahead of later unmatched local admissions", () => {
       {
         requestId: "later-local-request",
         content: "Later local prompt",
-        delivery: "steer",
+        delivery: "followUp",
         status: "admitting",
       },
     ],
@@ -555,6 +555,41 @@ it("replaces same-cursor admission views and renders waiting prompts after live 
     buildTimeline(buildDurableTimeline([]), progress, settled.pending.prompts)
       .items,
   ).toHaveLength(1);
+});
+
+it("orders pending interrupts before cues without changing order within either group", () => {
+  const tail = buildTimelineTail(
+    buildDurableTimeline([]),
+    null,
+    [
+      { commandId: "cue-one", delivery: "followUp", text: "Cue one" },
+      { commandId: "interrupt-one", delivery: "steer", text: "Interrupt one" },
+      { commandId: "cue-two", delivery: "followUp", text: "Cue two" },
+      { commandId: "interrupt-two", delivery: "steer", text: "Interrupt two" },
+    ],
+    [
+      {
+        requestId: "cue-local",
+        content: "Cue local",
+        delivery: "followUp",
+        status: "admitting",
+      },
+      {
+        requestId: "interrupt-local",
+        content: "Interrupt local",
+        delivery: "steer",
+        status: "accepted",
+      },
+    ],
+  );
+  expect(tail.map(({ id }) => id)).toEqual([
+    "interrupt-one",
+    "interrupt-two",
+    "interrupt-local",
+    "cue-one",
+    "cue-two",
+    "cue-local",
+  ]);
 });
 
 it("keeps provider error details out of the visible assistant message", () => {
