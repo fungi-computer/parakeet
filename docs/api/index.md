@@ -42,7 +42,7 @@ type AvatarState = Readonly<
 >;
 ```
 
-The current activity and expression supplied to a composer avatar.
+The current activity and expression supplied to a live avatar.
 
 ---
 
@@ -802,7 +802,7 @@ Stable row grammar rendered by Parakeet's timeline.
 ```ts
 const AgentHead: NamedExoticComponent<{
   activity?: AgentHeadActivity;
-  avatar?: {
+  avatar: {
     v: 1;
     character: "mushroom" | "cat" | "burger";
     appearance: z.ZodRecord<
@@ -819,22 +819,17 @@ const AgentHead: NamedExoticComponent<{
       | "blueprint"
       | "crt"
       | "watercolor";
-  } | null;
+  };
   className?: string;
   name: string;
-  seed: string;
   size?: number;
 }>;
 ```
 
-An Agent's head at avatar size. Renders the Agent's own avatar when given one;
-otherwise the pre-avatar seeded mushroom cap, byte-identical to before avatars
-existed. The letter shows until a frame is ready. It holds still unless
-`thinking` or `speaking`: an idle head whose render style is "plain" and already
-has a cached still frame for its look never mounts a live canvas, so a long rail
-is not a wall of animation. A render style other than "plain" is a CSS filter
-over the live canvas, not part of the captured pixels, so a styled head always
-stays live.
+An Agent's head at avatar size, drawn from the Agent's own avatar (a property of
+the Agent record, never of a conversation). The letter shows until a frame is
+ready. The live canvas stays mounted and is paused unless `thinking` or
+`speaking`, so an idle head shows its real look without animating.
 
 ---
 
@@ -866,9 +861,10 @@ const ShiitakeAvatar: NamedExoticComponent<{
 }>;
 ```
 
-Shiitake's sprite head, drawn in the activity and expression it is given. With
-no `avatar`, this is the product mascot, exactly as before avatars existed: no
-seeded colour, the character's own defaults.
+A sprite head drawn in the live activity and expression it is given. With an
+`avatar` it draws that look (a member's own, in their settings); with none it is
+Shiitake, the product mascot, in the character's own defaults. Conversations
+have no avatar: an Agent's head is `AgentHead`, drawn from the Agent record.
 
 ---
 

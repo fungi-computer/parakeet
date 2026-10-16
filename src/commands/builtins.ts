@@ -75,7 +75,7 @@ export function parakeetBuiltinCommands(
       category: "Advanced",
       projections: {
         help: { order: -2 },
-        slash: { aliases: ["keys"], order: -2 },
+        slash: { aliases: ["keys"], order: -2, consumesDraft: true },
       },
       handler: async (input: WhistleExecutionInput) => {
         const keys = keyBindings(runtime.snapshot());

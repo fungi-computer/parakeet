@@ -28,13 +28,15 @@ export function isCancelledOutcome(outcome: WhistleExecutionOutcome): boolean {
 /**
  * Run one composer draft: a prompt goes to `send`, a `/command` runs through
  * Whistle. A grammar that asks for a request id keeps the same id across
- * retries of the same draft until the command is handled.
+ * retries of the same draft until the command is handled. A slash projection
+ * can request draft consumption before dispatch, including while a dialog is open.
  */
 export async function runSlashDraft(
   draft: string,
   commands: SlashRuntime,
   send: () => void,
   origin: WhistleExecutionOrigin,
+  consumeDraft?: () => void,
 ): Promise<WhistleExecutionOutcome | undefined> {
   const parsed = parseSlashDraft(slashRegistry(commands.snapshot()), draft);
   if (parsed.kind === "prompt") {
@@ -47,6 +49,8 @@ export async function runSlashDraft(
       error: { code: "invalid_arguments", message: parsed.message },
     };
   const { command, requestIdField } = parsed;
+  if (command.consumesDraft && command.availability.status === "available")
+    consumeDraft?.();
   if (parsed.arguments === undefined)
     return commands.execute(command.commandId, { origin });
   if (requestIdField === undefined)

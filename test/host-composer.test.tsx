@@ -468,3 +468,47 @@ function button(label: string): HTMLButtonElement | null {
     ) ?? null
   );
 }
+
+it("consumes a flagged command on failure and /keys while its dialog is open", async () => {
+  const runtime = createWhistle();
+  runtime.contribute({
+    sourceId: "test",
+    namespace: "test",
+    commands: [
+      {
+        id: "thinking",
+        title: "Thinking",
+        category: "Settings",
+        projections: { slash: { aliases: ["inspect"], consumesDraft: true } },
+        handler: () => {
+          throw new Error("Choose a model first.");
+        },
+      },
+      {
+        id: "keyed",
+        title: "Keyed",
+        category: "Advanced",
+        projections: { bindings: { values: ["Ctrl+X"] } },
+        handler: () => undefined,
+      },
+    ],
+  });
+  const container = render(
+    hostSession(sessionSnapshot(), frames(), []),
+    runtime,
+  );
+  const input = textarea(container);
+  for (const draft of ["/inspect", "/inspect ", "/keys"]) {
+    await settle(() => {
+      type(input, draft);
+    });
+    await settle(() => {
+      enter(input);
+    });
+    await vi.waitFor(async () => {
+      await settle();
+      expect(input.value).toBe("");
+    });
+  }
+  expect(document.body.textContent).toContain("Key bindings");
+});

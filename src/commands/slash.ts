@@ -12,6 +12,8 @@ export type SlashCommand = Readonly<{
   alias: string;
   /** Canonical Whistle command identity. */
   commandId: string;
+  /** Consume this draft on dispatch, including for a dialog or refusal. */
+  consumesDraft?: boolean | undefined;
   /** Human-facing title. */
   title: string;
   /** Optional longer explanation. */
@@ -86,6 +88,7 @@ export function slashRegistry(
     category: row.category,
     order: row.order,
     grammar: row.arguments,
+    consumesDraft: row.consumesDraft,
     keys: keys.get(row.commandId) ?? [],
     availability: row.availability,
   }));
@@ -295,6 +298,8 @@ function rank<T>(
     .map(({ entry, match }) => ({ entry, indices: match.indices }));
 }
 
+const commonAliases = ["help", "login", "model"];
+
 /** Rank completions for one draft; renderers draw exactly these rows. */
 export function completeSlash(
   registry: readonly SlashCommand[],
@@ -313,7 +318,8 @@ export function completeSlash(
         (command) =>
           command.availability.status === "available" &&
           (query.length === 0
-            ? command.category === (options.idleCategory ?? "Conversation")
+            ? command.category === (options.idleCategory ?? "Conversation") ||
+              commonAliases.includes(command.alias)
             : command.category !== "Advanced" ||
               command.alias
                 .toLocaleLowerCase()
@@ -321,7 +327,12 @@ export function completeSlash(
       ),
       (command) => command.alias,
       query,
-      (command) => command.order,
+      (command) => {
+        const common = commonAliases.indexOf(command.alias);
+        return query.length === 0 && common >= 0
+          ? common - commonAliases.length
+          : command.order;
+      },
     ).map(({ entry, indices }) => ({
       command: entry,
       label: `/${entry.alias}`,

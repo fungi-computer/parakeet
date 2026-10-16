@@ -9,15 +9,17 @@ import { memo, useMemo } from "react";
 import { avatarPresentation } from "./avatar-presentation.js";
 import { shiitakeSprite } from "./sprite-service.js";
 
-/** The current activity and expression supplied to a composer avatar. */
+/** The current activity and expression supplied to a live avatar. */
 export type AvatarState = Readonly<
   Pick<AvatarPresentation, "activity" | "expression">
 >;
 
 /**
- * Shiitake's sprite head, drawn in the activity and expression it is given.
- * With no `avatar`, this is the product mascot, exactly as before avatars
- * existed: no seeded colour, the character's own defaults.
+ * A sprite head drawn in the live activity and expression it is given. With
+ * an `avatar` it draws that look (a member's own, in their settings); with
+ * none it is Shiitake, the product mascot, in the character's own defaults.
+ * Conversations have no avatar: an Agent's head is `AgentHead`, drawn from
+ * the Agent record.
  */
 export const ShiitakeAvatar = memo(function ShiitakeAvatar({
   avatar,
@@ -25,7 +27,7 @@ export const ShiitakeAvatar = memo(function ShiitakeAvatar({
   service = shiitakeSprite,
   state,
 }: {
-  /** The open conversation's avatar; omitted or `null` draws the mascot. */
+  /** The look to draw; omitted or `null` draws the mascot. */
   avatar?: Avatar | null;
   /** Replaces the default 3rem size, for a host that sizes the head itself. */
   className?: string;
@@ -35,7 +37,7 @@ export const ShiitakeAvatar = memo(function ShiitakeAvatar({
   state: AvatarState;
 }) {
   const presentation = useMemo(
-    () => (avatar ? avatarPresentation(avatar, "shiitake-mascot") : undefined),
+    () => (avatar ? avatarPresentation(avatar) : undefined),
     [avatar],
   );
   return (

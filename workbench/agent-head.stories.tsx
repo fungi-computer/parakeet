@@ -3,7 +3,7 @@ import { Sprite } from "@fungi.computer/sprite/react";
 import type { Avatar } from "@fungi.computer/sprite/avatar";
 import { deriveAgentAvatar } from "@fungi.computer/sprite-zdog/avatar";
 
-import { agentAppearance } from "@fungi.computer/sprite/avatar";
+import { agentAppearance, seededAvatar } from "@fungi.computer/sprite/avatar";
 import { AgentHead } from "../src/components/AgentHead.js";
 import { shiitakeSprite } from "../src/components/sprite-service.js";
 import "@fungi.computer/parakeet/styles.css";
@@ -44,7 +44,7 @@ function LegacyReference({ seed, size = 48 }: { seed: string; size?: number }) {
   );
 }
 
-/** Pairs the old literal Sprite call against the new `AgentHead`, no avatar. */
+/** Pairs the old literal Sprite call against `AgentHead` wearing `seededAvatar`. */
 export const FallbackComparison = () => (
   <div className="flex flex-col gap-md p-md" data-testid="fallback-comparison">
     {legacySeeds.map((seed) => (
@@ -54,7 +54,7 @@ export const FallbackComparison = () => (
           data-testid={`new-${seed}`}
           style={{ height: 48, width: 48, position: "relative" }}
         >
-          <AgentHead name={seed} seed={seed} size={48} />
+          <AgentHead name={seed} avatar={seededAvatar(seed)} size={48} />
         </div>
         <span>{seed}</span>
       </div>
@@ -67,7 +67,7 @@ const liveActivityByIndex = new Map<number, "thinking" | "speaking">([
   [37, "speaking"],
 ]);
 
-/** 50 heads, almost all idle: proves the still-frame cache keeps live players rare. */
+/** 50 heads, almost all idle: paused live canvases keep a long rail cheap. */
 export const FiftyHeads = () => (
   <div className="grid grid-cols-10 gap-sm p-md" data-testid="fifty-heads">
     {Array.from({ length: 50 }, (_, index) => (
@@ -75,7 +75,7 @@ export const FiftyHeads = () => (
         key={index}
         activity={liveActivityByIndex.get(index) ?? "idle"}
         name={`Agent ${String(index)}`}
-        seed={`agent-fifty-${String(index)}`}
+        avatar={seededAvatar(`agent-fifty-${String(index)}`)}
         size={32}
       />
     ))}
@@ -108,9 +108,8 @@ const styledAvatar: Avatar = {
 };
 
 /**
- * A "manga" idle head, shown twice: the still-frame cache must never drop
- * the render style, since it is a live CSS filter over the canvas, not part
- * of the captured pixels.
+ * A "manga" idle head, shown twice: the live canvas must never drop
+ * the render style, since it is a live CSS filter over the canvas.
  */
 export const StyledHead = () => (
   <div className="flex items-center gap-lg p-md" data-testid="styled-head">
@@ -118,23 +117,13 @@ export const StyledHead = () => (
       data-testid="styled-first"
       style={{ height: 64, width: 64, position: "relative" }}
     >
-      <AgentHead
-        avatar={styledAvatar}
-        name="Styled"
-        seed="styled-a"
-        size={64}
-      />
+      <AgentHead avatar={styledAvatar} name="Styled" size={64} />
     </div>
     <div
       data-testid="styled-second"
       style={{ height: 64, width: 64, position: "relative" }}
     >
-      <AgentHead
-        avatar={styledAvatar}
-        name="Styled"
-        seed="styled-b"
-        size={64}
-      />
+      <AgentHead avatar={styledAvatar} name="Styled" size={64} />
     </div>
     <span>manga, idle, twice: both must keep the filter</span>
   </div>
@@ -164,34 +153,19 @@ export const Descriptors = () => (
             data-testid={`member-${avatar.character}`}
             style={{ height: 64, width: 64, position: "relative" }}
           >
-            <AgentHead
-              avatar={avatar}
-              name={avatar.character}
-              seed="member"
-              size={64}
-            />
+            <AgentHead avatar={avatar} name={avatar.character} size={64} />
           </div>
           <div
             data-testid={`shift-${avatar.character}`}
             style={{ height: 64, width: 64, position: "relative" }}
           >
-            <AgentHead
-              avatar={shifted}
-              name={avatar.character}
-              seed="shift"
-              size={64}
-            />
+            <AgentHead avatar={shifted} name={avatar.character} size={64} />
           </div>
           <div
             data-testid={`keep-${avatar.character}`}
             style={{ height: 64, width: 64, position: "relative" }}
           >
-            <AgentHead
-              avatar={kept}
-              name={avatar.character}
-              seed="keep"
-              size={64}
-            />
+            <AgentHead avatar={kept} name={avatar.character} size={64} />
           </div>
           <span>
             {avatar.character}: member, colour swap on, colour swap off

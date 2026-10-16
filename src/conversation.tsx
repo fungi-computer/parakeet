@@ -207,10 +207,14 @@ export type ComposerController = Readonly<{
    * Run a host command, such as Whistle slash dispatch, for the current draft.
    * Parakeet clears the draft only when the command handled it without
    * declining (a refused replacement keeps the text) and the draft was
-   * not edited while the command ran.
+   * not edited while the command ran. The callback can consume that exact
+   * draft on dispatch when the command definition requests it.
    */
   submitCommand: (
-    run: (draft: string) => Promise<WhistleExecutionOutcome | undefined>,
+    run: (
+      draft: string,
+      consumeDraft: () => void,
+    ) => Promise<WhistleExecutionOutcome | undefined>,
   ) => Promise<WhistleExecutionOutcome | undefined>;
   /** Replace the local input. */
   setDraft: (value: string) => void;
@@ -774,13 +778,18 @@ function createConversationAtoms(
     async (
       get,
       set,
-      run: (draft: string) => Promise<WhistleExecutionOutcome | undefined>,
+      run: (
+        draft: string,
+        consumeDraft: () => void,
+      ) => Promise<WhistleExecutionOutcome | undefined>,
     ): Promise<WhistleExecutionOutcome | undefined> => {
       const submitted = {
         draft: get(draftAtom),
         revision: get(draftRevisionAtom),
       };
-      const outcome = await run(submitted.draft);
+      const outcome = await run(submitted.draft, () => {
+        set(clearSubmittedDraftAtom, submitted);
+      });
       if (outcome?.status === "handled" && !isCancelledOutcome(outcome))
         set(clearSubmittedDraftAtom, submitted);
       return outcome;

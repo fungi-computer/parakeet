@@ -43,7 +43,7 @@ export const toolKindSigils = {
   /** Artwork for file reads. */
   read: "read",
   /** Artwork for search results. */
-  search: "list",
+  search: "search",
 } as const satisfies Record<ToolKind, SigilName>;
 
 /** One changed or context line of a diff hunk. */

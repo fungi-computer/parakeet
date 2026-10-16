@@ -157,6 +157,10 @@ it("publishes model and thinking constraints without choosing a client widget", 
       description: "Choose thinking effort",
     },
   ]);
+  expect(
+    commands.snapshot().slash.find((row) => row.alias === "thinking")
+      ?.consumesDraft,
+  ).toBe(true);
   const action = commands.snapshot().agent[0]?.action;
   expect(action).not.toHaveProperty("presentation");
   expect(action?.inputSchema).toMatchObject({

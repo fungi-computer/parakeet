@@ -40,14 +40,17 @@ export function providerChoices(
         method.kind === "api_key" ? "API key" : "Subscription",
       );
       const credential = signedIn.get(provider.id);
+      // Fungi's sign-in is the Fungi account; its Team pays, not a subscription.
       const description =
-        methods.length > 0
-          ? methods.join(" or ")
-          : credential?.type === "oauth"
-            ? "Subscription"
-            : credential?.type === "api_key"
-              ? "API key"
-              : undefined;
+        provider.id === "fungi"
+          ? "Fungi account"
+          : methods.length > 0
+            ? methods.join(" or ")
+            : credential?.type === "oauth"
+              ? "Subscription"
+              : credential?.type === "api_key"
+                ? "API key"
+                : undefined;
       const choice: ChoiceOptions[number] = {
         value: provider.id,
         label: provider.name,

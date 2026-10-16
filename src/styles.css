@@ -5,7 +5,11 @@
  */
 @import "@fungi.computer/caps/tailwind.css";
 
+/* In the workspace Tailwind scans the component source; published, this
+ * entry ships without it, and the compiled components in dist carry the same
+ * class names. */
 @source "./";
+@source "../dist/**/*.js";
 
 @plugin "@tailwindcss/typography";
 

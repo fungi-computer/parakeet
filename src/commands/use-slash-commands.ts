@@ -235,7 +235,7 @@ export function useSlashCommands(
       store.report(undefined);
       setDismissed(submitted);
       void current
-        .submitCommand((captured) =>
+        .submitCommand((captured, consumeDraft) =>
           runSlashDraft(
             captured,
             commands,
@@ -243,6 +243,7 @@ export function useSlashCommands(
               current.send(delivery);
             },
             origin,
+            consumeDraft,
           ),
         )
         .then((outcome) => {

@@ -323,7 +323,7 @@ export function sessionModelCommandDefinitions(
       projections: {
         palette: { order: 1 },
         help: {},
-        slash: { aliases: ["thinking"] },
+        slash: { aliases: ["thinking"], consumesDraft: true },
       },
       availability: options.availability ?? (() => ({ status: "available" })),
       handler: async (input: WhistleExecutionInput) => {

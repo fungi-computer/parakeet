@@ -313,7 +313,10 @@ describe("conversation-first completion", () => {
       ],
     });
     const registry = slashRegistry(runtime.snapshot());
-    expect(rowLabels(completeSlash(registry, "/"))).toEqual(["/goal"]);
+    expect(rowLabels(completeSlash(registry, "/"))).toEqual([
+      "/model",
+      "/goal",
+    ]);
     expect(rowLabels(completeSlash(registry, "/r"))).toEqual([]);
     expect(completeSlash(registry, "/retry ")).toEqual({ kind: "none" });
     expect(rowLabels(completeSlash(registry, "/ess"))).toEqual([]);
@@ -387,4 +390,78 @@ it("opens local inspection only after a bare human command succeeds, never after
   withdraw = true;
   await runSlashDraft("/inspect", runtime, () => undefined, "slash");
   expect(inspected).toHaveLength(1);
+});
+
+it("bare slash includes model, login and help alongside conversation commands", () => {
+  const runtime = createWhistle();
+  runtime.contribute({
+    sourceId: "common",
+    namespace: "common",
+    commands: ["model", "login", "help", "keys"].map((id) => ({
+      id,
+      title: id,
+      category: "Advanced",
+      projections: { slash: { aliases: [id] } },
+      handler: () => undefined,
+    })),
+  });
+  expect(
+    rowLabels(completeSlash(slashRegistry(runtime.snapshot()), "/")),
+  ).toEqual(["/help", "/login", "/model"]);
+});
+
+it("consumes the draft on valid available dispatch, independently of alias and handler outcome", async () => {
+  const runtime = createWhistle();
+  let consumed = 0;
+  runtime.contribute({
+    sourceId: "draft",
+    namespace: "draft",
+    commands: [
+      {
+        id: "inspect",
+        title: "Inspect",
+        category: "Settings",
+        projections: { slash: { aliases: ["look"], consumesDraft: true } },
+        handler: () => {
+          expect(consumed).toBe(1);
+          throw new Error("Nothing to inspect.");
+        },
+      },
+      {
+        id: "unavailable",
+        title: "Unavailable",
+        category: "Settings",
+        projections: {
+          slash: { aliases: ["unavailable"], consumesDraft: true },
+        },
+        availability: () => ({ status: "unavailable", reason: "Not ready" }),
+        handler: () => undefined,
+      },
+      {
+        id: "ordinary",
+        title: "Ordinary",
+        category: "Settings",
+        projections: { slash: { aliases: ["ordinary"] } },
+        handler: () => {
+          throw new Error("Keep the draft.");
+        },
+      },
+    ],
+  });
+  const consume = () => {
+    consumed += 1;
+  };
+  for (const draft of [
+    "/unavailable",
+    "/ordinary",
+    "/look extra",
+    "/missing",
+  ]) {
+    await runSlashDraft(draft, runtime, () => undefined, "slash", consume);
+    expect(consumed).toBe(0);
+  }
+  expect(
+    await runSlashDraft("/look ", runtime, () => undefined, "slash", consume),
+  ).toMatchObject({ status: "failed" });
+  expect(consumed).toBe(1);
 });

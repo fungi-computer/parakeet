@@ -335,6 +335,6 @@ it("exports the shared tool-kind Sigil vocabulary for native renderers", async (
     edit: "write",
     other: "working",
     read: "read",
-    search: "list",
+    search: "search",
   });
 });
