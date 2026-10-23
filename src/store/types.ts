@@ -1,6 +1,7 @@
 import type { ParakeetAuthor } from "../core/author-labels.js";
 import type {
   PromptDelivery,
+  PromptCommand,
   SessionCompactionTrigger,
   SessionMessage,
 } from "@fungi.computer/shiitake/client";
@@ -55,6 +56,8 @@ export type LocalPromptAdmission = Readonly<{
   commandId?: string;
   /** Prompt content sent to the Session. */
   content: string;
+  /** Full image payload retained with an optimistic or recalled prompt. */
+  images?: PromptCommand["images"];
   /** Existing Session delivery intent. */
   delivery: PromptDelivery;
   /** Current local admission result. */
@@ -102,6 +105,8 @@ export type ToolItem = Readonly<{
   name: string;
   /** Exact joined Pi tool result, when one has completed. */
   result?: ToolResultMessage;
+  /** Application display payload, separate from the model result. */
+  data?: SessionMessage["data"];
   /** Timestamp of the assistant message that issued the call. */
   startedAt?: number;
   /** Owner-confirmed activity or result; unknown when neither is available. */
@@ -166,9 +171,11 @@ export type CompactionNoticeItem = Readonly<{
   at: number;
   /** What started it: the user, the context threshold, or an overflow. */
   trigger: SessionCompactionTrigger;
-  /** What the compaction did: nothing to summarize, or a failure. */
-  result: "nothing_to_compact" | "failed";
-  /** A failure's bounded reason; null for "nothing to compact". */
+  /** What the compaction did: nothing to summarize, a failure, or a summary
+   * dropped because its head no longer fit the context (stale) or because
+   * placing it would have left the context over the limit (insufficient). */
+  result: "nothing_to_compact" | "failed" | "stale" | "insufficient";
+  /** A failure's bounded reason; null otherwise. */
   diagnostic: string | null;
 }>;
 

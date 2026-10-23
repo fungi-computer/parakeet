@@ -11,6 +11,7 @@ import {
 function noticing(runtime: WhistleRuntime, notices: string[]) {
   return runtime.present(() => ({
     interaction: {
+      run: (operation) => operation(),
       signal: new AbortController().signal,
       prompt: () => Promise.reject(new Error("No prompts in this test")),
       notify: (notice) => {

@@ -1,6 +1,17 @@
 import { MarkdownRenderer } from "./MarkdownRenderer.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 
+/** User-message admission state, shared by full and compact transcript rows. */
+export function PendingMessageStatus({
+  pending,
+}: Readonly<{ pending: boolean | undefined }>) {
+  return pending ? (
+    <span className="sr-only" role="status">
+      Sending
+    </span>
+  ) : null;
+}
+
 export function ChatMessage({
   children,
   isError,
@@ -30,6 +41,7 @@ export function ChatMessage({
           borderLeft: "3px solid var(--color-primary)",
         }}
       >
+        <PendingMessageStatus pending={pending} />
         <div className="message-body text-base-content">{content}</div>
       </div>
     );

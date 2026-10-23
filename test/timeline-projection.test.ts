@@ -38,6 +38,60 @@ const usage = {
   },
 };
 
+it("replaces live tool sets, ignores older revisions, and removes tails on a durable result", () => {
+  const baseline = sessionSnapshot({
+    messages: messages.slice(0, 2),
+    activity: runningFacts(),
+  });
+  const slot = {
+    toolCallId: "call-1",
+    revision: 2,
+    tail: "step 2",
+    droppedBytes: 0,
+    totalBytes: 6,
+  };
+  const live = applySessionFrame(baseline, {
+    kind: "tool_output",
+    activity: baseline.activity,
+    toolOutput: [slot],
+  });
+  expect(live.toolOutput).toEqual([slot]);
+  expect(live.cursor).toBe(baseline.cursor);
+  const stale = applySessionFrame(live, {
+    kind: "tool_output",
+    activity: baseline.activity,
+    toolOutput: [{ ...slot, revision: 1, tail: "old" }],
+  });
+  expect(stale.toolOutput).toEqual([slot]);
+  expect(
+    applySessionFrame(live, {
+      kind: "tool_output",
+      activity: baseline.activity,
+      toolOutput: [],
+    }).toolOutput,
+  ).toEqual([]);
+  const settled = applySessionFrame(
+    live,
+    sessionFrame({
+      kind: "update",
+      delivery: "live",
+      cursor: "result",
+      terminals: [],
+      pending: baseline.pending,
+      messages: messages.slice(2),
+      activity: runningFacts(),
+    }),
+  );
+  expect(settled.toolOutput).toEqual([]);
+  expect(
+    applySessionFrame(settled, {
+      kind: "tool_output",
+      activity: baseline.activity,
+      toolOutput: [slot],
+    }).toolOutput,
+  ).toEqual([]);
+});
+
 const messages: readonly SessionMessage[] = [
   {
     id: "user-1",
@@ -180,6 +234,7 @@ it("keeps owner queue order ahead of later local admissions within one delivery 
     null,
     [
       {
+        requestId: "request-" + "earlier-owner-command",
         commandId: "earlier-owner-command",
         delivery: "followUp",
         text: "Earlier accepted prompt",
@@ -209,6 +264,7 @@ it("keeps progress replaceable and exact messages structurally stable", () => {
     hasMore: false,
     messages: messages.slice(0, 1),
     terminals: [],
+    toolOutput: [],
     progress: null,
     activity: queuedFacts("queued-command"),
     extensions: {},
@@ -285,6 +341,7 @@ it("updates a retry readout when only the owner attempt changes", () => {
     hasMore: false,
     messages: [],
     terminals: [],
+    toolOutput: [],
     progress: null,
     activity: runningFacts({
       retry: {
@@ -333,6 +390,7 @@ it("carries a live compaction fact into the projection and clears it again", () 
     hasMore: false,
     messages: [],
     terminals: [],
+    toolOutput: [],
     progress: null,
     activity: runningFacts(),
     extensions: {},
@@ -498,11 +556,13 @@ it("replaces same-cursor admission views and renders waiting prompts after live 
     total: 2,
     prompts: [
       {
+        requestId: "request-" + "command-one",
         commandId: "command-one",
         delivery: "followUp",
         text: "First accepted task",
       },
       {
+        requestId: "request-" + "command-two",
         commandId: "command-two",
         delivery: "followUp",
         text: "Second accepted task",
@@ -562,10 +622,30 @@ it("orders pending interrupts before cues without changing order within either g
     buildDurableTimeline([]),
     null,
     [
-      { commandId: "cue-one", delivery: "followUp", text: "Cue one" },
-      { commandId: "interrupt-one", delivery: "steer", text: "Interrupt one" },
-      { commandId: "cue-two", delivery: "followUp", text: "Cue two" },
-      { commandId: "interrupt-two", delivery: "steer", text: "Interrupt two" },
+      {
+        requestId: "request-" + "cue-one",
+        commandId: "cue-one",
+        delivery: "followUp",
+        text: "Cue one",
+      },
+      {
+        requestId: "request-" + "interrupt-one",
+        commandId: "interrupt-one",
+        delivery: "steer",
+        text: "Interrupt one",
+      },
+      {
+        requestId: "request-" + "cue-two",
+        commandId: "cue-two",
+        delivery: "followUp",
+        text: "Cue two",
+      },
+      {
+        requestId: "request-" + "interrupt-two",
+        commandId: "interrupt-two",
+        delivery: "steer",
+        text: "Interrupt two",
+      },
     ],
     [
       {
@@ -669,6 +749,24 @@ it("places one compaction divider immediately before the message it precedes", (
     tokensBefore: 1_000,
     tokensAfter: 400,
   });
+});
+
+it("projects a compaction as a divider only, never as a summary message", () => {
+  const projection = buildDurableTimeline(messages, [
+    compactionMarker("compaction-1", 2, 1_700),
+  ]);
+  const dividers = projection.items.filter(
+    ({ kind }) => kind === "compaction_divider",
+  );
+  expect(dividers).toHaveLength(1);
+  expect(Object.keys(dividers[0] ?? {}).sort()).toEqual([
+    "at",
+    "id",
+    "kind",
+    "tokensAfter",
+    "tokensBefore",
+  ]);
+  expect(JSON.stringify(projection.items)).not.toContain("<summary>");
 });
 
 it("carries a compaction notice at its own entry's place, like a message", () => {
@@ -862,13 +960,22 @@ it("projects the author the host metadata names without changing the user messag
   expect(timeline.items[0]).toMatchObject({ kind: "user_message", author });
 });
 
-it("anchors committed client cells to the command's last loaded visible durable row", () => {
+it("anchors committed client cells to their fixed Session position despite later output from the same command", () => {
   const commanded = messages.map((message): SessionMessage => ({
     ...message,
     commandId: "command-1",
   }));
-  const grouped = buildDurableTimeline(commanded);
-  expect(grouped.commandAnchors.get("command-1")).toBe("tools:call-1");
+  const grouped = buildDurableTimeline(
+    commanded,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [],
+    [0, 3],
+  );
+  expect(grouped.positionAnchors.get(0)).toBeNull();
+  expect(grouped.positionAnchors.get(3)).toBe("tools:call-1");
   const final: SessionMessage = {
     id: "final-answer",
     commandId: "command-1",
@@ -885,20 +992,66 @@ it("anchors committed client cells to the command's last loaded visible durable 
     },
   };
   expect(
-    buildDurableTimeline([...commanded, final]).commandAnchors.get("command-1"),
-  ).toBe("final-answer");
-  // A neighbouring row without a command never steals the anchor by proximity.
-  expect(
-    buildDurableTimeline([
-      ...commanded,
-      { ...final, commandId: null },
-    ]).commandAnchors.get("command-1"),
+    buildDurableTimeline(
+      [...commanded, final],
+      [],
+      undefined,
+      undefined,
+      undefined,
+      [],
+      [3],
+    ).positionAnchors.get(3),
   ).toBe("tools:call-1");
-  expect(
-    buildDurableTimeline([{ ...final, commandId: null }]).commandAnchors.has(
-      "command-1",
-    ),
-  ).toBe(false);
+});
+
+it("splits tool groups at a committed Session position instead of moving an event below later calls", () => {
+  const call = (id: string, sequence: number): SessionMessage => ({
+    id: `assistant-${id}`,
+    commandId: "same-running-work",
+    sequence,
+    value: {
+      role: "assistant",
+      api: "pi",
+      provider: "camel",
+      model: "auto",
+      content: [
+        { type: "toolCall", id, name: "execute", arguments: { code: "1" } },
+      ],
+      stopReason: "toolUse",
+      timestamp: sequence,
+      usage,
+    },
+  });
+  const rows = [call("before-clear", 2), call("after-clear", 4)];
+  expect(buildDurableTimeline(rows).items).toHaveLength(1);
+  const placed = buildDurableTimeline(
+    rows,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [],
+    [3],
+  );
+  expect(placed.items.map(({ id }) => id)).toEqual([
+    "tools:before-clear",
+    "tools:after-clear",
+  ]);
+  expect(placed.positionAnchors.get(3)).toBe("tools:before-clear");
+});
+
+it("resolves a position after a footer-only prompt against the same row visibility policy", () => {
+  const placed = buildDurableTimeline(
+    messages.slice(0, 1),
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [],
+    [1],
+    () => false,
+  );
+  expect(placed.positionAnchors.get(1)).toBeNull();
 });
 
 it("updates the exact pending total when the bounded preview page is unchanged", () => {
@@ -971,6 +1124,7 @@ it("uses the host author for a waiting visitor message", () => {
     null,
     [
       {
+        requestId: "request-" + "waiting",
         commandId: "waiting",
         text: "Hello",
         delivery: "followUp",
@@ -989,4 +1143,78 @@ it("uses the host author for a waiting visitor message", () => {
     text: "Hello",
     author,
   });
+});
+
+it("retains display data and images when a durable result replaces a live tail", () => {
+  const result = messages.find(({ value }) => value.role === "toolResult");
+  if (result?.value.role !== "toolResult")
+    throw new Error("Missing tool result fixture");
+  const data = {
+    error: { kind: "permission_denied", message: "Write access was revoked." },
+    images: [{ bytes: 3, mimeType: "image/png", path: "diagram.png" }],
+  };
+  const content: typeof result.value.content = [
+    { type: "text", text: "The capability was refused." },
+    { type: "image", data: "YWJj", mimeType: "image/png" },
+  ];
+  const finalMessage: SessionMessage = {
+    ...result,
+    data,
+    meta: { error: "host attribution" },
+    value: { ...result.value, content, isError: true },
+  };
+  const baseline = sessionSnapshot({
+    messages: messages.filter(({ value }) => value.role !== "toolResult"),
+    activity: runningFacts(),
+  });
+  const live = applySessionFrame(baseline, {
+    kind: "tool_output",
+    activity: baseline.activity,
+    toolOutput: [
+      {
+        toolCallId: result.value.toolCallId,
+        revision: 1,
+        tail: "unfinished tail",
+        droppedBytes: 0,
+        totalBytes: 15,
+      },
+    ],
+  });
+  const final = applySessionFrame(
+    live,
+    sessionFrame({
+      kind: "update",
+      delivery: "live",
+      cursor: "final-data",
+      messages: [finalMessage],
+      terminals: [],
+      pending: baseline.pending,
+      activity: baseline.activity,
+    }),
+  );
+  expect(final.toolOutput).toEqual([]);
+  const projected = buildDurableTimeline(final.messages);
+  const group = projected.items.find((item) => item.kind === "tool_group");
+  if (group?.kind !== "tool_group") throw new Error("Missing tool group");
+  expect(group.tools[0]).toMatchObject({
+    data,
+    status: "error",
+    result: { content, isError: true },
+  });
+  expect(group.tools[0]?.result).not.toHaveProperty("details");
+  expect(group.tools[0]?.result).not.toHaveProperty("data");
+  expect(group.tools[0]?.data).not.toHaveProperty("meta");
+  const replay = applySessionFrame(
+    final,
+    sessionFrame({
+      kind: "update",
+      delivery: "replay",
+      cursor: "final-data",
+      messages: [finalMessage],
+      terminals: [],
+      pending: baseline.pending,
+      activity: baseline.activity,
+    }),
+  );
+  expect(buildDurableTimeline(replay.messages).items).toEqual(projected.items);
 });

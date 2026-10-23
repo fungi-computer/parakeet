@@ -7,6 +7,7 @@ export {
   disclosureOpen,
   formatToolDuration,
   formatModelIdentity,
+  formatModelWithLevel,
   formatContextUsage,
   formatTokenCount,
   initialToolDisclosure,
@@ -23,8 +24,13 @@ export {
   type InteractionPanelProps,
 } from "./components/InteractionPanel.js";
 export type {
+  QueuedRecallState,
+  QueuedRecallOutcome,
   ParakeetAssistantMessageItem,
   ComposerController,
+  ParakeetDraftCheckpoint,
+  ParakeetDraftIdentity,
+  ParakeetDraftStorage,
   ParakeetModel,
   ParakeetSession,
   ParakeetStatus,

@@ -12,14 +12,12 @@ import type {
 import type { WhistlePromptOption } from "@fungi.computer/whistle";
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 
-/** The interaction to draw and the page's close and retry callbacks. */
+/** The interaction to draw and the page's close callback. */
 export type InteractionPanelProps = Readonly<{
   /** The renderer-neutral interaction store. */
   host: WhistleInteractionHost;
   /** Close a settled interaction. */
   onClose?: () => void;
-  /** Run the same command again after a failure. */
-  onRetry?: () => void;
 }>;
 
 function PromptView({
@@ -97,11 +95,7 @@ function PromptView({
  * Browser renderer for one Whistle interaction. It draws the same host
  * snapshot the terminal draws; the command, not the page, defines the steps.
  */
-export function InteractionPanel({
-  host,
-  onClose,
-  onRetry,
-}: InteractionPanelProps) {
+export function InteractionPanel({ host, onClose }: InteractionPanelProps) {
   const state = useSyncExternalStore(host.subscribe, host.snapshot);
   const active = state.status === "working" || state.status === "prompting";
   return (
@@ -189,8 +183,8 @@ export function InteractionPanel({
             >
               Close
             </Button>
-            {onRetry === undefined ? null : (
-              <Button onClick={onRetry}>Try again</Button>
+            {!state.retryable ? null : (
+              <Button onClick={host.retry}>Try again</Button>
             )}
           </>
         ) : null}

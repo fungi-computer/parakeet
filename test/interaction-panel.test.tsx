@@ -71,6 +71,36 @@ function option(container: HTMLElement, label: string) {
   return found;
 }
 
+it.each(["Enter"])(
+  "answers a choice with %s without another confirm",
+  async (key) => {
+    const host = createWhistleInteractionHost({ title: "Answer a question" });
+    const session = host.begin();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.add(root);
+    const answer = session.interaction.prompt({
+      type: "choice",
+      message: "Choose a store",
+      options: [
+        { value: "sqlite", label: "SQLite" },
+        { value: "postgres", label: "PostgreSQL" },
+      ],
+    });
+    act(() => {
+      root.render(<InteractionPanel host={host} />);
+    });
+    const list = container.querySelector('[role="listbox"]');
+    if (!(list instanceof HTMLElement)) throw new Error("Missing choices");
+    act(() => {
+      list.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+    expect(host.snapshot().prompt).toBeUndefined();
+    await expect(answer).resolves.toBe("sqlite");
+  },
+);
+
 it("renders the login definition's choices and device handoff", async () => {
   const { whistle, fixture, container } = mountLogin();
   const run = whistle.execute("account:login", { origin: "browser" });
@@ -101,7 +131,7 @@ it("renders the login definition's choices and device handoff", async () => {
   fixture.approve();
   await expect(run).resolves.toEqual({ status: "handled" });
   await settle();
-  expect(container.textContent).toContain("Signed in to OpenAI.");
+  expect(container.textContent).not.toContain("Signed in to OpenAI.");
 });
 
 it("collects a secret without echoing it", async () => {

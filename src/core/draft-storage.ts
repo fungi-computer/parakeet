@@ -1,0 +1,73 @@
+import { z } from "zod";
+
+const images = z
+  .array(
+    z.object({
+      type: z.literal("image"),
+      data: z.string(),
+      mimeType: z.string(),
+    }),
+  )
+  .readonly();
+const delivery = z.enum(["steer", "followUp"]);
+const recalledPrompt = z.object({
+  commandId: z.string(),
+  requestId: z.string(),
+  text: z.string(),
+  images: images.optional(),
+  delivery,
+});
+/** Durable owner identity, independent of the current service endpoint. */
+export type ParakeetDraftIdentity = Readonly<{
+  /** Agent that owns the Session. */
+  agentId: string;
+  /** Durable Session identity, not its transport address. */
+  sessionId: string;
+}>;
+
+/** Hosts must commit a replacement before returning, or throw without changing it. */
+export type ParakeetDraftStorage = Readonly<{
+  /** Read the complete journal, or null when no draft has been saved. */
+  getItem: (key: string) => string | null;
+  /** Atomically replace the journal; throw if it cannot be committed. */
+  setItem: (key: string, value: string) => void;
+}>;
+
+const pendingDraft = z.object({
+  requestId: z.string().min(1),
+  content: z.string(),
+  submittedDraft: z.string(),
+  delivery,
+  images: images.optional(),
+  restoreDraft: z.boolean(),
+});
+const journal = z.object({
+  draft: z.string(),
+  images: images.optional(),
+  delivery: delivery.optional(),
+  recall: recalledPrompt.optional(),
+  pending: z.array(pendingDraft).max(32),
+});
+type DraftJournal = z.infer<typeof journal>;
+
+/** One owner-scoped journal commits pending text and composer text together. */
+export function draftJournal(
+  scope: string,
+  storage: ParakeetDraftStorage | undefined,
+) {
+  const key = `fungi.parakeet.drafts.v1:${scope}`;
+  return {
+    read(): DraftJournal {
+      if (storage === undefined) return { draft: "", pending: [] };
+      const saved = storage.getItem(key);
+      return saved === null
+        ? { draft: "", pending: [] }
+        : journal.parse(JSON.parse(saved));
+    },
+    write(value: DraftJournal): void {
+      if (storage === undefined)
+        throw new Error("Durable draft storage is unavailable");
+      storage.setItem(key, JSON.stringify(value));
+    },
+  };
+}

@@ -35,6 +35,8 @@ describe("the actual Parakeet visitor conversation", () => {
     let closed = 0;
     const snapshot = sessionSnapshot();
     const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
       address: "https://embed.example/visitor-session",
       read: () => Promise.resolve(snapshot),
       command: commandHandler((input) => {

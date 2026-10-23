@@ -106,6 +106,28 @@ it("lists search hits as location and line", () => {
   });
 });
 
+it.each(["list", "glob", "grep"])("renders direct Files search %s", (name) => {
+  const args: ToolItem["args"] =
+    name === "list"
+      ? { path: "src" }
+      : { path: "src", pattern: name === "glob" ? "**/*.ts" : "needle" };
+  const view = toolCallView(
+    call(name, args, name === "grep" ? "src/a.ts:2: needle" : "src/a.ts"),
+  );
+  expect(view.kind).toBe("search");
+  expect(view.sections).toEqual([
+    {
+      kind: "matches",
+      matches: [
+        name === "grep"
+          ? { location: "src/a.ts:2", text: "needle" }
+          : { location: "", text: "src/a.ts" },
+      ],
+      preview: toolPreviewLineLimit,
+    },
+  ]);
+});
+
 it("renders terminal hyperlinks and titles as plain command output", () => {
   const view = toolCallView(
     call(

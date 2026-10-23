@@ -44,28 +44,41 @@ function mergeCells(cells: readonly PlacedClientCell[]): PlacedClientCell[] {
   return merged;
 }
 
-/** Page visibility follows real durable command anchors, never event time. */
+/** Fixed positions and command anchors follow loaded history, never event time. */
 export function placeClientTimeline(
   entries: readonly ClientContribution[],
   anchors: ReadonlyMap<string, string>,
+  positions: ReadonlyMap<number, string | null> = new Map(),
 ) {
   const anchored = new Map<string, PlacedClientCell[]>();
+  const before: PlacedClientCell[] = [];
   const unanchored: PlacedClientCell[] = [];
   for (const { entryId, value } of entries) {
     for (const cell of value.timeline.cells) {
       const placed = { entryId, cell };
-      if (cell.commandId === null) {
+      if (cell.afterSequence === undefined && cell.commandId === null) {
         unanchored.push(placed);
         continue;
       }
-      const itemId = anchors.get(cell.commandId);
+      const itemId =
+        cell.afterSequence !== undefined
+          ? positions.get(cell.afterSequence)
+          : cell.commandId === null
+            ? undefined
+            : anchors.get(cell.commandId);
       if (itemId === undefined) continue;
+      if (itemId === null) {
+        before.push(placed);
+        continue;
+      }
       const existing = anchored.get(itemId);
       if (existing === undefined) anchored.set(itemId, [placed]);
       else existing.push(placed);
     }
   }
   return {
+    /** Events before the first visible row of the root history page. */
+    before: mergeCells(before),
     /** Loaded durable row IDs mapped to their following committed events. */
     after: new Map([...anchored].map(([id, cells]) => [id, mergeCells(cells)])),
     /** Null-anchor events for the separate Extension changes section. */

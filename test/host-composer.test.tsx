@@ -77,6 +77,8 @@ function hostSession(
   commands: SessionCommand[],
 ): ParakeetSession {
   return {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: `test://parakeet/host/${String(roots.size)}`,
     command: commandHandler(
       (input) => {

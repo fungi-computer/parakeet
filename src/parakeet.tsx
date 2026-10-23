@@ -29,6 +29,7 @@ import {
   type ParakeetAuthorOf,
 } from "./core/author-labels.js";
 import type { ToolItem } from "./store/types.js";
+import { useTimelineItemKey } from "./core/use-timeline-item-key.js";
 import type { ParakeetSession } from "./session.js";
 import {
   ChatComposer,
@@ -144,8 +145,17 @@ export function ParakeetView({
   const contributions = useClientContributions();
   const timelineController = useTimeline();
   const placed = useMemo(
-    () => placeClientTimeline(contributions, timelineController.commandAnchors),
-    [contributions, timelineController.commandAnchors],
+    () =>
+      placeClientTimeline(
+        contributions,
+        timelineController.commandAnchors,
+        timelineController.positionAnchors,
+      ),
+    [
+      contributions,
+      timelineController.commandAnchors,
+      timelineController.positionAnchors,
+    ],
   );
   return (
     <div
@@ -269,10 +279,6 @@ function ConversationInteraction({
             key={open.key}
             host={open.host}
             onClose={slash.store.close}
-            onRetry={() => {
-              slash.store.close();
-              open.retry();
-            }}
           />
         )}
       </DialogContent>
@@ -303,6 +309,12 @@ function ConversationTimeline({
 }) {
   const dismissFailed = useDismissFailedPrompt();
   const timelineController = useTimeline();
+  const cancelQueued = useCallback(
+    (commandId: string) => {
+      void timelineController.cancelQueued(commandId);
+    },
+    [timelineController.cancelQueued],
+  );
   const authorNames = useMemo(
     () =>
       authorDisplayNames(
@@ -318,7 +330,17 @@ function ConversationTimeline({
   const placed = placeClientTimeline(
     contributions,
     timelineController.commandAnchors,
+    timelineController.positionAnchors,
   );
+  const before = placed.before.map(({ entryId, cell }) => (
+    <ClientRows
+      key={`${entryId}:${cell.id}`}
+      entryId={entryId}
+      rows={cell.rows}
+      actions={clientActions}
+      onOpen={onOpen}
+    />
+  ));
   // View-only: kept above the virtualizer so off-screen groups remember it.
   const [toolDisclosure, setToolDisclosure] = useState(initialToolDisclosure);
   const toggleTool = useCallback((id: string, defaultOpen: boolean) => {
@@ -336,16 +358,9 @@ function ConversationTimeline({
         : timelineController.tail[index - timelineController.settled.length],
     [timelineController.settled, timelineController.tail],
   );
-  const getItemKey = useCallback(
-    (index: number) => {
-      const item = itemAt(index);
-      if (item === undefined) return index;
-      // One submitted prompt keeps one row from submit to durable: no remount.
-      return item.kind === "user_message" && item.requestId !== undefined
-        ? item.requestId
-        : item.id;
-    },
-    [itemAt],
+  const getItemKey = useTimelineItemKey(
+    timelineController.settled,
+    timelineController.tail,
   );
   const timeline = useVirtualizer({
     anchorTo: "end",
@@ -486,6 +501,7 @@ function ConversationTimeline({
                     width: "100%",
                   }}
                 >
+                  {virtualItem.index === 0 ? before : null}
                   <TimelineItem
                     item={
                       "author" in item &&
@@ -503,6 +519,8 @@ function ConversationTimeline({
                         : item
                     }
                     onDismissFailed={dismissFailed}
+                    onCancelQueued={cancelQueued}
+                    cancellingQueued={timelineController.cancellingQueued}
                     onToggleTool={toggleTool}
                     renderToolActions={renderToolActions}
                     renderAssistantAttachment={renderAssistantAttachment}
@@ -522,7 +540,9 @@ function ConversationTimeline({
               );
             })}
           </div>
-        ) : (
+        ) : before.length > 0 ? (
+          before
+        ) : hasMoreHistory ? null : (
           (empty ?? (
             <div className="flex h-full items-center justify-center text-center">
               <div>
@@ -612,6 +632,7 @@ function ConversationComposer({
     void composer.cancel();
   }, [composer.cancel]);
   const composerProps: ChatComposerProps = {
+    queuedRecall: visitor === undefined ? composer : undefined,
     statusChips: contributions
       .flatMap(({ value }) => value.chips)
       .sort((left, right) => left.order - right.order)

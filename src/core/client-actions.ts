@@ -109,6 +109,8 @@ export function createClientActions(
       if (intents.get(intent)?.pending) return;
       publish(intent, { pending: true });
       const notificationOnly: WhistleInteraction = {
+        // Waiting cancellation has no interactive retry surface.
+        run: (operation) => operation(),
         signal: controller.signal,
         prompt: () =>
           Promise.reject(
@@ -118,9 +120,10 @@ export function createClientActions(
             ),
           ),
         notify: (notice) => {
-          if (retired()) return;
-          options.interactions.report({
-            tone: notice.type === "success" ? "success" : "info",
+          // A success only confirms the person's own action: no echo.
+          if (retired() || notice.type === "success") return;
+          options.interactions.toast({
+            variant: "info",
             message:
               notice.type === "handoff"
                 ? (notice.message ?? notice.url)

@@ -91,6 +91,7 @@ export function toolGroup(
  */
 export function groupToolCalls(
   items: readonly ProjectedItem[],
+  breakBefore: ReadonlySet<string> = new Set(),
 ): TimelineItem[] {
   const rows: TimelineItem[] = [];
   let run: ToolItem[] = [];
@@ -103,6 +104,7 @@ export function groupToolCalls(
     nontextRows = [];
   };
   for (const item of items) {
+    if (breakBefore.has(item.id)) flush();
     if (item.kind === "tool") {
       run.push(item);
       continue;

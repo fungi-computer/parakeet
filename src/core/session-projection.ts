@@ -196,6 +196,25 @@ export function applySessionFrame(
       ),
     };
 
+  if (frame.kind === "tool_output") {
+    const completed = new Set(
+      current.messages.flatMap((message) =>
+        message.value.role === "toolResult" ? [message.value.toolCallId] : [],
+      ),
+    );
+    const toolOutput = frame.toolOutput
+      .filter((slot) => !completed.has(slot.toolCallId))
+      .map((slot) => {
+        const previous = current.toolOutput.find(
+          (value) => value.toolCallId === slot.toolCallId,
+        );
+        return previous !== undefined && previous.revision > slot.revision
+          ? previous
+          : slot;
+      });
+    return { ...current, activity: frame.activity, toolOutput };
+  }
+
   if (frame.kind === "progress") {
     const completed = completedMessageIds(current.messages).has(
       frame.progress.messageId,
@@ -226,6 +245,16 @@ export function applySessionFrame(
     ? current.pending
     : frame.pending;
   const messages = mergeMessages(current.messages, frame.messages);
+  const completedTools = new Set(
+    messages.flatMap((message) =>
+      message.value.role === "toolResult" ? [message.value.toolCallId] : [],
+    ),
+  );
+  const toolOutput = current.toolOutput.filter(
+    (slot) =>
+      frame.activity.queue.state !== "idle" &&
+      !completedTools.has(slot.toolCallId),
+  );
   const terminals = mergeTerminals(current.terminals, frame.terminals);
   const currentCompactions = current.compactions ?? [];
   const compactions = mergeCompactions(
@@ -254,6 +283,7 @@ export function applySessionFrame(
     compactions === currentCompactions &&
     compactionNotices === currentCompactionNotices &&
     progress === current.progress &&
+    toolOutput.length === current.toolOutput.length &&
     pending === current.pending &&
     sameExtensionSlots(frame.extensions, current.extensions) &&
     sameAttention(frame.attention, current.attention) &&
@@ -271,6 +301,7 @@ export function applySessionFrame(
     compactions,
     compactionNotices,
     progress,
+    toolOutput,
     activity: sameActivity(current.activity, frame.activity)
       ? current.activity
       : frame.activity,

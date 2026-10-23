@@ -126,17 +126,56 @@ It owns parsing, completion, stable request identities and interaction state.
 The browser and terminal render the same questions, choices and notices.
 `/model` and `/thinking` use that interaction path.
 
+`ParakeetProvider` accepts `onToast` for transient command information. The host
+renders it through its existing toast owner: the terminal's shared toast
+viewport or Grove's `ui.showToast`. `ParakeetInteractions.toast` and
+`subscribeToasts` expose the same renderer-neutral seam. Ordinary first-success
+echoes are silent, including after a dialog completes. Progress, questions and
+handoffs remain in their interaction while active; failures retain their retry
+or attention UI rather than expiring as information.
+
+After Try again, a final information or success notice stays in that
+interaction's existing result row until Done/close, without an extra toast. A
+producer that supplies no completion notice does not gain a fabricated result.
+
 Account commands are provider-neutral. The host's account owner and policy
 decide which login methods are available. The presentation layer does not gain a
 credential store or make an advertised command authorized.
 
+Queued timeline rows offer Cancel through
+`useTimeline().cancelQueued(commandId)`. The row disappears immediately while
+the existing Session owner decides the pending-only cancellation. This never
+stops the running turn or restores text to the composer. TooLate or an
+unconfirmed response produces a warning and restores any row still reported as
+queued; an accepted response stays hidden through stale queued snapshots until
+the owner projection catches up. Only one queued gesture waits for its owner at
+a time, and switching conversations discards its presentation state. Recall
+remains a separate restore-to-composer gesture.
+
 The composer reconciles optimistic prompts with owner facts by request identity.
-Retrying a failed admission preserves its request identity. Retrying failed or
-interrupted durable work submits a new request identity. Failed observation
-shows connection failure; reconnecting does not prove pending work failed or
-resubmit it automatically. Typed command errors remain visible and retryable.
-The host remains responsible for the Session transport, current permissions and
-operator diagnostics.
+Submitting clears the draft immediately and adds a faded pending message.
+Acceptance restores normal emphasis; owner-queued messages remain faded. If
+admission fails, the exact submitted text returns to the composer and the host
+receives an error toast. Any newer draft stays first, followed by a blank line
+and the restored text; acceptance never clears newer typing. An uncertain
+admission retains its request identity while the owner resolves it. An accepted
+resolution confirms the admitted command or recorded entry; only confirmed
+withdrawal restores the draft and permits retry with a new request identity,
+because the old identity is durably fenced. Retrying failed or interrupted
+durable work also submits a new request identity, preserving the failed prompt's
+text and image cargo, including image-only prompts after live-page eviction. It
+does not consume a newer unsent draft. Failed observation shows connection
+failure; reconnecting does not prove pending work failed or resubmit it
+automatically. Typed command errors remain visible and retryable. The host
+remains responsible for the Session transport, current permissions and operator
+diagnostics.
+
+An owner's accepted withdrawal receipt can name a run-free recorded entry:
+`receipt.commandId === message.id` even though `message.commandId === null`.
+That receipt confirms durable recording, not cancellation or model admission. A
+translating host retains the original composer identity in its durable metadata
+and projects it as `messages[].requestId` or `pending.prompts[].requestId`; its
+internal admission key is not that identity.
 
 ## API and examples
 

@@ -4,6 +4,7 @@ import {
   type WhistleInteractionHost,
 } from "@fungi.computer/whistle/interaction";
 import { describe, expect, it, vi } from "vitest";
+import { createParakeetInteractions } from "../src/headless.js";
 import {
   contributeAccountCommands,
   loginRegistry,
@@ -128,10 +129,8 @@ describe("account commands", () => {
       { providerId: "alpha", method: "subscription" },
       expect.anything(),
     );
-    expect(hosts[0]?.snapshot()).toMatchObject({
-      status: "done",
-      message: { type: "success", message: "Signed in to Alpha." },
-    });
+    expect(hosts[0]?.snapshot().status).toBe("done");
+    expect(hosts[0]?.snapshot().message?.type).not.toBe("success");
   });
 
   it("refuses a provider or method the policy withholds", async () => {
@@ -192,6 +191,116 @@ describe("account commands", () => {
       whistle.execute("account:login", { origin: "slash" }),
     ).resolves.toEqual({ status: "handled" });
     expect(account.login).not.toHaveBeenCalled();
+  });
+
+  it("Esc during sign-in shows nothing: no error, no echo of the cancel", async () => {
+    const whistle = createWhistle();
+    const account = owner({
+      login: vi.fn<AccountOwner["login"]>(
+        (_request, interaction) =>
+          new Promise<void>((_resolve, reject) => {
+            interaction.signal.addEventListener(
+              "abort",
+              () => {
+                reject(new Error("Authentication cancelled"));
+              },
+              { once: true },
+            );
+          }),
+      ),
+    });
+    contributeAccountCommands(whistle, account, {
+      sourceId: "test",
+      namespace: "account",
+      host: "local",
+      scope: "user",
+      policy,
+    });
+    const store = createParakeetInteractions();
+    const toasts: unknown[] = [];
+    store.subscribeToasts((toast) => toasts.push(toast));
+    store.attach(whistle.present);
+    const running = whistle.execute("account:login", {
+      origin: "slash",
+      arguments: { providerId: "zeta", method: "api_key" },
+    });
+    await expect.poll(() => store.snapshot().open).toBeDefined();
+    store.close();
+    await expect(running).resolves.toEqual({ status: "handled" });
+    expect(store.snapshot().notice).toBeUndefined();
+    expect(toasts).toEqual([]);
+  });
+
+  it("does not keep an info line posted before Esc as a notice", async () => {
+    const whistle = createWhistle();
+    whistle.contribute({
+      sourceId: "test",
+      namespace: "probe",
+      commands: [
+        {
+          id: "wait",
+          title: "Wait",
+          category: "Probe",
+          projections: { slash: { aliases: ["wait"] } },
+          handler: async (input) => {
+            const interaction = input.interaction;
+            if (interaction === undefined) return;
+            interaction.notify({ type: "progress", message: "Working" });
+            interaction.notify({ type: "info", message: "Heads up" });
+            await new Promise<void>((resolve) => {
+              interaction.signal.addEventListener("abort", () => {
+                resolve();
+              });
+            });
+          },
+        },
+      ],
+    });
+    const store = createParakeetInteractions();
+    store.attach(whistle.present);
+    const running = whistle.execute("probe:wait", { origin: "slash" });
+    await expect.poll(() => store.snapshot().open).toBeDefined();
+    store.close();
+    await running;
+    expect(store.snapshot()).toEqual({ notice: undefined, open: undefined });
+  });
+
+  // Locks in how the dialog treats a failed sign-in; it passed before the fix
+  // too. The fail-first proof is apps/tui/test/login-blank-key.test.tsx.
+  it("shows a refused blank API key as plain No key entered, never as signed in", async () => {
+    const whistle = createWhistle();
+    const account = owner({
+      login: vi.fn<AccountOwner["login"]>(() =>
+        Promise.reject(new Error("No key entered")),
+      ),
+    });
+    contributeAccountCommands(whistle, account, {
+      sourceId: "test",
+      namespace: "account",
+      host: "local",
+      scope: "user",
+      policy,
+    });
+    const { presenter, hosts } = scriptedPresenter(() => "zeta");
+    whistle.present(presenter);
+    const outcome = whistle.execute("account:login", {
+      origin: "slash",
+      arguments: { providerId: "zeta" },
+    });
+    try {
+      await vi.waitFor(() => {
+        expect(hosts[0]?.snapshot()).toMatchObject({
+          status: "failed",
+          failure: "No key entered",
+          retryable: true,
+        });
+      });
+      expect(hosts[0]?.snapshot().message?.type).not.toBe("success");
+    } finally {
+      hosts[0]?.cancel();
+      await outcome;
+      whistle.close();
+    }
   });
 
   it("confirms before signing out", async () => {

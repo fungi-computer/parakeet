@@ -20,12 +20,18 @@ import {
   useStatus,
   useTimeline,
 } from "../src/headless.js";
-import type { ParakeetReconnectOutcome } from "../src/headless.js";
+import type {
+  ParakeetReconnectOutcome,
+  ParakeetDraftStorage,
+  ParakeetToast,
+  ComposerController,
+} from "../src/headless.js";
 import type { TimelineController } from "../src/conversation.js";
 import { ClientRows } from "../src/components/ClientRows.js";
 import { useState } from "react";
 import { createWhistle } from "@fungi.computer/whistle";
 import { z } from "zod";
+import { draftJournal } from "../src/core/draft-storage.js";
 import type { ParakeetSession } from "../src/session.js";
 import type { TimelineItem } from "../src/store/types.js";
 import {
@@ -106,12 +112,15 @@ function watch(
 function ControllerProbe({
   onItems,
   onReconnect,
+  onComposer,
 }: {
   onItems?: ((items: readonly TimelineItem[]) => void) | undefined;
   onReconnect?: ((outcome: ParakeetReconnectOutcome) => void) | undefined;
+  onComposer?: ((composer: ComposerController) => void) | undefined;
 }): ReactElement {
   const timeline = useTimeline();
   const composer = useComposer();
+  onComposer?.(composer);
   const status = useStatus();
   const contributions = useClientContributions();
   const [commands] = useState(createWhistle);
@@ -136,6 +145,7 @@ function ControllerProbe({
       data-failed={String(composer.failure !== undefined)}
       data-failure={composer.failure}
       data-admission-error={composer.admissionError}
+      data-draft={composer.draft}
       data-observation={status.observation.status}
       data-goal-state={contributions[0]?.value.panel[0]?.detail ?? "none"}
     >
@@ -277,6 +287,8 @@ function SubscriptionProbe({
 it("projects a goal-only Session update independently of run status", async () => {
   const changes = frameQueue();
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/goal-session",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -345,6 +357,441 @@ afterEach(async () => {
   });
   roots.clear();
   document.body.replaceChildren();
+  localStorage.clear();
+  vi.useRealTimers();
+});
+
+it("recovers the exact submitted text after closing before acceptance and reopening", async () => {
+  const changes = frameQueue();
+  const session: ParakeetSession = {
+    address: "test://durable-pending",
+    command: commandHandler(() => new Promise<Accepted>(() => undefined)),
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(changes),
+  };
+  const first = mount(session, new QueryClient());
+  await settle();
+  const input = first.container.querySelector("input");
+  if (!input) throw new Error("Composer unavailable");
+  const original = "  Preserve my exact text  ";
+  await settle(() => {
+    change(input, original);
+  });
+  const send = first.container.querySelector("button");
+  if (!send) throw new Error("Send unavailable");
+  await settle(() => {
+    send.click();
+  });
+  expect(input.value).toBe("");
+  expect(
+    localStorage.getItem(`fungi.parakeet.drafts.v1:${session.address}`),
+  ).toContain(original);
+  await settle(() => {
+    first.root.unmount();
+  });
+  roots.delete(first.root);
+  const reopened = mount(session, new QueryClient());
+  await vi.waitFor(() => {
+    expect(
+      reopened.container.firstElementChild?.getAttribute("data-draft"),
+    ).toBe(original);
+  });
+});
+
+for (const mode of ["timeout", "service loss", "disconnect", "refusal"]) {
+  it(`recovers ${mode} during a running turn without losing newer typing`, async () => {
+    vi.useFakeTimers();
+    let connected = mode !== "service loss";
+    let changes = frameQueue();
+    let requestId: string | undefined;
+    let refuse: ((cause: Error) => void) | undefined;
+    const withdraw = vi.fn<ParakeetSession["withdraw"]>(() =>
+      connected
+        ? Promise.resolve({ status: "unknown" })
+        : Promise.reject(new Error("Service stopped")),
+    );
+    const session: ParakeetSession = {
+      address: `test://recovery/${mode}`,
+      latestPending: () => Promise.resolve(null),
+      withdraw,
+      command: commandHandler((input) => {
+        requestId = input.requestId;
+        return new Promise<Accepted>((_resolve, reject) => {
+          refuse = reject;
+        });
+      }),
+      extension: noExtension,
+      read: () => Promise.resolve(sessionSnapshot({ status: "thinking" })),
+      watch: () => watch(changes, sessionSnapshot({ status: "thinking" })),
+    };
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const toasts: string[] = [];
+    const view = mount(session, query, undefined, undefined, {
+      onToast: (toast) => {
+        toasts.push(toast.message);
+      },
+    });
+    const tick = () =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    await tick();
+    const input = view.container.querySelector("input");
+    const send = view.container.querySelector("button");
+    if (!input || !send) throw new Error("Composer unavailable");
+    const original = "  Exact text including whitespace  ";
+    act(() => {
+      change(input, original);
+    });
+    act(() => {
+      send.click();
+    });
+    expect(input.value).toBe("");
+    act(() => {
+      change(input, "New typing");
+    });
+    if (mode === "refusal") {
+      refuse?.(new Error("No credit"));
+      await tick();
+    } else if (mode === "disconnect") {
+      act(() => {
+        changes.fail(new Error("Disconnected"));
+      });
+      await tick();
+      changes = frameQueue();
+      const reconnect = [...view.container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Reconnect",
+      );
+      act(() => reconnect?.click());
+      await tick();
+    } else {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      if (mode === "service loss") {
+        expect(input.value).toBe("New typing");
+        expect(
+          localStorage.getItem(`fungi.parakeet.drafts.v1:${session.address}`),
+        ).toContain("Exact text");
+        connected = true;
+        act(() => {
+          changes.fail(new Error("Service stopped"));
+        });
+        await tick();
+        changes = frameQueue();
+        const reconnect = [...view.container.querySelectorAll("button")].find(
+          (button) => button.textContent === "Reconnect",
+        );
+        act(() => reconnect?.click());
+        await tick();
+      }
+    }
+    expect(withdraw).toHaveBeenCalledWith(requestId);
+    expect(view.container.firstElementChild?.getAttribute("data-draft")).toBe(
+      `New typing\n\n${original}`,
+    );
+    expect(toasts.some((message) => message.startsWith("Not sent: "))).toBe(
+      true,
+    );
+    expect(
+      view.container.querySelectorAll('[data-state="pending"]'),
+    ).toHaveLength(0);
+  });
+}
+
+it.each(["unknown", "accepted", "unavailable"] as const)(
+  "settles held admission after watch loss without reconnect or elapsed time (%s)",
+  async (outcome) => {
+    vi.useFakeTimers();
+    const startedAt = Date.now();
+    const changes = frameQueue();
+    const commands: PromptCommand[] = [];
+    const reply = new Promise<Accepted>(() => undefined);
+    const withdraw = vi.fn<ParakeetSession["withdraw"]>(() => {
+      if (outcome === "unavailable")
+        return Promise.reject(new Error("Withdrawal is unavailable"));
+      return Promise.resolve(
+        outcome === "accepted"
+          ? { status: "accepted", commandId: "recorded-owner-entry" }
+          : { status: "unknown" },
+      );
+    });
+    const open = vi.fn(() => watch(changes));
+    const session: ParakeetSession = {
+      address: `test://watch-loss-held-ack/${outcome}`,
+      latestPending: () => Promise.resolve(null),
+      withdraw,
+      command: commandHandler((input) => {
+        commands.push(input);
+        return reply;
+      }),
+      extension: noExtension,
+      read: () => Promise.resolve(sessionSnapshot()),
+      watch: open,
+    };
+    let current: ComposerController | undefined;
+    const composer = () => {
+      if (current === undefined) throw new Error("Missing composer");
+      return current;
+    };
+    const view = mount(
+      session,
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      undefined,
+      undefined,
+      {
+        onComposer: (value) => {
+          current = value;
+        },
+      },
+    );
+    const tick = () =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    await tick();
+    const input = view.container.querySelector("input");
+    const send = view.container.querySelector("button");
+    if (!input || !send) throw new Error("Composer unavailable");
+    const original = "  Exact held text\nwith whitespace  ";
+    act(() => {
+      composer().setDraft(original);
+    });
+    act(() => {
+      send.click();
+    });
+    act(() => {
+      change(input, "Newer draft");
+    });
+    await tick();
+    const submitted = commands[0];
+    if (submitted === undefined) throw new Error("Missing held command");
+    expect(submitted.text).toBe(original);
+    expect(withdraw).not.toHaveBeenCalled();
+    act(() => {
+      changes.fail(new Error("Watch failed while reply is held"));
+    });
+    await tick();
+    await tick();
+    expect(
+      view.container.firstElementChild?.getAttribute("data-observation"),
+    ).toBe("unavailable");
+    expect(withdraw).toHaveBeenCalledExactlyOnceWith(submitted.requestId);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(Date.now()).toBe(startedAt);
+    const journal = draftJournal(session.address, localStorage).read();
+    if (outcome === "unknown") {
+      expect(composer().draft).toBe(`Newer draft\n\n${original}`);
+      expect(journal.draft).toBe(composer().draft);
+      expect(journal.pending).toEqual([]);
+      expect(
+        view.container.querySelector('[data-state="failed"]'),
+      ).not.toBeNull();
+    } else {
+      expect(input.value).toBe("Newer draft");
+      expect(view.container.querySelector('[data-state="failed"]')).toBeNull();
+      if (outcome === "unavailable") {
+        expect(journal.pending).toHaveLength(1);
+        expect(journal.pending[0]).toMatchObject({
+          requestId: submitted.requestId,
+          content: original,
+        });
+      } else {
+        expect(journal.pending).toEqual([]);
+        expect(
+          view.container.querySelectorAll('[data-state="accepted"]'),
+        ).toHaveLength(1);
+      }
+    }
+    expect(commands).toHaveLength(1);
+  },
+);
+
+it("keeps an admitted send on reopen and preserves the newer durable draft", async () => {
+  let requestId: string | undefined;
+  const withdraw = vi.fn<ParakeetSession["withdraw"]>(() =>
+    Promise.resolve({ status: "accepted", commandId: "already-sent" }),
+  );
+  const session: ParakeetSession = {
+    address: "test://reopen-accepted",
+    latestPending: () => Promise.resolve(null),
+    withdraw,
+    command: commandHandler((input) => {
+      requestId = input.requestId;
+      return new Promise<Accepted>(() => undefined);
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(frameQueue()),
+  };
+  const first = mount(session, new QueryClient());
+  await settle();
+  const input = first.container.querySelector("input");
+  const send = first.container.querySelector("button");
+  if (!input || !send) throw new Error("Composer unavailable");
+  await settle(() => {
+    change(input, "Sent before close");
+  });
+  await settle(() => {
+    send.click();
+  });
+  await settle(() => {
+    change(input, "Newer draft");
+  });
+  await settle(() => {
+    first.root.unmount();
+  });
+  roots.delete(first.root);
+  const reopened = mount(session, new QueryClient());
+  await vi.waitFor(() => {
+    expect(withdraw).toHaveBeenCalledWith(requestId);
+  });
+  expect(reopened.container.querySelector("input")?.value).toBe("Newer draft");
+  expect(
+    reopened.container.querySelectorAll('[data-state="accepted"]'),
+  ).toHaveLength(1);
+  expect(
+    JSON.parse(
+      localStorage.getItem(`fungi.parakeet.drafts.v1:${session.address}`) ??
+        "null",
+    ),
+  ).toEqual({ draft: "Newer draft", pending: [] });
+});
+
+it("never clears or dispatches when the pending text cannot be committed", async () => {
+  const dispatch = vi.fn<() => Promise<Accepted>>(() =>
+    Promise.resolve({ status: "accepted", commandId: "unexpected" }),
+  );
+  const session: ParakeetSession = {
+    address: "test://quota",
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    command: commandHandler(dispatch),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(frameQueue()),
+  };
+  const storage: ParakeetDraftStorage = {
+    getItem: () => null,
+    setItem: (_key, value) => {
+      if (value.includes('"requestId"'))
+        throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+    },
+  };
+  const { container } = mount(
+    session,
+    new QueryClient(),
+    undefined,
+    undefined,
+    { draftStorage: storage },
+  );
+  await settle();
+  const input = container.querySelector("input");
+  const send = container.querySelector("button");
+  if (!input || !send) throw new Error("Composer unavailable");
+  await settle(() => {
+    change(input, "  Never discard this  ");
+  });
+  await settle(() => {
+    send.click();
+  });
+  expect(input.value).toBe("  Never discard this  ");
+  expect(dispatch).not.toHaveBeenCalled();
+});
+
+it("uses request identity to deduplicate watch-first acceptance and keeps newer drafts", async () => {
+  const changes = frameQueue();
+  let observedItems: readonly TimelineItem[] = [];
+  let prompt: PromptCommand | undefined;
+  let accept: ((result: Accepted) => void) | undefined;
+  const session: ParakeetSession = {
+    address: "test://watch-first",
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    command: commandHandler((input) => {
+      prompt = input;
+      return new Promise<Accepted>((resolve) => {
+        accept = resolve;
+      });
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(changes),
+  };
+  const { container } = mount(session, new QueryClient(), (items) => {
+    observedItems = items;
+  });
+  await settle();
+  const input = container.querySelector("input");
+  const send = container.querySelector("button");
+  if (!input || !send) throw new Error("Composer unavailable");
+  await settle(() => {
+    change(input, "First prompt");
+  });
+  await settle(() => {
+    send.click();
+  });
+  await settle(() => {
+    change(input, "New typing");
+  });
+  if (!prompt) throw new Error("Prompt was not dispatched");
+  const submitted = prompt;
+  await settle(() => {
+    changes.push(
+      sessionFrame({
+        kind: "update",
+        delivery: "live",
+        cursor: "watch-first",
+        status: "queued",
+        messages: [],
+        terminals: [],
+        pending: {
+          total: 1,
+          hasMore: false,
+          prompts: [
+            {
+              commandId: "owner-first",
+              requestId: submitted.requestId,
+              text: submitted.text,
+              delivery: submitted.delivery,
+            },
+          ],
+        },
+      }),
+    );
+  });
+  // One row also describes the optimistic admission; wait for owner identity.
+  await vi.waitFor(async () => {
+    await act(async () => Promise.resolve());
+    expect(observedItems).toContainEqual(
+      expect.objectContaining({
+        id: "owner-first",
+        kind: "user_message",
+        requestId: submitted.requestId,
+        status: "queued",
+      }),
+    );
+  });
+  expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
+    1,
+  );
+  expect(container.querySelectorAll('[data-state="pending"]')).toHaveLength(0);
+  expect(draftJournal(session.address, localStorage).read().pending).toEqual(
+    [],
+  );
+  expect(input.value).toBe("New typing");
+  await settle(() =>
+    accept?.({ status: "accepted", commandId: "owner-first" }),
+  );
+  expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
+    1,
+  );
+  expect(input.value).toBe("New typing");
 });
 
 function mount(
@@ -352,7 +799,13 @@ function mount(
   queryClient: QueryClient,
   onItems?: (items: readonly TimelineItem[]) => void,
   onReconnect?: (outcome: ParakeetReconnectOutcome) => void,
+  options?: Readonly<{
+    draftStorage?: ParakeetDraftStorage;
+    onToast?: (toast: ParakeetToast) => void;
+    onComposer?: (composer: ComposerController) => void;
+  }>,
 ) {
+  const { onComposer, ...providerOptions } = options ?? {};
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -360,8 +813,16 @@ function mount(
   act(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <ParakeetProvider session={session} clients={probeClients}>
-          <ControllerProbe onItems={onItems} onReconnect={onReconnect} />
+        <ParakeetProvider
+          session={session}
+          clients={probeClients}
+          {...providerOptions}
+        >
+          <ControllerProbe
+            onItems={onItems}
+            onReconnect={onReconnect}
+            onComposer={onComposer}
+          />
         </ParakeetProvider>
       </QueryClientProvider>,
     );
@@ -401,6 +862,7 @@ it("evicts browsed pages and refetches them in both directions", async () => {
         total: 7,
         prompts: [
           {
+            requestId: "request-" + "queued-one",
             commandId: "queued-one",
             text: "Next waiting task",
             delivery: "followUp",
@@ -411,6 +873,8 @@ it("evicts browsed pages and refetches them in both directions", async () => {
     });
   };
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/windowed-history",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -516,6 +980,8 @@ it("shares one history read across providers and retains the page after remount"
     ),
   );
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/shared-history",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -584,6 +1050,8 @@ it("jumping to latest discards an in-flight older page without restoring it late
   let finish: (() => void) | undefined;
   const messages = durableMessages(200);
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/history-jump",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -637,6 +1105,8 @@ it("reports a failed history read and retries the same cursor without losing the
     .mockRejectedValueOnce(new Error("History unavailable"))
     .mockResolvedValue(sessionSnapshot({ messages: durableMessages(1) }));
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/history-retry",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -689,6 +1159,8 @@ it("reports a failed history read and retries the same cursor without losing the
 it("observes an owner that admits at most 200 messages per baseline", async () => {
   const changes = frameQueue();
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/owner-page-limit",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -719,6 +1191,7 @@ it("keeps the latest retry prompt when a long run evicts its message", async () 
   if (prompt === undefined) throw new Error("Missing fixture prompt");
   const results: SessionMessage[] = Array.from({ length: 450 }, (_, index) => ({
     id: `result-${String(index)}`,
+    data: {},
     commandId: null,
     sequence: index + 2,
     value: {
@@ -726,7 +1199,6 @@ it("keeps the latest retry prompt when a long run evicts its message", async () 
       toolCallId: `call-${String(index)}`,
       toolName: "execute",
       content: [{ type: "text", text: "done" }],
-      details: {},
       isError: false,
       timestamp: index + 2,
     },
@@ -734,6 +1206,8 @@ it("keeps the latest retry prompt when a long run evicts its message", async () 
   const client = new QueryClient();
   let reads = 0;
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/long-retry",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -769,11 +1243,21 @@ it("keeps the latest retry prompt when a long run evicts its message", async () 
   }
   const projection = client.getQueryData<{
     snapshot?: { messages: readonly SessionMessage[] };
-    latestPrompt: readonly [string, string] | undefined;
+    latestPrompt:
+      | Readonly<{
+          commandId: string;
+          text: string;
+          images: PromptCommand["images"];
+        }>
+      | undefined;
   }>(["shiitake-session", session.address]);
   expect(reads).toBeGreaterThan(0);
   expect(projection?.snapshot?.messages.length).toBeLessThanOrEqual(400);
-  expect(projection?.latestPrompt).toEqual(["command-0", "Message 0"]);
+  expect(projection?.latestPrompt).toEqual({
+    commandId: "command-0",
+    text: "Message 0",
+    images: undefined,
+  });
 });
 
 it("keeps the reader's page while the live tail refreshes", async () => {
@@ -781,6 +1265,8 @@ it("keeps the reader's page while the live tail refreshes", async () => {
   const changes = frameQueue();
   let reads = 0;
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/pinned-reader",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -871,6 +1357,8 @@ it("shares one Session watch until the final mount leaves", async () => {
   let watchCount = 0;
   let closeCount = 0;
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/shared-session",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -940,6 +1428,8 @@ it("retains observed history and reopens a failed Session watch", async () => {
     ],
   });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/reconnect",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -1029,6 +1519,8 @@ it("keeps an unresolved admission through reconnect, then retires its exact term
   let watches = 0;
   const baseline = sessionSnapshot({ status: "idle" });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/reconnect-admission",
     command: commandHandler((input) => {
       commands.push(input);
@@ -1107,6 +1599,8 @@ it("returns a typed cause when a failed Session watch cannot reconnect", async (
   const outcomes: ParakeetReconnectOutcome[] = [];
   let watchCount = 0;
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/reconnect-failure",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -1144,6 +1638,8 @@ it("preserves bounded durable item identities across progress revisions", async 
     const changes = frameQueue();
     const observed: (readonly unknown[])[] = [];
     const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
       address: `test://parakeet/progress-${String(messageCount)}`,
       command: commandHandler(commandResult),
       extension: noExtension,
@@ -1204,6 +1700,8 @@ it.each([200, 300])(
       status: "streaming",
     });
     const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
       address: `test://parakeet/isolated-${String(messageCount)}`,
       command: commandHandler(commandResult),
       extension: noExtension,
@@ -1284,6 +1782,8 @@ it("reconciles one optimistic prompt and aborts through the host mutation cache 
     acceptAdmission = resolve;
   });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/optimistic-session",
     command: commandHandler(
       (input) => {
@@ -1324,7 +1824,7 @@ it("reconciles one optimistic prompt and aborts through the host mutation cache 
       .querySelector('[data-kind="user_message"]')
       ?.getAttribute("data-state"),
   ).toBe("pending");
-  expect(input.value).toBe("Inspect it");
+  expect(input.value).toBe("");
 
   const command = commands[0];
   if (command === undefined) throw new Error("Prompt was not submitted");
@@ -1341,6 +1841,7 @@ it("reconciles one optimistic prompt and aborts through the host mutation cache 
           total: 1,
           prompts: [
             {
+              requestId: "request-" + command.requestId,
               commandId: command.requestId,
               delivery: command.delivery,
               text: command.text,
@@ -1416,6 +1917,8 @@ it("prevents duplicate draft sends while allowing changed drafts during admissio
   const commands: PromptCommand[] = [];
   const acceptances: ((value: Accepted) => void)[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/concurrent-admissions",
     command: commandHandler((input) => {
       commands.push(input);
@@ -1497,11 +2000,13 @@ it("prevents duplicate draft sends while allowing changed drafts during admissio
           total: 2,
           prompts: [
             {
+              requestId: "request-" + "owner-first",
               commandId: "owner-first",
               delivery: "steer",
               text: "First prompt",
             },
             {
+              requestId: "request-" + "owner-second",
               commandId: "owner-second",
               delivery: "steer",
               text: "Second prompt",
@@ -1526,6 +2031,8 @@ it("reconciles a watch-before-ack row by owner command id", async () => {
   const commands: PromptCommand[] = [];
   const acceptances: ((value: Accepted) => void)[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/watch-before-ack",
     command: commandHandler((input) => {
       commands.push(input);
@@ -1561,6 +2068,7 @@ it("reconciles a watch-before-ack row by owner command id", async () => {
           total: 1,
           prompts: [
             {
+              requestId: "request-" + "owner-watched-first",
               commandId: "owner-watched-first",
               delivery: "steer",
               text: prompt.text,
@@ -1576,7 +2084,7 @@ it("reconciles a watch-before-ack row by owner command id", async () => {
   expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
     2,
   );
-  expect(input.value).toBe("Visible before admission response");
+  expect(input.value).toBe("");
   await settle(() =>
     container.querySelector<HTMLButtonElement>("button")?.click(),
   );
@@ -1588,15 +2096,18 @@ it("reconciles a watch-before-ack row by owner command id", async () => {
     container.querySelector<HTMLButtonElement>("button")?.click();
   });
   expect(commands).toHaveLength(2);
+  await settle(() => {
+    change(input, "New unsent draft");
+  });
 
   await settle(() => {
     acceptances[0]?.({ status: "accepted", commandId: "owner-watched-first" });
   });
-  expect(input.value).toBe("Visible before admission response");
+  expect(input.value).toBe("New unsent draft");
   await settle(() => {
     acceptances[1]?.({ status: "accepted", commandId: "owner-watched-second" });
   });
-  expect(input.value).toBe("");
+  expect(input.value).toBe("New unsent draft");
   expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
     2,
   );
@@ -1605,12 +2116,231 @@ it("reconciles a watch-before-ack row by owner command id", async () => {
   ).not.toBeNull();
 });
 
+it("reconciles a public recorded entry before its reply without replacing newer text or image cargo", async () => {
+  const address = "test://parakeet/public-recorded-before-reply";
+  const observedRowCounts: number[] = [];
+  const text = "  Exact recorded text\nincluding whitespace  ";
+  const submittedImages: NonNullable<PromptCommand["images"]> = [
+    { type: "image", data: "b3JpZ2luYWw=", mimeType: "image/png" },
+  ];
+  const newerImages: NonNullable<PromptCommand["images"]> = [
+    { type: "image", data: "bmV3ZXI=", mimeType: "image/png" },
+  ];
+  draftJournal(address, localStorage).write({
+    draft: text,
+    images: submittedImages,
+    pending: [],
+  });
+  const changes = frameQueue();
+  let resolveReply:
+    ((result: Readonly<{ status: "recorded" }>) => void) | undefined;
+  const reply = new Promise<Readonly<{ status: "recorded" }>>((resolve) => {
+    resolveReply = resolve;
+  });
+  const commands: PromptCommand[] = [];
+  const withdraw = vi.fn<ParakeetSession["withdraw"]>(() =>
+    Promise.reject(new Error("No withdrawal should be necessary")),
+  );
+  const session: ParakeetSession = {
+    address,
+    latestPending: () =>
+      Promise.resolve({
+        commandId: "newer-queued-command",
+        requestId: "newer-queued-request",
+        text: "Newer recalled text",
+        images: newerImages,
+        delivery: "followUp",
+      }),
+    withdraw,
+    command: commandHandler((input) => {
+      commands.push(input);
+      return reply;
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(changes),
+  };
+  let current: ComposerController | undefined;
+  const composer = () => {
+    if (current === undefined) throw new Error("Missing composer");
+    return current;
+  };
+  const { container } = mount(
+    session,
+    new QueryClient(),
+    (items) => {
+      observedRowCounts.push(
+        items.filter((item) => item.kind === "user_message").length,
+      );
+    },
+    undefined,
+    {
+      onComposer: (value) => {
+        current = value;
+      },
+    },
+  );
+  await settle();
+  await settle(() => {
+    composer().send();
+  });
+  const original = commands[0];
+  if (original === undefined) throw new Error("Missing held prompt");
+  expect(original.text).toBe(text);
+  expect(original.images).toEqual(submittedImages);
+  await act(async () => {
+    expect(await composer().recall()).toBe("restored");
+  });
+  const newerText = "  Newer typing over recalled text  ";
+  await settle(() => {
+    composer().setDraft(newerText);
+  });
+  expect(composer().images).toEqual(newerImages);
+  // The real public visitor projection carries the original sourceRequestId
+  // as requestId, strips host metadata, and keeps recorded commandId null.
+  await settle(() => {
+    changes.push(
+      sessionFrame({
+        kind: "update",
+        delivery: "live",
+        cursor: "recorded-before-reply",
+        messages: [
+          {
+            id: "public-recorded-entry",
+            commandId: null,
+            requestId: original.requestId,
+            sequence: 1,
+            value: { role: "user", content: text, timestamp: 1 },
+          },
+        ],
+        terminals: [],
+        pending: { total: 0, prompts: [], hasMore: false },
+        status: "idle",
+      }),
+    );
+  });
+  expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
+    1,
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(
+      container.querySelector('[data-id="public-recorded-entry"]')?.textContent,
+    ).toBe(text);
+  });
+  const beforeReply = draftJournal(address, localStorage).read();
+  expect(beforeReply.pending).toEqual([]);
+  expect(beforeReply.draft).toBe(newerText);
+  expect(beforeReply.images).toEqual(newerImages);
+  await settle(() => {
+    if (resolveReply === undefined) throw new Error("Reply was not held");
+    resolveReply({ status: "recorded" });
+  });
+  expect(composer().draft).toBe(newerText);
+  expect(composer().images).toEqual(newerImages);
+  expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
+    1,
+  );
+  expect(draftJournal(address, localStorage).read()).toEqual(beforeReply);
+  expect(observedRowCounts.every((count) => count <= 1)).toBe(true);
+  expect(withdraw).not.toHaveBeenCalled();
+  expect(commands).toHaveLength(1);
+});
+
+it("retires a lost-ack recorded admission by its real entry receipt and original composer request", async () => {
+  const changes = frameQueue();
+  const commands: PromptCommand[] = [];
+  const entryId = "recorded-entry";
+  const withdraw = vi.fn<ParakeetSession["withdraw"]>(() =>
+    Promise.resolve({ status: "accepted", commandId: entryId }),
+  );
+  const session: ParakeetSession = {
+    address: "test://parakeet/recorded-lost-ack",
+    latestPending: () => Promise.resolve(null),
+    withdraw,
+    command: commandHandler((input) => {
+      commands.push(input);
+      return Promise.reject(new Error("Recorded response lost"));
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(changes),
+  };
+  const { container } = mount(
+    session,
+    new QueryClient(),
+    undefined,
+    undefined,
+    {
+      draftStorage: localStorage,
+    },
+  );
+  await settle();
+  const input = container.querySelector('input[aria-label="Draft"]');
+  if (!(input instanceof HTMLInputElement)) throw new Error("Missing composer");
+  const text = "  Keep this held reply exact  ";
+  await settle(() => {
+    change(input, text);
+    container.querySelector<HTMLButtonElement>("button")?.click();
+  });
+  await settle();
+  const original = commands[0];
+  if (original === undefined) throw new Error("Missing submitted prompt");
+  expect(withdraw).toHaveBeenCalledExactlyOnceWith(original.requestId);
+  expect(input.value).toBe("");
+  await settle(() => {
+    change(input, "Newer unsent text");
+    changes.push(
+      sessionFrame({
+        kind: "update",
+        delivery: "live",
+        cursor: "recorded",
+        messages: [
+          {
+            id: entryId,
+            commandId: null,
+            requestId: original.requestId,
+            sequence: 1,
+            value: { role: "user", content: text, timestamp: 1 },
+          },
+        ],
+        terminals: [],
+        pending: { total: 0, prompts: [], hasMore: false },
+        status: "idle",
+      }),
+    );
+  });
+  await settle();
+  expect(container.querySelectorAll('[data-kind="user_message"]')).toHaveLength(
+    1,
+  );
+  expect(
+    container.querySelector('[data-id="recorded-entry"]')?.textContent,
+  ).toBe(text);
+  expect(
+    container.querySelector(`[data-id="${original.requestId}"]`),
+  ).toBeNull();
+  expect(container.querySelector('[data-state="failed"]')).toBeNull();
+  expect(container.firstElementChild?.getAttribute("data-status")).toBe("idle");
+  expect(input.value).toBe("Newer unsent text");
+  expect(commands).toHaveLength(1);
+  expect(localStorage.length).toBe(1);
+  const saved = localStorage.getItem(localStorage.key(0) ?? "");
+  if (saved === null) throw new Error("Missing admission journal");
+  expect(
+    z.object({ pending: z.array(z.unknown()) }).parse(JSON.parse(saved))
+      .pending,
+  ).toEqual([]);
+});
+
 it("keeps one failed prompt visible beside a later accepted prompt", async () => {
   const changes = frameQueue();
   const commands: PromptCommand[] = [];
   const acceptances: ((value: Accepted) => void)[] = [];
   const failures: ((reason: Error) => void)[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/mixed-admissions",
     command: commandHandler((input) => {
       commands.push(input);
@@ -1667,10 +2397,52 @@ it("keeps one failed prompt visible beside a later accepted prompt", async () =>
   ).toContain("First prompt fails");
 });
 
-it("preserves a failed draft and retries its identity without replacing newer text", async () => {
+it("restores the exact refused draft after newer text without losing either", async () => {
+  const changes = frameQueue();
+  let refuse: ((reason: Error) => void) | undefined;
+  const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    address: "test://parakeet/restore-newer-draft",
+    command: commandHandler(
+      () =>
+        new Promise<Accepted>((_resolve, reject) => {
+          refuse = reject;
+        }),
+    ),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(changes),
+  };
+  const container = render(session);
+  await settle();
+  const input = container.querySelector('input[aria-label="Draft"]');
+  if (!(input instanceof HTMLInputElement))
+    throw new Error("Draft unavailable");
+  await settle(() => {
+    change(input, "  Original text  ");
+    container.querySelector<HTMLButtonElement>("button")?.click();
+  });
+  expect(input.value).toBe("");
+  await settle(() => {
+    change(input, "Newer text");
+  });
+  if (refuse === undefined) throw new Error("Prompt was not dispatched");
+  await settle(() => refuse?.(new Error("Not enough credit")));
+  expect(container.firstElementChild?.getAttribute("data-draft")).toBe(
+    "Newer text\n\n  Original text  ",
+  );
+  expect(
+    container.querySelector('[data-state="failed"]')?.textContent,
+  ).toContain("Original");
+});
+
+it("preserves a failed draft and retries with a fresh identity without replacing newer text", async () => {
   const changes = frameQueue();
   const commands: PromptCommand[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/retry-session",
     command: commandHandler((input) => {
       commands.push(input);
@@ -1717,14 +2489,180 @@ it("preserves a failed draft and retries its identity without replacing newer te
   expect(commands[1]).toMatchObject({
     text: "Original draft",
     delivery: "steer",
-    requestId: commands[0]?.requestId,
   });
+  expect(commands[1]?.requestId).not.toBe(commands[0]?.requestId);
   expect(input.value).toBe("Newer draft");
 });
+
+it("admission Retry preserves newer same-text image cargo restored by Recall", async () => {
+  const address = "test://parakeet/admission-retry-newer-images";
+  const text = "Compare this frame.";
+  const newerImages: NonNullable<PromptCommand["images"]> = [
+    {
+      type: "image",
+      mimeType: "image/png",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6KQAAAABJRU5ErkJggg==",
+    },
+  ];
+  const changes = frameQueue();
+  const commands: PromptCommand[] = [];
+  let refuse: ((reason: Error) => void) | undefined;
+  const reply = new Promise<Accepted>((_resolve, reject) => {
+    refuse = reject;
+  });
+  const session: ParakeetSession = {
+    address,
+    latestPending: () =>
+      Promise.resolve({
+        commandId: "newer-queued-command",
+        requestId: "newer-queued-request",
+        text,
+        images: newerImages,
+        delivery: "followUp",
+      }),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    command: commandHandler((input) => {
+      commands.push(input);
+      return commands.length === 1 ? reply : commandResult(input);
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(changes),
+  };
+  let current: ComposerController | undefined;
+  const composer = () => {
+    if (current === undefined) throw new Error("Missing composer");
+    return current;
+  };
+  const { container } = mount(
+    session,
+    new QueryClient(),
+    undefined,
+    undefined,
+    {
+      onComposer: (value) => {
+        current = value;
+      },
+    },
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(container.firstElementChild?.getAttribute("data-status")).toBe(
+      "idle",
+    );
+  });
+  await settle(() => {
+    composer().setDraft(text);
+    composer().send();
+  });
+  expect(composer().draft).toBe("");
+  expect(commands).toHaveLength(1);
+  await act(async () => {
+    expect(await composer().recall()).toBe("restored");
+  });
+  expect(composer().images).toEqual(newerImages);
+  await settle(() => {
+    if (refuse === undefined) throw new Error("Missing held admission");
+    refuse(new Error("Prompt refused"));
+  });
+  await vi.waitFor(async () => {
+    await settle();
+    expect(composer().failure).toBe("admission");
+  });
+  // Keep the same words while editing the recovered draft. Its recalled image
+  // is not part of the failed text-only admission.
+  await settle(() => {
+    composer().setDraft(text);
+  });
+  expect(composer().images).toEqual(newerImages);
+  await settle(() => {
+    container.querySelectorAll<HTMLButtonElement>("button").item(1).click();
+  });
+  expect(commands).toHaveLength(2);
+  expect(commands[1]).toMatchObject({ text, delivery: "steer" });
+  expect(commands[1]?.images).toBeUndefined();
+  expect(commands[1]?.requestId).not.toBe(commands[0]?.requestId);
+  expect(composer().draft).toBe(text);
+  expect(composer().images).toEqual(newerImages);
+  const persisted = draftJournal(address, localStorage).read();
+  expect(persisted.draft).toBe(text);
+  expect(persisted.images).toEqual(newerImages);
+});
+
+it.each([false, true])(
+  "retry consumes an unchanged restored draft (images: %s) before admission completes",
+  async (withImages) => {
+    const changes = frameQueue();
+    let attempts = 0;
+    const commands: PromptCommand[] = [];
+    const images: NonNullable<PromptCommand["images"]> = [
+      {
+        type: "image",
+        mimeType: "image/png",
+        data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6KQAAAABJRU5ErkJggg==",
+      },
+    ];
+    const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
+      address: "test://parakeet/retry-restored-draft",
+      command: commandHandler((input) => {
+        attempts += 1;
+        commands.push(input);
+        return attempts === 1
+          ? Promise.reject(new Error("Refused"))
+          : new Promise<Accepted>(() => undefined);
+      }),
+      extension: noExtension,
+      read: () => Promise.resolve(sessionSnapshot()),
+      watch: () => watch(changes),
+    };
+    if (withImages)
+      draftJournal(session.address, localStorage).write({
+        draft: "",
+        images,
+        pending: [],
+      });
+    let composer: ComposerController | undefined;
+    const { container } = mount(
+      session,
+      new QueryClient(),
+      undefined,
+      undefined,
+      {
+        onComposer: (value) => {
+          composer = value;
+        },
+      },
+    );
+    await settle();
+    const input = container.querySelector('input[aria-label="Draft"]');
+    if (!(input instanceof HTMLInputElement))
+      throw new Error("Draft unavailable");
+    await settle(() => {
+      change(input, "Retry this draft");
+      container.querySelector<HTMLButtonElement>("button")?.click();
+    });
+    expect(input.value).toBe("Retry this draft");
+    expect(composer?.images).toEqual(withImages ? images : []);
+    await settle(() => {
+      container.querySelectorAll<HTMLButtonElement>("button").item(1).click();
+    });
+    expect(attempts).toBe(2);
+    expect(input.value).toBe("");
+    expect(composer?.images).toBeUndefined();
+    expect(commands[1]?.images).toEqual(withImages ? images : undefined);
+    expect(
+      draftJournal(session.address, localStorage).read().images,
+    ).toBeUndefined();
+  },
+);
 
 it("lets the caller remove an abandoned failed admission", async () => {
   const changes = frameQueue();
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/dismiss-failure",
     command: commandHandler(() =>
       Promise.reject(new Error("admission failed")),
@@ -1761,6 +2699,8 @@ it("uses durable settlement for the newest request's failure and the owner's sta
   const changes = frameQueue();
   const commands: PromptCommand[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/settlement",
     command: commandHandler((input) => {
       commands.push(input);
@@ -1891,6 +2831,8 @@ it.each(["interrupted", "failed"] as const)(
     const changes = frameQueue();
     const commands: PromptCommand[] = [];
     const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
       address: `test://parakeet/${outcome}-retry`,
       command: commandHandler((input) => {
         commands.push(input);
@@ -1967,11 +2909,13 @@ it("restores admitted prompts without local submissions or an older failure hidi
       total: 2,
       prompts: [
         {
+          requestId: "request-" + "remote-one",
           commandId: "remote-one",
           delivery: "followUp",
           text: "First waiting task",
         },
         {
+          requestId: "request-" + "remote-two",
           commandId: "remote-two",
           delivery: "followUp",
           text: "Second waiting task",
@@ -1981,6 +2925,8 @@ it("restores admitted prompts without local submissions or an older failure hidi
     },
   });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/restored-admissions",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -2001,10 +2947,12 @@ it("restores admitted prompts without local submissions or an older failure hidi
   ).toEqual(["First waiting task", "Second waiting task"]);
 });
 
-it("clears the submitted raw draft after admission while sending trimmed prompt text", async () => {
+it("clears the submitted draft after admission while preserving its exact raw text", async () => {
   const changes = frameQueue();
   const commands: PromptCommand[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/whitespace-draft",
     extension: noExtension,
     command: commandHandler((input) => {
@@ -2026,7 +2974,7 @@ it("clears the submitted raw draft after admission while sending trimmed prompt 
     container.querySelector<HTMLButtonElement>("button")?.click(),
   );
   await settle();
-  expect(commands[0]?.text).toBe("Keep these words");
+  expect(commands[0]?.text).toBe("  Keep these words  ");
   expect(input.value).toBe("");
 });
 
@@ -2049,6 +2997,8 @@ function goalSession(
   );
   const abort = vi.fn(() => Promise.resolve(undefined));
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address,
     command: commandHandler(commandResult, abort),
     extension: extensionCalls({
@@ -2258,10 +3208,12 @@ it.each(["blocked", "complete"] as const)(
   },
 );
 
-it("preserves explicit follow-up intent and local retry identity", async () => {
+it("preserves explicit follow-up intent with a fresh identity after withdrawal", async () => {
   const changes = frameQueue();
   const sent: PromptCommand[] = [];
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/follow-up",
     command: commandHandler((input) => {
       sent.push(input);
@@ -2293,12 +3245,19 @@ it("preserves explicit follow-up intent and local retry identity", async () => {
   });
   expect(sent).toHaveLength(2);
   expect(sent[0]?.delivery).toBe("followUp");
-  expect(sent[1]).toEqual(sent[0]);
+  expect(sent[1]).toMatchObject({
+    type: "prompt",
+    text: "Do this afterward",
+    delivery: "followUp",
+  });
+  expect(sent[1]?.requestId).not.toBe(sent[0]?.requestId);
 });
 
 it("marks an ended owner watch unavailable instead of retaining Working", async () => {
   const baseline = sessionSnapshot({ status: "thinking" });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/ended-watch",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -2328,6 +3287,8 @@ it("does not report idle before the Session owner supplies its first watch", asy
     openWatch = resolve;
   });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/connecting",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -2368,6 +3329,8 @@ it("keeps the owner's failed status when the failed prompt is outside the loaded
     ],
   });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/failed-owner",
     command: commandHandler(commandResult),
     extension: noExtension,

@@ -37,6 +37,7 @@ function renderComposer(
   act(() => {
     root.render(
       <ChatComposer
+        queuedRecall={undefined}
         draft={draft}
         model={model}
         usage={usage}
@@ -86,6 +87,7 @@ it.each(["admission", "failed", "interrupted"] as const)(
     act(() => {
       root.render(
         <ChatComposer
+          queuedRecall={undefined}
           draft=""
           failure={failure}
           onAbort={vi.fn()}
@@ -221,39 +223,51 @@ it("offers plain Caps Stop and Send actions without an Agent avatar", () => {
 
 it.each([
   [{ kind: "waiting_for_you" }, "waiting for you"],
-  [{ kind: "running_tool", tool: "read" }, "running read"],
-  [{ kind: "connecting" }, "connecting"],
-  [{ kind: "disconnected", cause: "Watch lost" }, "unavailable"],
-  [{ kind: "responding" }, "writing"],
+  [{ kind: "error", cause: "Prompt failed" }, "failed"],
+  [{ kind: "idle" }, ""],
+  [{ kind: "running_tool", tool: "read" }, ""],
+  [{ kind: "connecting" }, ""],
+  [{ kind: "disconnected", cause: "Watch lost" }, ""],
+  [{ kind: "responding" }, ""],
+  [{ kind: "thinking" }, ""],
+  [{ kind: "compacting", trigger: "manual" }, ""],
+  [{ kind: "queued", queuedCommandId: "queued-1", runningWork: null }, ""],
+  [{ kind: "cancelling" }, ""],
+  [
+    {
+      kind: "retrying",
+      attempt: 1,
+      maxAttempts: 3,
+      cause: "Busy",
+      nextRetryAt: 0,
+    },
+    "",
+  ],
 ] satisfies readonly (readonly [
   import("../src/conversation.js").ParakeetSessionViewState,
   string,
-])[])(
-  "shows the owner view %j instead of a coarse composer status",
-  (viewState, label) => {
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    roots.add(root);
-    act(() => {
-      root.render(
-        <ChatComposer
-          viewState={viewState}
-          status="idle"
-          draft=""
-          failure={undefined}
-          onAbort={vi.fn()}
-          onChange={vi.fn()}
-          onRetry={vi.fn()}
-          onSend={vi.fn()}
-          textareaRef={createRef<HTMLTextAreaElement>()}
-        />,
-      );
-    });
-    expect(container.querySelector(".composer-footer")?.textContent).toBe(
-      label,
+])[])("keeps only attention readouts visible for %j", (viewState, label) => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.add(root);
+  act(() => {
+    root.render(
+      <ChatComposer
+        queuedRecall={undefined}
+        viewState={viewState}
+        status="sending"
+        draft=""
+        failure={undefined}
+        onAbort={vi.fn()}
+        onChange={vi.fn()}
+        onRetry={vi.fn()}
+        onSend={vi.fn()}
+        textareaRef={createRef<HTMLTextAreaElement>()}
+      />,
     );
-  },
-);
+  });
+  expect(container.querySelector(".composer-footer")?.textContent).toBe(label);
+});
 
 it("shows provider/model ids in the footer", () => {
   const { container } = renderComposer("idle", "Keep this draft", {
@@ -290,6 +304,7 @@ it("lets a host render readable text actions without a portrait", () => {
     act(() => {
       root.render(
         <ChatComposer
+          queuedRecall={undefined}
           draft="A visitor message"
           failure={undefined}
           onAbort={vi.fn()}

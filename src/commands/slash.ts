@@ -47,11 +47,11 @@ export function keyLabel(
   binding: string,
   mac = /Mac|iPhone|iPad/u.test(globalThis.navigator.userAgent),
 ): string {
+  if (binding.startsWith("<leader>"))
+    return `Ctrl K ${binding.slice("<leader>".length)}`;
   return binding
     .split(" ")
-    .map((chord, index) => {
-      if (chord === "<leader>") return "Ctrl K";
-      if (index > 0 && binding.startsWith("<leader> ")) return chord;
+    .map((chord) => {
       const parts = chord
         .split("+")
         .map((part) =>

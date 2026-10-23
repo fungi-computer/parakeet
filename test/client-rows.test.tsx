@@ -135,6 +135,8 @@ it("renders generic placements, opens typed targets, dispatches actions and reti
   const call = vi.fn(() => Promise.resolve({ type: "done", result: null }));
   const close = vi.fn(() => Promise.resolve());
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://generic-browser-rows",
     command: commandHandler(commandResult),
     extension: () => ({ call }),

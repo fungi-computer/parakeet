@@ -255,20 +255,18 @@ export async function signInProvider(
     type: "progress",
     message: `Signing in to ${provider.name}…`,
   });
-  await owner.login(
-    request.option === undefined
-      ? { providerId: provider.id, method: method.kind }
-      : {
-          providerId: provider.id,
-          method: method.kind,
-          option: request.option,
-        },
-    interaction,
+  await interaction.run(() =>
+    owner.login(
+      request.option === undefined
+        ? { providerId: provider.id, method: method.kind }
+        : {
+            providerId: provider.id,
+            method: method.kind,
+            option: request.option,
+          },
+      interaction,
+    ),
   );
-  interaction.notify({
-    type: "success",
-    message: `Signed in to ${provider.name}.`,
-  });
 }
 
 async function signOutProvider(
@@ -283,11 +281,7 @@ async function signOutProvider(
     cancelLabel: "Keep signed in",
   });
   if (!confirmed) return;
-  await owner.logout(provider.id, interaction);
-  interaction.notify({
-    type: "success",
-    message: `Signed out of ${provider.name}.`,
-  });
+  await interaction.run(() => owner.logout(provider.id, interaction));
 }
 
 /** Cancelling a sign-in is an ordinary ending, not a failure. */

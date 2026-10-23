@@ -82,7 +82,20 @@ function fixture(
   };
 }
 
-it("waiting cancellation preserves the advertised done notice without opening a dialog", async () => {
+it("waiting cancellation toasts an advertised info notice and never echoes a success", async () => {
+  const toasts: unknown[] = [];
+  const info = fixture(() =>
+    Promise.resolve({
+      type: "done",
+      notice: { type: "info", message: "Timer was already stopped." },
+    }),
+  );
+  info.interactions.subscribeToasts((toast) => toasts.push(toast));
+  await info.actions.execute("probe", info.action, true);
+  expect(toasts).toEqual([
+    { variant: "info", message: "Timer was already stopped." },
+  ]);
+  info.actions.dispose();
   const calls: unknown[] = [];
   const f = fixture((id, args) => {
     calls.push([id, args]);
@@ -93,10 +106,11 @@ it("waiting cancellation preserves the advertised done notice without opening a 
   });
   await f.actions.execute("probe", f.action, true);
   expect(calls).toEqual([["stop", { reason: "human" }]]);
-  expect(f.interactions.snapshot()).toEqual({
-    open: undefined,
-    notice: { tone: "success", message: "Timer stopped." },
-  });
+  const echoed: unknown[] = [];
+  f.interactions.subscribeToasts((toast) => echoed.push(toast));
+  await f.actions.execute("probe", f.action, true);
+  expect(echoed).toEqual([]);
+  expect(f.interactions.snapshot()).toEqual({ open: undefined });
   expect(f.actions.snapshot().get(f.action)).toEqual({ pending: false });
   f.actions.dispose();
 });

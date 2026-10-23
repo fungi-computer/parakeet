@@ -173,12 +173,19 @@ export function useSlashCommands(
   }, [commands, enabled, store, hasCommandPalette]);
   const advertised = useMemo(
     () =>
-      advertisedCommands(commands, session, (entryId, commandId) => {
-        const row = contributionsRef.current
-          .find((entry) => entry.entryId === entryId)
-          ?.value.panel.find((row) => row.inspection?.commandId === commandId);
-        if (row !== undefined) store.inspect({ entryId, rowId: row.id });
-      }),
+      advertisedCommands(
+        commands,
+        session,
+        () => contributionsRef.current,
+        (entryId, commandId) => {
+          const row = contributionsRef.current
+            .find((entry) => entry.entryId === entryId)
+            ?.value.panel.find(
+              (row) => row.inspection?.commandId === commandId,
+            );
+          if (row !== undefined) store.inspect({ entryId, rowId: row.id });
+        },
+      ),
     [commands, session, store],
   );
   useEffect(
@@ -198,7 +205,7 @@ export function useSlashCommands(
         tone: "error",
         message: `${error.extensionId} commands are unavailable: ${error.message}`,
       });
-  }, [advertised, enabled, slots, store]);
+  }, [advertised, enabled, slots, contributions, store]);
 
   const registry = useMemo(() => slashRegistry(snapshot), [snapshot]);
   const [dismissed, setDismissed] = useState<string>();

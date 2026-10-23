@@ -1,5 +1,5 @@
 import { parsePromptAnswer } from "@fungi.computer/whistle/wire";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { ShiitakeError } from "@fungi.computer/shiitake";
@@ -12,6 +12,7 @@ import {
 } from "@fungi.computer/whistle";
 
 import { contributeSessionCommands, runSlashDraft } from "../src/headless.js";
+import { createParakeetInteractions } from "../src/commands/interactions.js";
 import {
   commandHandler,
   commandResult,
@@ -25,6 +26,7 @@ const session = {
       sessionId: "proof",
       activity: idleFacts,
       terminals: [],
+      toolOutput: [],
       progress: null,
       pending: { total: 0, prompts: [] },
     }),
@@ -35,6 +37,7 @@ const session = {
 function noticing(runtime: WhistleRuntime, notices: string[]) {
   return runtime.present(() => {
     const interaction: WhistleInteraction = {
+      run: (operation) => operation(),
       signal: new AbortController().signal,
       prompt: () => Promise.reject(new Error("No prompts in this test")),
       notify: (notice) => {
@@ -53,6 +56,7 @@ function presentingPrompt(
 ) {
   return runtime.present(() => {
     const interaction: WhistleInteraction = {
+      run: (operation) => operation(),
       signal: new AbortController().signal,
       prompt: (prompt) => {
         prompts.push(prompt);
@@ -79,37 +83,85 @@ function userMessage(
 }
 
 describe("shared Parakeet Session commands", () => {
-  it("lists the owner queue and withdraws the exact last follow-up for editing", async () => {
+  it("retries navigation to the successful fork without forking again", async () => {
+    const runtime = createWhistle();
+    const interactions = createParakeetInteractions();
+    const detach = interactions.attach(runtime.present);
+    const forkCalls: string[] = [];
+    const navigations: string[] = [];
+    contributeSessionCommands(
+      runtime,
+      {
+        read: async () => ({
+          ...(await session.read()),
+          messages: [userMessage("chosen-entry", 1, "Fork this message")],
+        }),
+        command: commandHandler(
+          commandResult,
+          undefined,
+          undefined,
+          (input) => {
+            forkCalls.push(input.entryId);
+            return Promise.resolve({ sessionId: "created-fork" });
+          },
+        ),
+      },
+      {
+        sourceId: "fork-retry",
+        namespace: "fork-retry",
+        sessionResumeAvailable: false,
+        forkAvailable: true,
+        onForked: (sessionId) => {
+          navigations.push(sessionId);
+          return navigations.length === 1
+            ? Promise.reject(new Error("Navigation failed"))
+            : Promise.resolve();
+        },
+      },
+    );
+    const running = runtime.execute("fork-retry:fork", { origin: "slash" });
+    try {
+      await vi.waitFor(() => {
+        expect(
+          interactions.snapshot().open?.host.snapshot().prompt,
+        ).toBeDefined();
+      });
+      const host = interactions.snapshot().open?.host;
+      const pending = host?.snapshot().prompt;
+      if (host === undefined || pending === undefined)
+        throw new Error("Missing fork question");
+      host.answer(pending.sequence, "chosen-entry");
+      await vi.waitFor(() => {
+        expect(host.snapshot().retryable).toBe(true);
+      });
+      expect(forkCalls).toEqual(["chosen-entry"]);
+      expect(navigations).toEqual(["created-fork"]);
+      host.retry();
+      expect((await running).status).toBe("handled");
+      expect(forkCalls).toEqual(["chosen-entry"]);
+      expect(navigations).toEqual(["created-fork", "created-fork"]);
+      expect(interactions.snapshot().open).toBeUndefined();
+    } finally {
+      interactions.close();
+      await running;
+      detach();
+      runtime.close();
+    }
+  });
+
+  it("lists the owner queue without offering a mutating slash command", async () => {
     const runtime = createWhistle();
     const notices: string[] = [];
-    const edited: string[] = [];
-    const cancelled: string[] = [];
-    const pendingGuards: boolean[] = [];
-    let pendingHasMore = false;
-    let canEdit = true;
-    const run = (draft: string) =>
-      runSlashDraft(draft, runtime, () => undefined, "slash").then(
-        (outcome) => outcome,
-      );
     noticing(runtime, notices);
     const lease = contributeSessionCommands(
       runtime,
       {
+        ...session,
         read: () =>
-          Promise.resolve({
-            sessionId: "proof",
-            activity: runningFacts(),
-            terminals: [],
-            progress: {
-              messageId: "assistant-1",
-              revision: 1,
-              text: "Working",
-              thinking: "",
-              textTruncated: false,
-              thinkingTruncated: false,
-            },
+          session.read().then((snapshot) => ({
+            ...snapshot,
             pending: {
-              total: pendingHasMore ? 3 : 2,
+              hasMore: true,
               prompts: [
                 {
                   commandId: "work-1",
@@ -122,48 +174,41 @@ describe("shared Parakeet Session commands", () => {
                   delivery: "followUp" as const,
                 },
               ],
-              hasMore: pendingHasMore,
             },
-          }),
-        cancel: ({ commandId, onlyIfPending }) => {
-          cancelled.push(commandId);
-          pendingGuards.push(onlyIfPending ?? false);
-          return Promise.resolve({ status: "accepted", commandId });
-        },
-        command: commandHandler(commandResult),
+          })),
       },
       {
         sourceId: "queue-test",
         namespace: "queue-test",
         sessionResumeAvailable: false,
         forkAvailable: false,
-        onEditQueued: (text) => edited.push(text),
-        canEditQueued: () => canEdit,
       },
     );
-
+    const run = (draft: string) =>
+      runSlashDraft(
+        draft,
+        runtime,
+        () => {
+          throw new Error("Queue command became a prompt");
+        },
+        "slash",
+      );
     await expect(run("/queue list")).resolves.toMatchObject({
       status: "handled",
     });
     expect(notices[0]).toContain("queued · accepted: First");
     expect(notices[0]).toContain("queued · accepted: Last");
-    await expect(run("/queue edit-last")).resolves.toMatchObject({
-      status: "handled",
-    });
-    expect(cancelled).toEqual(["work-2"]);
-    expect(pendingGuards).toEqual([true]);
-    expect(edited).toEqual(["Last"]);
-    canEdit = false;
+    expect(notices[0]).toContain("More accepted prompts");
     await expect(run("/queue edit-last")).resolves.toMatchObject({
       status: "failed",
     });
-    expect(cancelled).toHaveLength(1);
-    canEdit = true;
-    pendingHasMore = true;
-    await expect(run("/queue edit-last")).resolves.toMatchObject({
-      status: "failed",
-    });
-    expect(cancelled).toHaveLength(1);
+    await expect(
+      runtime.execute("queue-test:queue", {
+        origin: "slash",
+        arguments: { action: "editLast" },
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+    expect(notices).toHaveLength(1);
     lease.dispose();
   });
 
@@ -203,7 +248,7 @@ describe("shared Parakeet Session commands", () => {
     await expect(
       runSlashDraft("/queue sideways", runtime, () => undefined, "slash"),
     ).resolves.toMatchObject({
-      error: { message: "Use /queue list or edit-last." },
+      error: { message: "Use /queue list." },
     });
     expect(sent).toBe(0);
     lease.dispose();
@@ -222,6 +267,7 @@ describe("shared Parakeet Session commands", () => {
             sessionId: "proof",
             activity: idleFacts,
             terminals: [],
+            toolOutput: [],
             progress: null,
             pending: { total: 0, prompts: [] },
             messages: [
@@ -287,6 +333,7 @@ describe("shared Parakeet Session commands", () => {
             sessionId: "proof",
             activity: runningFacts(),
             terminals: [],
+            toolOutput: [],
             progress: null,
             pending: { total: 0, prompts: [] },
             messages: [userMessage("m1", 1, "First")],
@@ -324,6 +371,7 @@ describe("shared Parakeet Session commands", () => {
             sessionId: "proof",
             activity: idleFacts,
             terminals: [],
+            toolOutput: [],
             progress: null,
             pending: { total: 0, prompts: [] },
             messages: [],
@@ -390,6 +438,7 @@ describe("shared Parakeet Session commands", () => {
               sessionId: "proof",
               activity: idleFacts,
               terminals: [],
+              toolOutput: [],
               progress: null,
               pending: { total: 0, prompts: [] },
               messages: [userMessage("m1", 1, "First")],
@@ -516,11 +565,8 @@ describe("shared Parakeet Session commands", () => {
       expect(compacts).toHaveLength(3);
       expect(new Set(compacts).size).toBe(3);
       expect(focuses).toEqual([undefined, undefined, "keep the API names"]);
-      expect(notices).toEqual([
-        "Compaction queued; it runs after any current work.",
-        "Compaction queued; it runs after any current work.",
-        "Compaction queued; it runs after any current work.",
-      ]);
+      // Queuing is what the person asked for: nothing is announced.
+      expect(notices).toEqual([]);
     } finally {
       lease.dispose();
     }
@@ -563,10 +609,7 @@ describe("shared Parakeet Session commands", () => {
       });
       expect(saved).toEqual(["Fern notes", null]);
       expect(shown).toEqual(["Fern notes", null]);
-      expect(notices).toEqual([
-        'Conversation named "Fern notes".',
-        "Conversation title cleared; it follows the first prompt again.",
-      ]);
+      expect(notices).toEqual([]);
     } finally {
       lease.dispose();
     }

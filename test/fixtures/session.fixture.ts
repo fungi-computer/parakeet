@@ -135,6 +135,7 @@ export function sessionSnapshot(input: FixtureSnapshot = {}): SessionSnapshot {
       cursor: null,
       hasMore: false,
       messages: [],
+      toolOutput: [],
       progress: status === "streaming" ? streamingProgress : null,
       extensions: {},
       attention: [],

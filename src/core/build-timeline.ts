@@ -108,6 +108,8 @@ export type DurableTimelineProjection = TimelineProjection &
   Readonly<{
     completedMessageIds: ReadonlySet<string>;
     commandIds: ReadonlySet<string>;
+    requestIds: ReadonlySet<string>;
+    positionAnchors: ReadonlyMap<number, string | null>;
     commandAnchors: ReadonlyMap<string, string>;
   }>;
 
@@ -244,6 +246,7 @@ function completeTool(
   items: ProjectedItem[],
   toolIndexes: ReadonlyMap<string, number>,
   value: Extract<SessionMessage["value"], { role: "toolResult" }>,
+  data: SessionMessage["data"],
 ): void {
   const toolIndex = toolIndexes.get(value.toolCallId);
   if (toolIndex === undefined) return;
@@ -252,6 +255,7 @@ function completeTool(
   items[toolIndex] = {
     ...tool,
     result: value,
+    data,
     status: value.isError ? "error" : "completed",
   };
 }
@@ -270,10 +274,13 @@ export function buildDurableTimeline(
   authorOf: ParakeetAuthorOf = noAuthor,
   requestIdOf: PromptRequestIdOf = noRequestId,
   notices: readonly SessionCompactionNotice[] = [],
+  positions: readonly number[] = [],
+  shown: (item: TimelineItem) => boolean = () => true,
 ): DurableTimelineProjection {
   const items: ProjectedItem[] = [];
   const toolIndexes = new Map<string, number>();
   const commandIds = new Set<string>();
+  const itemSequences = new Map<string, number>();
   const itemCommands = new Map<string, Set<string>>();
   let model: TimelineProjection["model"];
   let tokens = 0;
@@ -281,6 +288,7 @@ export function buildDurableTimeline(
 
   for (const source of orderedSources(messages, compactions, notices)) {
     if (source.kind === "marker") {
+      itemSequences.set(source.marker.id, source.sequence);
       items.push({
         id: source.marker.id,
         kind: "compaction_divider",
@@ -291,6 +299,7 @@ export function buildDurableTimeline(
       continue;
     }
     if (source.kind === "notice") {
+      itemSequences.set(source.notice.id, source.sequence);
       items.push({
         id: source.notice.id,
         kind: "compaction_notice",
@@ -318,7 +327,9 @@ export function buildDurableTimeline(
           author: authorOf(message.meta),
           origin: message.origin,
         };
-        items.push(withRequestId(confirmed, requestIdOf(commandId)));
+        items.push(
+          withRequestId(confirmed, message.requestId ?? requestIdOf(commandId)),
+        );
         break;
       }
       case "assistant": {
@@ -334,7 +345,7 @@ export function buildDurableTimeline(
         break;
       }
       case "toolResult":
-        completeTool(items, toolIndexes, value);
+        completeTool(items, toolIndexes, value, message.data);
         if (message.commandId !== null) {
           const commands =
             itemCommands.get(value.toolCallId) ?? new Set<string>();
@@ -343,6 +354,8 @@ export function buildDurableTimeline(
         }
         break;
     }
+    for (const item of items.slice(firstItem))
+      itemSequences.set(item.id, source.sequence);
     if (message.commandId !== null) {
       for (const item of items.slice(firstItem))
         itemCommands.set(item.id, new Set([message.commandId]));
@@ -373,7 +386,21 @@ export function buildDurableTimeline(
     if (active?.kind === "tool")
       items[toolIndex] = { ...active, status: "running" };
   }
-  const grouped = groupToolCalls(items);
+  // Later calls must not grow a tool group across a committed event.
+  const breakBefore = new Set<string>();
+  let previousSequence = 0;
+  for (const item of items) {
+    const sequence = itemSequences.get(item.id);
+    if (sequence === undefined) continue;
+    if (
+      positions.some(
+        (position) => previousSequence <= position && position < sequence,
+      )
+    )
+      breakBefore.add(item.id);
+    previousSequence = sequence;
+  }
+  const grouped = groupToolCalls(items, breakBefore);
   const commandAnchors = new Map<string, string>();
   for (const row of grouped) {
     if (row.kind === "assistant_message" && !assistantMessageVisible(row))
@@ -383,11 +410,35 @@ export function buildDurableTimeline(
       for (const command of itemCommands.get(member.id) ?? [])
         commandAnchors.set(command, row.id);
   }
+  const positionAnchors = new Map<number, string | null>();
+  for (const position of positions) {
+    let anchor: string | null = null;
+    for (const row of grouped) {
+      if (!shown(row)) continue;
+      if (row.kind === "assistant_message" && !assistantMessageVisible(row))
+        continue;
+      const members = row.kind === "tool_group" ? row.tools : [row];
+      if (
+        members.some((member) => {
+          const sequence = itemSequences.get(member.id);
+          return sequence !== undefined && sequence <= position;
+        })
+      )
+        anchor = row.id;
+    }
+    positionAnchors.set(position, anchor);
+  }
   const base = {
     commandAnchors,
+    positionAnchors,
     completedMessageIds: completedMessageIds(messages),
     items: grouped,
     commandIds,
+    requestIds: new Set(
+      messages.flatMap((message) =>
+        message.requestId === undefined ? [] : [message.requestId],
+      ),
+    ),
   };
   return model === undefined
     ? base
@@ -401,7 +452,6 @@ export function buildTimelineTail(
   queued: readonly SessionPendingPrompt[],
   admissions: readonly LocalPromptAdmission[] = [],
   authorOf: ParakeetAuthorOf = noAuthor,
-  requestIdOf: PromptRequestIdOf = noRequestId,
 ): readonly TimelineItem[] {
   const visibleProgress =
     progress === null ||
@@ -430,9 +480,14 @@ export function buildTimelineTail(
       origin: prompt.origin,
       author: authorOf(prompt.meta),
     };
-    items.push(withRequestId(waiting, requestIdOf(prompt.commandId)));
+    items.push(withRequestId(waiting, prompt.requestId));
   }
   for (const admission of admissions) {
+    if (
+      durable.requestIds.has(admission.requestId) ||
+      queued.some((prompt) => prompt.requestId === admission.requestId)
+    )
+      continue;
     if (
       admission.commandId !== undefined &&
       (queuedCommandIds.has(admission.commandId) ||

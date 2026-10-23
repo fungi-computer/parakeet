@@ -113,18 +113,23 @@
     "package/src/styles.css"
   ],
   "localDependencies": [
+    "../agar",
     "../cairn",
     "../caps",
+    "../gills",
     "../knapsack",
     "../shiitake",
     "../sigils",
     "../sprite",
     "../sprite-zdog",
-    "../whistle",
-    "../gills"
+    "../whistle"
   ],
   "runtimeFixture": "test/stranger/runtime.mjs",
-  "typecheckFixture": "test/stranger/consumer.mts",
+  "typechecks": [
+    {
+      "fixture": "test/stranger/consumer.mts"
+    }
+  ],
   "consumerDevDependencies": {
     "@types/node": "24.13.3",
     "@types/react": "18.3.3",

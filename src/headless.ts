@@ -1,4 +1,15 @@
-export { formatModelIdentity } from "./core/model-identity.js";
+export {
+  formatModelIdentity,
+  formatModelWithLevel,
+} from "./core/model-identity.js";
+export type {
+  QueuedRecallState,
+  QueuedRecallOutcome,
+} from "./core/queued-recall.js";
+export type {
+  ParakeetDraftIdentity,
+  ParakeetDraftStorage,
+} from "./core/draft-storage.js";
 export { formatContextUsage, formatTokenCount } from "./core/format-context.js";
 export { providerChoices } from "./provider-choices.js";
 export {
@@ -11,6 +22,7 @@ export {
   useStatus,
   useTimeline,
   type ComposerController,
+  type ParakeetDraftCheckpoint,
   type ParakeetModel,
   type ParakeetObservation,
   type ParakeetReconnectOutcome,
@@ -30,6 +42,7 @@ export {
 } from "./core/session-view-state.js";
 export { mergeTerminals } from "./core/session-projection.js";
 export {
+  type SessionActivity,
   seedSessionQuery,
   sessionQueryOptions,
   subscribeSessionActivity,
@@ -100,6 +113,7 @@ export {
   type ParakeetInteractionState,
   type ParakeetNotice,
   type ParakeetOpenInteraction,
+  type ParakeetToast,
 } from "./commands/interactions.js";
 export {
   parakeetBuiltinCommands,

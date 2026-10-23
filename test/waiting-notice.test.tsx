@@ -46,6 +46,8 @@ function render(
   commands: SessionCommand[],
 ): HTMLElement {
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: `test://parakeet/waiting/${String(roots.size)}`,
     command: commandHandler(
       (input) => {
@@ -150,11 +152,13 @@ it("stops only the running command while three follow-ups stay queued", async ()
     status: "thinking",
     pending: {
       total: ["First", "Second", "Third"].map((text, index) => ({
+        requestId: "request-" + `queued-${String(index)}`,
         commandId: `queued-${String(index)}`,
         text,
         delivery: "followUp" as const,
       })).length,
       prompts: ["First", "Second", "Third"].map((text, index) => ({
+        requestId: "request-" + `queued-${String(index)}`,
         commandId: `queued-${String(index)}`,
         text,
         delivery: "followUp" as const,

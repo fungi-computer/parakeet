@@ -1,9 +1,5 @@
 import { nanoid } from "@fungi.computer/cairn";
 import { ShiitakeError } from "@fungi.computer/shiitake";
-import type {
-  CancelResult,
-  ForkedSession,
-} from "@fungi.computer/shiitake/client";
 import type { ParakeetSessionCommand } from "./session.js";
 import type {
   WhistleExecutionInput,
@@ -23,10 +19,7 @@ import type { UserMessageItem } from "./store/types.js";
 /** A choice prompt holds at most 256 options; the default read already bounds this. */
 const maxForkOptions = 200;
 
-const queueArguments = z.discriminatedUnion("action", [
-  z.strictObject({ action: z.literal("list") }),
-  z.strictObject({ action: z.literal("editLast") }),
-]);
+const queueArguments = z.strictObject({ action: z.literal("list") });
 const queueArgumentsSchema = z
   .record(z.string(), z.json())
   .parse(structuredClone(z.toJSONSchema(queueArguments)));
@@ -49,11 +42,6 @@ export type SessionCommandSession = Readonly<{
     }> &
       SessionViewFacts
   >;
-  cancel?:
-    | ((
-        input: Readonly<{ commandId: string; onlyIfPending?: boolean }>,
-      ) => Promise<CancelResult>)
-    | undefined;
   /** Execute a type-discriminated Session command, including `fork`. */
   command: ParakeetSessionCommand;
 }>;
@@ -68,10 +56,6 @@ export type ParakeetSessionCommandOptions = Readonly<{
   sessionResume?: (() => void | Promise<void>) | undefined;
   /** Whether this host currently supports saved-Session selection. */
   sessionResumeAvailable: boolean;
-  /** Restore an owner-withdrawn queued prompt into the host composer. */
-  onEditQueued?: (text: string) => void;
-  /** Refuse withdrawal while the host has a draft that must be preserved. */
-  canEditQueued?: () => boolean;
   /** Navigate to the Session a fork just created. */
   onForked?: ((sessionId: string) => void | Promise<void>) | undefined;
   /** Whether this host currently supports navigating to a forked Session. */
@@ -143,17 +127,12 @@ export function contributeSessionCommands(
             aliases: ["queue"],
             order: 3,
             arguments: {
-              hint: "list | edit-last",
+              hint: "list",
               words: [
                 {
                   word: "list",
                   description: "List accepted queued prompts",
                   arguments: { action: "list" },
-                },
-                {
-                  word: "edit-last",
-                  description: "Return the last queued prompt to the composer",
-                  arguments: { action: "editLast" },
                 },
               ],
             },
@@ -167,62 +146,26 @@ export function contributeSessionCommands(
           const args = queueArguments.safeParse(
             rawArguments ?? { action: "list" },
           );
-          if (!args.success)
-            throw new Error("/queue requires list or editLast.");
+          if (!args.success) throw new Error("/queue requires list.");
           const snapshot = await session.read();
-          if (args.data.action === "list") {
-            const prompts = snapshot.pending.prompts;
-            const settled = snapshot.terminals.map(
-              (terminal) => `${terminal.outcome} · ${terminal.commandId}`,
-            );
-            tell(
-              interaction,
-              prompts.length === 0 && settled.length === 0
-                ? "No queued prompts."
-                : [
-                    ...prompts.map(
-                      (prompt, index) =>
-                        `${String(index + 1)}. queued · accepted: ${prompt.text}`,
-                    ),
-                    ...settled,
-                    ...(snapshot.pending.hasMore === true
-                      ? ["More accepted prompts are waiting outside this view."]
-                      : []),
-                  ].join("\n"),
-            );
-            return;
-          }
-          if (snapshot.pending.hasMore === true)
-            throw new Error(
-              "The queue view is incomplete; refresh it before editing the last prompt.",
-            );
-          const prompt = [...snapshot.pending.prompts]
-            .reverse()
-            .find((candidate) => candidate.delivery === "followUp");
-          if (prompt === undefined)
-            throw new Error("There is no queued follow-up to edit.");
-          if (session.cancel === undefined)
-            throw new Error("Queue editing is unavailable in this host.");
-          if (options.onEditQueued === undefined)
-            throw new Error(
-              "Editing queued prompts is unavailable in this host.",
-            );
-          if (options.canEditQueued?.() === false)
-            throw new Error(
-              "Clear or submit the current draft before editing a queued prompt.",
-            );
-          const withdrawn = await session.cancel({
-            commandId: prompt.commandId,
-            onlyIfPending: true,
-          });
-          if (withdrawn.status === "too_late")
-            throw new Error(
-              "That queued prompt has already started; it can no longer be edited.",
-            );
-          options.onEditQueued(prompt.text);
+          const prompts = snapshot.pending.prompts;
+          const settled = snapshot.terminals.map(
+            (terminal) => `${terminal.outcome} · ${terminal.commandId}`,
+          );
           tell(
             interaction,
-            "Queued prompt returned to the composer for editing.",
+            prompts.length === 0 && settled.length === 0
+              ? "No queued prompts."
+              : [
+                  ...prompts.map(
+                    (prompt, index) =>
+                      `${String(index + 1)}. queued · accepted: ${prompt.text}`,
+                  ),
+                  ...settled,
+                  ...(snapshot.pending.hasMore === true
+                    ? ["More accepted prompts are waiting outside this view."]
+                    : []),
+                ].join("\n"),
           );
         },
       },
@@ -256,7 +199,8 @@ export function contributeSessionCommands(
           slash: { aliases: ["fork"], order: 7 },
         },
         handler: async ({ interaction }: WhistleExecutionInput) => {
-          if (!options.forkAvailable || options.onForked === undefined) {
+          const onForked = options.onForked;
+          if (!options.forkAvailable || onForked === undefined) {
             unavailable("/fork");
             return;
           }
@@ -282,31 +226,33 @@ export function contributeSessionCommands(
               label: item.text.slice(0, 100) || "(empty message)",
             })),
           });
-          let forked: ForkedSession;
-          try {
-            forked = await session.command({ type: "fork", entryId: answer });
-          } catch (error) {
-            if (error instanceof ShiitakeError) {
-              if (error.boundary === "runtime" && error.cause === "conflict")
-                throw new Error(
-                  "Wait for the current run to finish, then fork.",
-                  { cause: error },
-                );
-              if (error.boundary === "store" && error.cause === "unavailable")
-                throw new Error(
-                  "That message is no longer available to fork from.",
-                  { cause: error },
-                );
-              if (error.boundary === "runtime" && error.cause === "rejected")
-                throw new Error(
-                  "This Session is bound to a channel and cannot be forked.",
-                  { cause: error },
-                );
+          const forked = await interaction.run(async () => {
+            try {
+              return await session.command({ type: "fork", entryId: answer });
+            } catch (error) {
+              if (error instanceof ShiitakeError) {
+                if (error.boundary === "runtime" && error.cause === "conflict")
+                  throw new Error(
+                    "Wait for the current run to finish, then fork.",
+                    { cause: error },
+                  );
+                if (error.boundary === "store" && error.cause === "unavailable")
+                  throw new Error(
+                    "That message is no longer available to fork from.",
+                    { cause: error },
+                  );
+                if (error.boundary === "runtime" && error.cause === "rejected")
+                  throw new Error(
+                    "This Session is bound to a channel and cannot be forked.",
+                    { cause: error },
+                  );
+              }
+              throw error;
             }
-            throw error;
-          }
-          await options.onForked(forked.sessionId);
-          tell(interaction, "Forked into a new Session.");
+          });
+          await interaction.run(async () => {
+            await onForked(forked.sessionId);
+          });
         },
       },
       {
@@ -327,10 +273,7 @@ export function contributeSessionCommands(
             },
           },
         },
-        handler: async ({
-          arguments: input,
-          interaction,
-        }: WhistleExecutionInput) => {
+        handler: async ({ arguments: input }: WhistleExecutionInput) => {
           const parsed = compactArguments.safeParse(input);
           if (!parsed.success)
             throw new Error("Use /compact, or /compact <what to focus on>.");
@@ -345,10 +288,7 @@ export function contributeSessionCommands(
               ? { type: "compact", requestId: nanoid() }
               : { type: "compact", requestId: nanoid(), instructions },
           );
-          return tell(
-            interaction,
-            "Compaction queued; it runs after any current work.",
-          );
+          return "Compaction queued; it runs after any current work.";
         },
       },
       {
@@ -368,10 +308,7 @@ export function contributeSessionCommands(
             },
           },
         },
-        handler: async ({
-          arguments: input,
-          interaction,
-        }: WhistleExecutionInput) => {
+        handler: async ({ arguments: input }: WhistleExecutionInput) => {
           const parsed = nameArguments.safeParse(input);
           if (!parsed.success)
             throw new Error("Use /name <title>, or /name to clear it.");
@@ -383,12 +320,9 @@ export function contributeSessionCommands(
           const title = text.length === 0 ? null : text;
           await session.command({ type: "title", title });
           await options.onTitled?.(title);
-          return tell(
-            interaction,
-            title === null
-              ? "Conversation title cleared; it follows the first prompt again."
-              : `Conversation named "${title}".`,
-          );
+          return title === null
+            ? "Conversation title cleared; it follows the first prompt again."
+            : `Conversation named "${title}".`;
         },
       },
     ],

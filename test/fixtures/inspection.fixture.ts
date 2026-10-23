@@ -60,6 +60,8 @@ export function inspectionFixture() {
     },
   });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "inspection",
     command: commandHandler((input) => commandResult(input)),
     extension: () => ({

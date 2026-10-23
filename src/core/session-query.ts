@@ -1,6 +1,7 @@
 import type {
   SessionFrame,
   SessionSnapshot,
+  PromptCommand,
 } from "@fungi.computer/shiitake/client";
 import {
   experimental_streamedQuery,
@@ -24,8 +25,17 @@ type SessionProjection = Readonly<{
   observation: "connecting" | "live";
   /** Last coherent durable Session state, absent before the first snapshot. */
   snapshot: SessionSnapshot | undefined;
-  /** One retryable user prompt survives live-page refreshes. */
-  latestPrompt: readonly [commandId: string, text: string] | undefined;
+  /** One retryable user prompt, including image cargo, survives page refreshes. */
+  latestPrompt:
+    | Readonly<{
+        /** Owner-issued identity of the original prompt command. */
+        commandId: string;
+        /** Original user text, including an empty image-only prompt body. */
+        text: string;
+        /** Original image content retained for a fresh retry admission. */
+        images: PromptCommand["images"];
+      }>
+    | undefined;
 }>;
 
 const emptyProjection: SessionProjection = Object.freeze({
@@ -45,16 +55,22 @@ function latestPrompt(
   messages: SessionSnapshot["messages"],
   previous?: SessionProjection["latestPrompt"],
 ): SessionProjection["latestPrompt"] {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message?.value.role !== "user" || message.commandId === null) continue;
+  for (const message of messages.slice().reverse()) {
+    if (message.value.role !== "user" || message.commandId === null) continue;
     const content = message.value.content;
     const text = Array.isArray(content)
       ? content
           .flatMap((part) => (part.type === "text" ? [part.text] : []))
           .join("\n")
       : content;
-    return [message.commandId, text];
+    const images = Array.isArray(content)
+      ? content.filter((part) => part.type === "image")
+      : [];
+    return {
+      commandId: message.commandId,
+      text,
+      images: images.length === 0 ? undefined : images,
+    };
   }
   return previous;
 }
@@ -165,11 +181,27 @@ export function seedSessionQuery(
   });
 }
 
-/** Borrow activity from the existing cache without starting another watch. */
+/** Longest header a Session activity may carry. */
+const maximumActivityHeader = 80;
+
+/** Observed Session activity; `header` is only an attention item's short heading. */
+export type SessionActivity = Readonly<{
+  /** The Session's observed activity. */
+  state: "idle" | "working" | "blocked" | "unknown";
+  /** Present when blocked by attention items: their short headings only. */
+  header?: string;
+}>;
+
+/**
+ * Borrow activity from the existing cache without starting another watch.
+ * An open attention item (such as an unanswered question) reports `blocked`
+ * ahead of working and idle; the header comes only from the question extension.
+ */
 export function subscribeSessionActivity(
   queryClient: QueryClient,
   session: ParakeetSession,
-  listener: (activity: "idle" | "working" | "unknown") => void,
+  listener: (activity: SessionActivity) => void,
+  questionExtensionId: string | undefined,
 ): () => void {
   const observer = new QueryObserver(queryClient, {
     ...sessionQueryOptions(session),
@@ -177,15 +209,38 @@ export function subscribeSessionActivity(
   });
   const report = (result: ReturnType<typeof observer.getCurrentResult>) => {
     const snapshot = result.data?.snapshot;
-    listener(
+    if (
       result.isError ||
-        result.data?.observation !== "live" ||
-        snapshot === undefined
-        ? "unknown"
-        : snapshot.activity.queue.state === "idle"
-          ? "idle"
-          : "working",
-    );
+      result.data?.observation !== "live" ||
+      snapshot === undefined
+    )
+      listener({ state: "unknown" });
+    else if (
+      snapshot.attention.some(
+        (item) =>
+          item.kind === "question" ||
+          item.kind === "goal-blocked" ||
+          item.kind === "goal-stalled",
+      )
+    ) {
+      // Only the question owner's short headers may leave the Session.
+      const header = snapshot.attention
+        .filter(
+          (item) =>
+            questionExtensionId !== undefined &&
+            item.kind === "question" &&
+            item.extensionId === questionExtensionId,
+        )
+        .map((item) => item.summary)
+        .join(", ")
+        .slice(0, maximumActivityHeader);
+      listener(
+        header === "" ? { state: "blocked" } : { state: "blocked", header },
+      );
+    } else
+      listener({
+        state: snapshot.activity.queue.state === "idle" ? "idle" : "working",
+      });
   };
   const unsubscribe = observer.subscribe(report);
   report(observer.getCurrentResult());

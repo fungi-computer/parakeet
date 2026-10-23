@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { formatContextUsage, formatModelIdentity } from "../src/headless.js";
+import {
+  formatContextUsage,
+  formatModelIdentity,
+  formatModelWithLevel,
+} from "../src/headless.js";
 
 it.each([
   ["openai", "gpt-6-astra", "openai/gpt-6-astra"],
@@ -18,4 +22,13 @@ it.each([
   [12_345, null, "12K"],
 ] as const)("formats %i of %s context tokens", (tokens, window, expected) => {
   expect(formatContextUsage({ tokens, window })).toBe(expected);
+});
+
+it.each([
+  ["high", "openai/gpt-6-astra (high)"],
+  [undefined, "openai/gpt-6-astra"],
+])("formats the model with level %s", (level, expected) => {
+  expect(
+    formatModelWithLevel({ provider: "openai", model: "gpt-6-astra" }, level),
+  ).toBe(expected);
 });

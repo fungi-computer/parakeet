@@ -2,6 +2,8 @@ import { noAuthor, type ParakeetAuthorOf } from "./core/author-labels.js";
 import { nanoid } from "@fungi.computer/cairn";
 import {
   type PromptDelivery,
+  type PromptCommand,
+  type SessionPendingPrompt,
   type SessionActivity,
   type SessionCompactionMarker,
   type SessionCompactionNotice,
@@ -19,6 +21,7 @@ import {
 import {
   createParakeetInteractions,
   type ParakeetInteractions,
+  type ParakeetToast,
 } from "./commands/interactions.js";
 import type { WhistleExecutionOutcome } from "@fungi.computer/whistle";
 import {
@@ -44,6 +47,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -72,6 +76,17 @@ import { isCancelledOutcome } from "./commands/run.js";
 import type { ParakeetSession } from "./session.js";
 import type { LocalPromptAdmission, TimelineItem } from "./store/types.js";
 import { reportFailure } from "./lib/failure.js";
+import {
+  createQueuedRecall,
+  type QueuedRecall,
+  type QueuedRecallState,
+  type QueuedRecallOutcome,
+} from "./core/queued-recall.js";
+import {
+  draftJournal,
+  type ParakeetDraftIdentity,
+  type ParakeetDraftStorage,
+} from "./core/draft-storage.js";
 
 const noMessages: readonly SessionMessage[] = Object.freeze([]);
 const noCompactions: readonly SessionCompactionMarker[] = Object.freeze([]);
@@ -90,7 +105,7 @@ const noPending: SessionPendingPrompts = Object.freeze({
 type SubmittedPromptAdmission = LocalPromptAdmission &
   Readonly<{
     submittedDraft: string;
-    submittedDraftRevision: number;
+    restoreDraft: boolean;
   }>;
 const connecting: ParakeetObservation = Object.freeze({ status: "connecting" });
 const live: ParakeetObservation = Object.freeze({ status: "live" });
@@ -157,10 +172,16 @@ export type ParakeetObservation =
 
 /** Stable history and replaceable work rendered by a conversation client. */
 export type TimelineController = Readonly<{
+  /** Remove one owner-admitted queued prompt, never the running turn or draft. */
+  cancelQueued: (commandId: string) => Promise<void>;
+  /** A queued-input gesture is waiting for its owner. */
+  cancellingQueued: boolean;
   /** Durable-backed rows whose identity is stable across progress revisions. */
   settled: readonly TimelineItem[];
   /** Replaceable progress, queued, and optimistic rows. */
   tail: readonly TimelineItem[];
+  /** Fixed committed Session positions resolved within the loaded history. */
+  positionAnchors: ReadonlyMap<number, string | null>;
   /** Last actually rendered durable row for each loaded command. */
   commandAnchors: ReadonlyMap<string, string>;
   /** Current owner-admitted prompts, independent of the visible history page. */
@@ -187,12 +208,38 @@ export type TimelineController = Readonly<{
   usage?: ParakeetUsage | undefined;
 }>;
 
+/** A host may proceed with restart only after the current journal committed. */
+export type ParakeetDraftCheckpoint =
+  | Readonly<{
+      /** The latest draft is committed and restart may proceed. */
+      status: "saved";
+    }>
+  | Readonly<{
+      /** Draft persistence failed; the host must not proceed with restart. */
+      status: "failed";
+      /** Storage failure explanation for the host. */
+      reason: string;
+    }>;
+
 /** Draft and prompt operations for the current conversation. */
 export type ComposerController = Readonly<{
   /** Stop the current turn. Queued prompts keep draining; the draft is unchanged. */
   cancel: () => Promise<void>;
   /** Current local input. */
   draft: string;
+  /** Image cargo restored with a queued prompt, carried through the same journal. */
+  images: PromptCommand["images"];
+  /** Shared composer reservation and recall outcome. */
+  recallState: QueuedRecallState;
+  /** Recall only when the host accepted a plain Up on empty, focused input. */
+  recall: () => Promise<QueuedRecallOutcome>;
+  /**
+   * Commit the latest draft and pending admissions synchronously, even through
+   * a callback captured before newer typing. Does not consume, send or withdraw.
+   * A resumed provider reads the same Session journal; never replay a copied
+   * draft over its newer state. A failed commit leaves the live draft untouched.
+   */
+  checkpointDraft: () => ParakeetDraftCheckpoint;
   /** Typed reason the latest prompt did not complete. */
   failure: "admission" | "failed" | "cancelled" | "interrupted" | undefined;
   /** Current send could not enter the bounded local admission queue. */
@@ -263,6 +310,19 @@ function errorMessage(cause: unknown): string {
     : "Prompt admission failed";
 }
 
+/** A lost withdrawal response must not block a later reconnect from retrying it. */
+function boundWithdrawal<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error("Request recovery timed out"));
+    }, 10_000);
+  });
+  return Promise.race([operation, deadline]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 function observationCause(cause: unknown): string {
   const message =
     cause instanceof Error && cause.message.trim().length > 0
@@ -305,29 +365,68 @@ function newestDurableCommandId(
   return newest?.commandId;
 }
 
-function newestDurablePrompt(
-  messages: SessionSnapshot["messages"],
-  commandId: string,
-): string | undefined {
-  const message = messages.find(
-    (candidate) =>
-      candidate.commandId === commandId && candidate.value.role === "user",
+function sameImageCargo(
+  left: PromptCommand["images"],
+  right: PromptCommand["images"],
+): boolean {
+  const images = left ?? [];
+  const originals = right ?? [];
+  return (
+    images.length === originals.length &&
+    images.every((image, index) => {
+      const original = originals[index];
+      return (
+        image.data === original?.data && image.mimeType === original.mimeType
+      );
+    })
   );
-  if (message?.value.role !== "user") return undefined;
-  const content = message.value.content;
-  const text = Array.isArray(content)
-    ? content
-        .flatMap((part) => (part.type === "text" ? [part.text] : []))
-        .join("\n")
-    : content;
-  return text.trim() === "" ? undefined : text;
+}
+
+type DraftStorageAcquisition =
+  | Readonly<{ status: "available"; storage: ParakeetDraftStorage }>
+  | Readonly<{ status: "unavailable" }>;
+
+function acquireDraftStorage(
+  supplied: ParakeetDraftStorage | undefined,
+): DraftStorageAcquisition {
+  if (supplied !== undefined) return { status: "available", storage: supplied };
+  try {
+    const browser: Readonly<{ localStorage?: ParakeetDraftStorage }> =
+      globalThis;
+    const storage = browser.localStorage;
+    return storage === undefined
+      ? { status: "unavailable" }
+      : { status: "available", storage };
+  } catch {
+    // An opaque-origin sandbox denies even reading the browser's getter.
+    return { status: "unavailable" };
+  }
 }
 
 function createConversationAtoms(
   session: ParakeetSession,
   queryClient: QueryClient,
   authorOf: ParakeetAuthorOf,
+  interactions: ParakeetInteractions,
+  draftStorage: DraftStorageAcquisition,
+  draftScope: string,
+  contributions: Atom<readonly ClientContribution[]>,
+  shown: (item: TimelineItem) => boolean,
 ) {
+  const journal = draftJournal(
+    draftScope,
+    draftStorage.status === "available" ? draftStorage.storage : undefined,
+  );
+  const saved = journal.read();
+  let mounted = false;
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const recoveryReasons = new Map(
+    saved.pending.map(({ requestId }) => [
+      requestId,
+      "Closed before confirmation",
+    ]),
+  );
+  const recovering = new Set<string>();
   const queryAtom = atomWithQuery(
     () => sessionQueryOptions(session),
     () => queryClient,
@@ -432,10 +531,39 @@ function createConversationAtoms(
   });
   const newestCommandAtom = atom(
     (get) =>
-      get(queryAtom).data?.latestPrompt?.[0] ??
+      get(queryAtom).data?.latestPrompt?.commandId ??
       newestDurableCommandId(get(messagesAtom)),
   );
   const pendingAtom = atom((get) => get(snapshotAtom)?.pending ?? noPending);
+  // Presentation only: owner snapshots and admission reconciliation stay intact.
+  const hiddenQueuedAtom = atom<ReadonlySet<string>>(new Set<string>());
+  const cancellingQueuedAtom = atom<string | undefined>(undefined);
+  const visiblePendingAtom = atom((get) => {
+    const pending = get(pendingAtom);
+    const hidden = get(hiddenQueuedAtom);
+    const prompts = pending.prompts.filter(
+      ({ commandId }) => !hidden.has(commandId),
+    );
+    return prompts.length === pending.prompts.length
+      ? pending
+      : {
+          ...pending,
+          prompts,
+          total: pending.total - (pending.prompts.length - prompts.length),
+        };
+  });
+  const reconcileQueuedCancellationAtom = atom(null, (get, set) => {
+    const hidden = get(hiddenQueuedAtom);
+    const pending = new Set(
+      get(pendingAtom).prompts.map(({ commandId }) => commandId),
+    );
+    const retained = new Set(
+      [...hidden].filter(
+        (id) => id === get(cancellingQueuedAtom) || pending.has(id),
+      ),
+    );
+    if (retained.size !== hidden.size) set(hiddenQueuedAtom, retained);
+  });
   const extensionsAtom = atom(
     (get): SessionExtensionSlots => get(snapshotAtom)?.extensions ?? noSlots,
   );
@@ -467,20 +595,176 @@ function createConversationAtoms(
     const requestIds = get(promptRequestIdsAtom);
     return (commandId) => requestIds.get(commandId);
   });
-  const durableAtom = atom((get) =>
-    buildDurableTimeline(
-      get(messagesAtom),
-      get(compactionsAtom),
+  const durableAtom = atom((get) => {
+    const messages = get(messagesAtom);
+    const compactions = get(compactionsAtom);
+    const notices = get(compactionNoticesAtom);
+    const sequences = [
+      ...messages.map((message) => message.sequence),
+      ...compactions.map((marker) => marker.sequence),
+      ...notices.map((notice) => notice.sequence),
+    ];
+    const oldest = Math.min(...sequences);
+    const newest = Math.max(...sequences);
+    const positions = get(contributions).flatMap(({ value }) =>
+      value.timeline.cells.flatMap(({ afterSequence }) =>
+        afterSequence === undefined ||
+        (get(hasMoreHistoryAtom) && afterSequence < oldest) ||
+        (get(hasNewerHistoryAtom) && afterSequence > newest)
+          ? []
+          : [afterSequence],
+      ),
+    );
+    return buildDurableTimeline(
+      messages,
+      compactions,
       get(toolActivityAtom),
       authorOf,
       get(requestIdOfAtom),
-      get(compactionNoticesAtom),
-    ),
+      notices,
+      positions,
+      shown,
+    );
+  });
+  const draftAtom = atom(saved.draft);
+  const draftImagesAtom = atom<PromptCommand["images"]>(saved.images);
+  const draftDeliveryAtom = atom<PromptDelivery | undefined>(saved.delivery);
+  const recallReservationAtom = atom<SessionPendingPrompt | undefined>(
+    saved.recall,
   );
-  const draftAtom = atom("");
+  const recallStateAtom = atom<QueuedRecallState>({ kind: "idle" });
+  let recallOwner: QueuedRecall | undefined;
   const draftRevisionAtom = atom(0);
-  const rawAdmissionsAtom = atom<readonly SubmittedPromptAdmission[]>([]);
+  const rawAdmissionsAtom = atom<readonly SubmittedPromptAdmission[]>(
+    saved.pending.map((pending): SubmittedPromptAdmission => ({
+      ...pending,
+      status: "admitting",
+    })),
+  );
+  const persistAtom = atom(
+    null,
+    (
+      get,
+      _set,
+      state?: Readonly<{
+        draft?: string;
+        draftPayload?: Readonly<{
+          images?: PromptCommand["images"];
+          delivery?: PromptDelivery | undefined;
+        }>;
+        recall?: SessionPendingPrompt | null;
+        admissions?: readonly SubmittedPromptAdmission[];
+      }>,
+    ) => {
+      // Unavailable storage is session-only, not a pretend durable journal.
+      // A supplied adapter's write failures still refuse durable operations.
+      if (draftStorage.status === "unavailable") return;
+      journal.write({
+        draft: state?.draft ?? get(draftAtom),
+        images:
+          state?.draftPayload === undefined
+            ? get(draftImagesAtom)
+            : state.draftPayload.images,
+        delivery:
+          state?.draftPayload === undefined
+            ? get(draftDeliveryAtom)
+            : state.draftPayload.delivery,
+        recall:
+          state?.recall === null
+            ? undefined
+            : (state?.recall ?? get(recallReservationAtom)),
+        pending: (state?.admissions ?? get(rawAdmissionsAtom))
+          .filter(({ status }) => status === "admitting")
+          .map(
+            ({
+              requestId,
+              content,
+              submittedDraft,
+              delivery,
+              images,
+              restoreDraft,
+            }) => ({
+              requestId,
+              content,
+              submittedDraft,
+              delivery,
+              images,
+              restoreDraft,
+            }),
+          ),
+      });
+    },
+  );
+  const recallAtom = atom(null, (get, set): Promise<QueuedRecallOutcome> => {
+    if (get(cancellingQueuedAtom) !== undefined)
+      return Promise.resolve("ignored");
+    recallOwner ??= createQueuedRecall({
+      session: {
+        latestPending: () => session.latestPending(),
+        cancel: (input) => session.command({ type: "cancel", ...input }),
+      },
+      recovery: get(recallReservationAtom),
+      emptyDraftRevision: () =>
+        get(draftAtom) === "" && (get(draftImagesAtom)?.length ?? 0) === 0
+          ? get(draftRevisionAtom)
+          : undefined,
+      reserve: (prompt) => {
+        set(persistAtom, { recall: prompt });
+        set(recallReservationAtom, prompt);
+      },
+      forget: () => {
+        set(persistAtom, { recall: null });
+        set(recallReservationAtom, undefined);
+      },
+      restore: (prompt, revision) => {
+        if (
+          get(draftRevisionAtom) !== revision ||
+          get(draftAtom) !== "" ||
+          (get(draftImagesAtom)?.length ?? 0) !== 0
+        )
+          return false;
+        set(persistAtom, {
+          draft: prompt.text,
+          draftPayload: { images: prompt.images, delivery: prompt.delivery },
+          recall: null,
+        });
+        set(recallReservationAtom, undefined);
+        set(draftImagesAtom, prompt.images);
+        set(draftDeliveryAtom, prompt.delivery);
+        set(draftAtom, prompt.text);
+        set(draftRevisionAtom, (current) => current + 1);
+        return true;
+      },
+      onState: (state) => {
+        set(recallStateAtom, state);
+        if (state.kind === "too_late" || state.kind === "uncertain")
+          interactions.toast({ variant: "warning", message: state.message });
+      },
+    });
+    return recallOwner.recall();
+  });
   const latestSubmissionIdAtom = atom<string | undefined>(undefined);
+  const checkpointDraftAtom = atom(
+    null,
+    (_get, set): ParakeetDraftCheckpoint => {
+      if (!mounted)
+        return {
+          status: "failed",
+          reason: "Conversation is no longer mounted",
+        };
+      if (draftStorage.status === "unavailable")
+        return {
+          status: "failed",
+          reason: "Durable draft storage is unavailable",
+        };
+      try {
+        set(persistAtom);
+        return { status: "saved" };
+      } catch (cause) {
+        return { status: "failed", reason: errorMessage(cause) };
+      }
+    },
+  );
   const observedCommandIdsAtom = atom(
     (get) =>
       new Set([
@@ -502,29 +786,70 @@ function createConversationAtoms(
   /** Retire a successful local admission only after owner identity is observed. */
   const reconcileAdmissionsAtom = atom(null, (get, set) => {
     const knownCommandIds = get(observedCommandIdsAtom);
+    const observedRequests = new Map([
+      // Recorded replies have no command: their accepted receipt names the
+      // durable entry, not model admission or cancellation.
+      ...get(messagesAtom).flatMap(
+        ({ id, requestId, commandId }): [string, string][] =>
+          requestId === undefined ? [] : [[requestId, commandId ?? id]],
+      ),
+      ...get(pendingAtom).prompts.map(
+        ({ requestId, commandId }): [string, string] => [requestId, commandId],
+      ),
+    ]);
+    for (const candidate of get(rawAdmissionsAtom)) {
+      const commandId = observedRequests.get(candidate.requestId);
+      if (commandId !== undefined) {
+        set(promptRequestIdsAtom, (current) =>
+          new Map(current).set(commandId, candidate.requestId),
+        );
+      }
+    }
     set(rawAdmissionsAtom, (current) => {
       const unresolved = current.filter(
-        ({ status, commandId }) =>
-          status !== "accepted" ||
-          commandId === undefined ||
-          !knownCommandIds.has(commandId),
+        ({ requestId, status, commandId }) =>
+          !observedRequests.has(requestId) &&
+          (status !== "accepted" ||
+            commandId === undefined ||
+            !knownCommandIds.has(commandId)),
       );
+      if (unresolved.length !== current.length) {
+        try {
+          set(persistAtom, { admissions: unresolved });
+        } catch (cause) {
+          reportFailure("save reconciled draft", cause);
+        }
+      }
       return unresolved.length === current.length ? current : unresolved;
     });
   });
   const admissionErrorAtom = atom<"queue_full" | undefined>(undefined);
   const setDraftAtom = atom(null, (get, set, value: string) => {
+    try {
+      set(persistAtom, { draft: value });
+    } catch (cause) {
+      reportFailure("save current draft", cause);
+      interactions.toast({
+        variant: "error",
+        message: `Draft not saved: ${errorMessage(cause)}`,
+      });
+    }
     if (get(draftAtom) !== value)
       set(draftRevisionAtom, (revision) => revision + 1);
     set(draftAtom, value);
     set(admissionErrorAtom, undefined);
   });
-  /** The one owner of "clear the draft after submit" for prompts and commands. */
+  /** Consume only the exact draft a command submitted. */
   const clearSubmittedDraftAtom = atom(
     null,
     (get, set, submitted: Readonly<{ draft: string; revision: number }>) => {
-      if (get(draftRevisionAtom) !== submitted.revision) return;
-      set(draftAtom, (current) => (current === submitted.draft ? "" : current));
+      if (
+        get(draftRevisionAtom) !== submitted.revision ||
+        get(draftAtom) !== submitted.draft
+      )
+        return;
+      set(persistAtom, { draft: "" });
+      set(draftAtom, "");
     },
   );
   const abortAtom = atomWithMutation(
@@ -535,17 +860,77 @@ function createConversationAtoms(
     () => queryClient,
   );
 
+  // One unresolved queued gesture per mounted conversation, like Recall.
+  // Accepted masks last only while that identity remains in the bounded owner
+  // pending page; stale pre-ack snapshots cannot resurrect the removed row.
+  let queuedCancellation: Promise<void> | undefined;
+  const cancelQueuedAtom = atom(
+    null,
+    (get, set, commandId: string): Promise<void> => {
+      if (!mounted || get(recallStateAtom).kind === "recalling")
+        return Promise.resolve();
+      if (queuedCancellation !== undefined) return queuedCancellation;
+      if (
+        get(hiddenQueuedAtom).has(commandId) ||
+        !get(pendingAtom).prompts.some(
+          (prompt) => prompt.commandId === commandId,
+        )
+      )
+        return Promise.resolve();
+      set(hiddenQueuedAtom, new Set(get(hiddenQueuedAtom)).add(commandId));
+      set(cancellingQueuedAtom, commandId);
+      const reveal = () => {
+        const next = new Set(get(hiddenQueuedAtom));
+        next.delete(commandId);
+        set(hiddenQueuedAtom, next);
+      };
+      const operation = Promise.resolve()
+        .then(() =>
+          session.command({ type: "cancel", commandId, onlyIfPending: true }),
+        )
+        .then(
+          (result) => {
+            if (!mounted) return;
+            if (result.status === "too_late") {
+              reveal();
+              interactions.toast({
+                variant: "warning",
+                message:
+                  "Couldn't remove that message: it is no longer pending.",
+              });
+            }
+          },
+          () => {
+            if (!mounted) return;
+            reveal();
+            interactions.toast({
+              variant: "warning",
+              message:
+                "Cancellation unconfirmed. That message may still run. Try again or reconnect.",
+            });
+          },
+        )
+        .finally(() => {
+          queuedCancellation = undefined;
+          if (!mounted) return;
+          set(cancellingQueuedAtom, undefined);
+          set(reconcileQueuedCancellationAtom);
+        });
+      queuedCancellation = operation;
+      return operation;
+    },
+  );
+
   const tailAtom = atom((get) => {
     if (get(hasNewerHistoryAtom)) return [];
     const snapshot = get(snapshotAtom);
-    const pending = get(pendingAtom);
+    const pending = get(visiblePendingAtom);
     return buildTimelineTail(
       get(durableAtom),
       snapshot?.progress ?? null,
       pending.prompts,
       get(admissionsAtom),
       authorOf,
-      get(requestIdOfAtom),
     );
   });
   const timelineAtom = atom<
@@ -555,12 +940,17 @@ function createConversationAtoms(
       | "loadNewerHistory"
       | "jumpToLatest"
       | "pinVisibleHistory"
+      | "cancelQueued"
     >
   >((get) => {
     const durable = get(durableAtom);
     const base = {
       pendingHasMore: get(pendingAtom).hasMore,
-      queued: get(pendingAtom),
+      queued: get(visiblePendingAtom),
+      cancellingQueued:
+        get(cancellingQueuedAtom) !== undefined ||
+        get(recallStateAtom).kind === "recalling",
+      positionAnchors: durable.positionAnchors,
       commandAnchors: durable.commandAnchors,
       hasMoreHistory: get(hasMoreHistoryAtom),
       hasNewerHistory: get(hasNewerHistoryAtom),
@@ -664,25 +1054,68 @@ function createConversationAtoms(
 
   const dispatchAdmissionAtom = atom(
     null,
-    (get, set, admission: SubmittedPromptAdmission) => {
+    (
+      get,
+      set,
+      {
+        admission,
+        consumeDraft,
+      }: Readonly<{
+        admission: SubmittedPromptAdmission;
+        consumeDraft: boolean;
+      }>,
+    ) => {
+      try {
+        set(
+          persistAtom,
+          consumeDraft
+            ? { draft: "", draftPayload: {} }
+            : { draft: get(draftAtom) },
+        );
+      } catch (cause) {
+        reportFailure("save pending draft before send", cause);
+        set(rawAdmissionsAtom, (current) =>
+          current.filter(({ requestId }) => requestId !== admission.requestId),
+        );
+        interactions.toast({
+          variant: "error",
+          message: `Not sent: ${errorMessage(cause)}`,
+        });
+        return;
+      }
+      if (consumeDraft) {
+        set(draftImagesAtom, undefined);
+        set(draftDeliveryAtom, undefined);
+        set(setDraftAtom, "");
+      }
+      const prompt: PromptCommand = {
+        type: "prompt",
+        text: admission.content,
+        requestId: admission.requestId,
+        delivery: admission.delivery,
+      };
       void session
-        .command({
-          type: "prompt",
-          text: admission.content,
-          requestId: admission.requestId,
-          delivery: admission.delivery,
-        })
+        .command(
+          admission.images === undefined
+            ? prompt
+            : { ...prompt, images: admission.images },
+        )
         .then((accepted) => {
+          if (
+            !mounted ||
+            !get(rawAdmissionsAtom).some(
+              ({ requestId, status }) =>
+                requestId === admission.requestId && status === "admitting",
+            )
+          )
+            return;
           if (accepted.status === "recorded") {
             set(rawAdmissionsAtom, (current) =>
               current.filter(
                 (candidate) => candidate.requestId !== admission.requestId,
               ),
             );
-            set(clearSubmittedDraftAtom, {
-              draft: admission.submittedDraft,
-              revision: admission.submittedDraftRevision,
-            });
+            set(persistAtom);
             return;
           }
           set(promptRequestIdsAtom, (current) =>
@@ -694,8 +1127,9 @@ function createConversationAtoms(
                 ? {
                     requestId: candidate.requestId,
                     content: candidate.content,
+                    images: candidate.images,
                     submittedDraft: candidate.submittedDraft,
-                    submittedDraftRevision: candidate.submittedDraftRevision,
+                    restoreDraft: candidate.restoreDraft,
                     delivery: candidate.delivery,
                     commandId: accepted.commandId,
                     status: "accepted",
@@ -703,57 +1137,155 @@ function createConversationAtoms(
                 : candidate,
             ),
           );
-          const admissions = get(rawAdmissionsAtom);
-          const admissionIndex = admissions.findIndex(
-            (candidate) => candidate.requestId === admission.requestId,
-          );
-          const hasNewerMatchingAdmission = admissions
-            .slice(admissionIndex + 1)
-            .some(
-              (candidate) =>
-                candidate.status === "admitting" &&
-                candidate.submittedDraft === admission.submittedDraft,
-            );
           set(reconcileAdmissionsAtom);
-          if (!hasNewerMatchingAdmission)
-            set(clearSubmittedDraftAtom, {
-              draft: admission.submittedDraft,
-              revision: admission.submittedDraftRevision,
-            });
+          set(persistAtom);
         })
         .catch((cause: unknown) => {
-          set(rawAdmissionsAtom, (current) =>
-            current.map((candidate) =>
-              candidate.requestId === admission.requestId
-                ? {
-                    ...candidate,
-                    status: "failed",
-                    error: errorMessage(cause),
-                  }
-                : candidate,
-            ),
-          );
+          if (!mounted) return;
+          recoveryReasons.set(admission.requestId, errorMessage(cause));
+          set(recoverAdmissionsAtom);
         });
     },
   );
+  const recoverAdmissionsAtom = atom(null, (get, set) => {
+    if (!mounted) return;
+    for (const admission of get(rawAdmissionsAtom)) {
+      const reason = recoveryReasons.get(admission.requestId);
+      if (
+        admission.status !== "admitting" ||
+        reason === undefined ||
+        recovering.has(admission.requestId)
+      )
+        continue;
+      recovering.add(admission.requestId);
+      void boundWithdrawal(session.withdraw(admission.requestId))
+        .then((resolution) => {
+          if (
+            !mounted ||
+            !get(rawAdmissionsAtom).some(
+              ({ requestId, status }) =>
+                requestId === admission.requestId && status === "admitting",
+            )
+          )
+            return;
+          if (resolution.status === "accepted") {
+            set(promptRequestIdsAtom, (current) =>
+              new Map(current).set(resolution.commandId, admission.requestId),
+            );
+            set(rawAdmissionsAtom, (current) =>
+              current.map((candidate) =>
+                candidate.requestId === admission.requestId
+                  ? {
+                      ...candidate,
+                      status: "accepted",
+                      commandId: resolution.commandId,
+                    }
+                  : candidate,
+              ),
+            );
+            set(persistAtom);
+            set(reconcileAdmissionsAtom);
+            return;
+          }
+          const currentDraft = get(draftAtom);
+          const restored = !admission.restoreDraft
+            ? currentDraft
+            : currentDraft === ""
+              ? admission.submittedDraft
+              : `${currentDraft}\n\n${admission.submittedDraft}`;
+          const failed = get(rawAdmissionsAtom).map(
+            (candidate): SubmittedPromptAdmission =>
+              candidate.requestId === admission.requestId
+                ? { ...candidate, status: "failed", error: reason }
+                : candidate,
+          );
+          // Commit restoration and removal of the pending record in ONE replacement.
+          const restoredImages = admission.restoreDraft
+            ? [...(get(draftImagesAtom) ?? []), ...(admission.images ?? [])]
+            : get(draftImagesAtom);
+          set(persistAtom, {
+            draft: restored,
+            draftPayload: {
+              images: restoredImages,
+              delivery: get(draftDeliveryAtom),
+            },
+            admissions: failed,
+          });
+          set(draftImagesAtom, restoredImages);
+          set(rawAdmissionsAtom, failed);
+          set(setDraftAtom, restored);
+          interactions.toast({
+            variant: "error",
+            message: `Not sent: ${reason}`,
+          });
+        })
+        .catch((cause: unknown) => {
+          if (mounted)
+            interactions.toast({
+              variant: "error",
+              message: `Send outcome unconfirmed; draft saved: ${errorMessage(cause)}`,
+            });
+        })
+        .finally(() => {
+          recovering.delete(admission.requestId);
+        });
+    }
+  });
+  const maintainRecoveryAtom = atom(null, (get, set) => {
+    const observation = get(observationAtom).status;
+    const admissions = get(rawAdmissionsAtom);
+    for (const [id, timer] of timers) {
+      if (
+        !admissions.some(
+          ({ requestId, status }) => requestId === id && status === "admitting",
+        )
+      ) {
+        clearTimeout(timer);
+        timers.delete(id);
+        recoveryReasons.delete(id);
+      }
+    }
+    for (const admission of admissions) {
+      if (admission.status !== "admitting") continue;
+      if (observation === "unavailable")
+        recoveryReasons.set(admission.requestId, "Disconnected");
+      if (!timers.has(admission.requestId)) {
+        timers.set(
+          admission.requestId,
+          setTimeout(() => {
+            recoveryReasons.set(
+              admission.requestId,
+              "Send confirmation timed out",
+            );
+            set(recoverAdmissionsAtom);
+          }, 30_000),
+        );
+      }
+    }
+    if (observation === "live" || observation === "unavailable")
+      set(recoverAdmissionsAtom);
+  });
+  const mountRecoveryAtom = atom(null, (_get, set) => {
+    mounted = true;
+    set(recallStateAtom, { kind: "idle" });
+    set(maintainRecoveryAtom);
+    return () => {
+      mounted = false;
+      recallOwner?.dispose();
+      recallOwner = undefined;
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  });
   const sendAtom = atom(
     null,
     (get, set, delivery: PromptDelivery = "steer") => {
       const draft = get(draftAtom);
-      const content = draft.trim();
-      if (content === "") return;
-      const admissions = get(admissionsAtom);
-      const draftRevision = get(draftRevisionAtom);
-      const rawAdmissions = get(rawAdmissionsAtom);
-      if (
-        rawAdmissions.some(
-          (admission) =>
-            admission.status === "admitting" &&
-            admission.submittedDraft === draft &&
-            admission.submittedDraftRevision === draftRevision,
-        )
-      )
+      const content = draft;
+      if (get(recallStateAtom).kind === "recalling") return;
+      if (content.trim() === "" && (get(draftImagesAtom)?.length ?? 0) === 0)
         return;
+      const admissions = get(admissionsAtom);
       const unresolved = admissions.filter(({ status }) => status !== "failed");
       if (unresolved.length >= MAX_UNRESOLVED_LOCAL_ADMISSIONS) {
         set(admissionErrorAtom, "queue_full");
@@ -761,16 +1293,17 @@ function createConversationAtoms(
       }
       const admission: SubmittedPromptAdmission = {
         content,
-        delivery,
+        delivery: get(draftDeliveryAtom) ?? delivery,
+        images: get(draftImagesAtom),
         requestId: nanoid(),
         submittedDraft: draft,
-        submittedDraftRevision: draftRevision,
+        restoreDraft: true,
         status: "admitting",
       };
       set(rawAdmissionsAtom, [...admissions, admission]);
       set(latestSubmissionIdAtom, admission.requestId);
       set(admissionErrorAtom, undefined);
-      set(dispatchAdmissionAtom, admission);
+      set(dispatchAdmissionAtom, { admission, consumeDraft: true });
     },
   );
   const submitCommandAtom = atom(
@@ -800,11 +1333,18 @@ function createConversationAtoms(
     if (get(failureAtom) === "interrupted" || get(failureAtom) === "failed") {
       const snapshot = get(snapshotAtom);
       const commandId = get(newestCommandAtom);
-      if (snapshot === undefined || commandId === undefined) return;
-      const content =
-        newestDurablePrompt(snapshot.messages, commandId) ??
-        get(queryAtom).data?.latestPrompt?.[1];
-      if (content === undefined) return;
+      const prompt = get(queryAtom).data?.latestPrompt;
+      if (
+        snapshot === undefined ||
+        prompt === undefined ||
+        prompt.commandId !== commandId
+      )
+        return;
+      const content = prompt.text;
+      // Equal text alone does not make a newer image draft the failed prompt.
+      const consumeDraft =
+        get(draftAtom) === content &&
+        sameImageCargo(get(draftImagesAtom), prompt.images);
       if (
         admissions.filter(({ status }) => status !== "failed").length >=
         MAX_UNRESOLVED_LOCAL_ADMISSIONS
@@ -814,16 +1354,20 @@ function createConversationAtoms(
       }
       const retry: SubmittedPromptAdmission = {
         content,
+        images: prompt.images,
         delivery: "followUp",
         requestId: nanoid(),
         submittedDraft: content,
-        submittedDraftRevision: get(draftRevisionAtom),
+        restoreDraft: consumeDraft,
         status: "admitting",
       };
       set(rawAdmissionsAtom, [...get(rawAdmissionsAtom), retry]);
       set(latestSubmissionIdAtom, retry.requestId);
       set(admissionErrorAtom, undefined);
-      set(dispatchAdmissionAtom, retry);
+      set(dispatchAdmissionAtom, {
+        admission: retry,
+        consumeDraft,
+      });
       return;
     }
     const admission = admissions
@@ -837,12 +1381,16 @@ function createConversationAtoms(
       set(admissionErrorAtom, "queue_full");
       return;
     }
+    const consumeDraft =
+      get(draftAtom) === admission.submittedDraft &&
+      sameImageCargo(get(draftImagesAtom), admission.images);
     const retry: SubmittedPromptAdmission = {
       content: admission.content,
       delivery: admission.delivery,
-      requestId: admission.requestId,
+      images: admission.images,
+      requestId: nanoid(),
       submittedDraft: admission.submittedDraft,
-      submittedDraftRevision: admission.submittedDraftRevision,
+      restoreDraft: consumeDraft,
       status: "admitting",
     };
     set(rawAdmissionsAtom, (current) =>
@@ -852,7 +1400,10 @@ function createConversationAtoms(
     );
     set(latestSubmissionIdAtom, retry.requestId);
     set(admissionErrorAtom, undefined);
-    set(dispatchAdmissionAtom, retry);
+    set(dispatchAdmissionAtom, {
+      admission: retry,
+      consumeDraft,
+    });
   });
   const dismissFailedAtom = atom(null, (get, set, requestId: string) => {
     const admissions = get(rawAdmissionsAtom);
@@ -927,9 +1478,16 @@ function createConversationAtoms(
         if (event.query === query) inspect();
       });
       const timeout = setTimeout(() => {
-        finish({
-          kind: "failed",
-          cause: "Session history did not reopen within 10 seconds",
+        // Streamed "opening" updates also replace TanStack's revert state.
+        // Cancel first, then record this real timeout on the existing query
+        // without replacing its last coherent snapshot.
+        void query.cancel({ revert: true }).then(() => {
+          const cause = "Session history did not reopen within 10 seconds";
+          query.setState({ status: "error", error: new Error(cause) });
+          finish({
+            kind: "failed",
+            cause,
+          });
         });
       }, 10_000);
       // A live stream does not settle its refetch promise until the watch closes.
@@ -948,12 +1506,18 @@ function createConversationAtoms(
   });
 
   return {
+    cancelQueuedAtom,
+    reconcileQueuedCancellationAtom,
     abortAtom,
+    draftImagesAtom,
+    recallStateAtom,
+    recallAtom,
     commandIdAtom,
     contextAtom,
     admissionErrorAtom,
     admissionsAtom,
     cancelAtom,
+    checkpointDraftAtom,
     draftAtom,
     dismissFailedAtom,
     extensionsAtom,
@@ -963,6 +1527,9 @@ function createConversationAtoms(
     loadNewerHistoryAtom,
     observationAtom,
     observedCommandIdsAtom,
+    rawAdmissionsAtom,
+    maintainRecoveryAtom,
+    mountRecoveryAtom,
     pinVisibleHistoryAtom,
     queryAtom,
     reconcileAdmissionsAtom,
@@ -985,6 +1552,8 @@ type ConversationScope = Readonly<{
   store: ReturnType<typeof createStore>;
   contributions: PrimitiveAtom<readonly ClientContribution[]>;
   interactions: ParakeetInteractions;
+  /** One visibility policy shared by timeline rows and their fixed anchors. */
+  shown: (item: TimelineItem) => boolean;
 }>;
 const ConversationContext = createContext<ConversationScope | null>(null);
 
@@ -1022,11 +1591,27 @@ export function ParakeetProvider({
   clients = noClients,
   interactionStore,
   authorOf = noAuthor,
+  onToast,
+  draftStorage,
+  draftIdentity,
 }: Readonly<{
   children: ReactNode;
   session: ParakeetSession;
   clients?: readonly ClientEntryV1[] | undefined;
   interactionStore?: ParakeetInteractions | undefined;
+  /** Show a transient message; the host owns the toast surface. */
+  onToast?: ((toast: ParakeetToast) => void) | undefined;
+  /**
+   * Browser localStorage when accessible, otherwise session-only drafts.
+   * Native hosts supply an atomic file adapter.
+   */
+  draftStorage?: ParakeetDraftStorage | undefined;
+  /**
+   * Hosts replacing transport endpoints must supply the durable owner pair.
+   * Otherwise the Session's logical address names its journal.
+   * Exactly one key is used; no previous-address lookup or migration occurs.
+   */
+  draftIdentity?: ParakeetDraftIdentity | undefined;
   /**
    * Read the author to show from a message's opaque host metadata. Absent,
    * lines show no author.
@@ -1034,16 +1619,92 @@ export function ParakeetProvider({
   authorOf?: ParakeetAuthorOf | undefined;
 }>) {
   const queryClient = useQueryClient();
-  const scope = useMemo(
-    () => ({
-      atoms: createConversationAtoms(session, queryClient, authorOf),
+  const acquiredDraftStorage = useMemo(
+    () => acquireDraftStorage(draftStorage),
+    [draftStorage],
+  );
+  const draftScope =
+    draftIdentity === undefined
+      ? session.address
+      : JSON.stringify([draftIdentity.agentId, draftIdentity.sessionId]);
+  const footerPromptOwners = useMemo<ReadonlySet<string>>(
+    () =>
+      new Set(
+        clients
+          .filter((entry) => entry.promptPresentation === "footer")
+          .map((entry) => entry.id),
+      ),
+    [clients],
+  );
+  const scope = useMemo(() => {
+    const interactions = interactionStore ?? createParakeetInteractions();
+    const contributions = atom(noContributions);
+    const shown = (item: TimelineItem) =>
+      item.kind !== "user_message" ||
+      item.origin === undefined ||
+      !footerPromptOwners.has(item.origin.extensionId);
+    return {
+      atoms: createConversationAtoms(
+        session,
+        queryClient,
+        authorOf,
+        interactions,
+        acquiredDraftStorage,
+        draftScope,
+        contributions,
+        shown,
+      ),
       session,
       store: createStore(),
-      contributions: atom(noContributions),
-      interactions: interactionStore ?? createParakeetInteractions(),
-    }),
-    [queryClient, session, interactionStore, authorOf],
-  );
+      contributions,
+      interactions,
+      shown,
+    };
+  }, [
+    queryClient,
+    session,
+    interactionStore,
+    authorOf,
+    footerPromptOwners,
+    acquiredDraftStorage,
+    draftScope,
+  ]);
+  useEffect(() => {
+    const update = () => {
+      scope.store.set(scope.atoms.maintainRecoveryAtom);
+    };
+    const unobserve = scope.store.sub(scope.atoms.observationAtom, update);
+    const unobserveAdmissions = scope.store.sub(
+      scope.atoms.rawAdmissionsAtom,
+      update,
+    );
+    const dispose = scope.store.set(scope.atoms.mountRecoveryAtom);
+    return () => {
+      dispose();
+      unobserve();
+      unobserveAdmissions();
+    };
+  }, [scope]);
+  useEffect(() => {
+    if (onToast === undefined) return undefined;
+    return scope.interactions.subscribeToasts(onToast);
+  }, [scope, onToast]);
+  useEffect(() => {
+    if (acquiredDraftStorage.status === "unavailable")
+      scope.interactions.report({
+        tone: "info",
+        message:
+          "Drafts are session-only because browser storage is unavailable. They will be lost when this conversation closes.",
+      });
+  }, [scope, acquiredDraftStorage]);
+  useEffect(() => {
+    const reconcile = () => {
+      scope.store.set(scope.atoms.reconcileQueuedCancellationAtom);
+    };
+    const unsubscribe = scope.store.sub(scope.atoms.snapshotAtom, reconcile);
+    reconcile();
+    return unsubscribe;
+  }, [scope]);
   useEffect(() => {
     // The live page is bounded: after a later reset an observed command may no
     // longer be present. Retire its local row once, not just while it is visible.
@@ -1094,15 +1755,49 @@ export function useTimeline(): TimelineController {
   const loadNewerHistory = useStoreSetter(atoms.loadNewerHistoryAtom);
   const jumpToLatest = useStoreSetter(atoms.jumpToLatestAtom);
   const pinVisibleHistory = useStoreSetter(atoms.pinVisibleHistoryAtom);
+  const cancelQueued = useStoreSetter(atoms.cancelQueuedAtom);
+  const { shown } = useConversationScope();
+  // View-only: stored prompts, queue counts and fork stay as loaded.
+  const settled = useMemo(
+    () => base.settled.filter(shown),
+    [base.settled, shown],
+  );
+  const tail = useMemo(() => base.tail.filter(shown), [base.tail, shown]);
+  const view = useMemo(
+    () => ({ ...base, settled, tail }),
+    [base, settled, tail],
+  );
+  const hidingOnly =
+    view.settled.length + view.tail.length === 0 &&
+    base.settled.length + base.tail.length > 0;
+  const needsOlder =
+    hidingOnly && base.hasMoreHistory && !base.loadingOlderHistory;
+  // One automatic request per loaded page: a failed fetch leaves the page
+  // unchanged, so it is not retried until the reader scrolls up.
+  const pageKey = `${base.settled[0]?.id ?? ""}:${String(base.settled.length)}`;
+  const requestedPage = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!needsOlder || requestedPage.current === pageKey) return;
+    requestedPage.current = pageKey;
+    loadOlderHistory();
+  }, [needsOlder, pageKey, loadOlderHistory]);
   return useMemo(
     () => ({
-      ...base,
+      ...view,
+      cancelQueued,
       jumpToLatest,
       loadNewerHistory,
       loadOlderHistory,
       pinVisibleHistory,
     }),
-    [base, jumpToLatest, loadNewerHistory, loadOlderHistory, pinVisibleHistory],
+    [
+      view,
+      cancelQueued,
+      jumpToLatest,
+      loadNewerHistory,
+      loadOlderHistory,
+      pinVisibleHistory,
+    ],
   );
 }
 
@@ -1110,9 +1805,13 @@ export function useTimeline(): TimelineController {
 export function useComposer(): ComposerController {
   const { atoms } = useConversationScope();
   const draft = useStoreAtom(atoms.draftAtom);
+  const images = useStoreAtom(atoms.draftImagesAtom);
+  const recallState = useStoreAtom(atoms.recallStateAtom);
+  const recall = useStoreSetter(atoms.recallAtom);
   const failure = useStoreAtom(atoms.failureAtom);
   const admissionError = useStoreAtom(atoms.admissionErrorAtom);
   const setDraft = useStoreSetter(atoms.setDraftAtom);
+  const checkpointDraft = useStoreSetter(atoms.checkpointDraftAtom);
   const send = useStoreSetter(atoms.sendAtom);
   const submitCommand = useStoreSetter(atoms.submitCommandAtom);
   const retry = useStoreSetter(atoms.retryAtom);
@@ -1125,7 +1824,11 @@ export function useComposer(): ComposerController {
     () => ({
       admissionError,
       cancel,
+      checkpointDraft,
       draft,
+      images,
+      recall,
+      recallState,
       dismissFailed,
       failure,
       retry: retryLatest,
@@ -1136,7 +1839,11 @@ export function useComposer(): ComposerController {
     [
       admissionError,
       cancel,
+      checkpointDraft,
       draft,
+      images,
+      recall,
+      recallState,
       dismissFailed,
       failure,
       retryLatest,

@@ -80,6 +80,8 @@ it.each([false, true])(
     });
     let receive: ((result: IteratorResult<SessionFrame>) => void) | undefined;
     const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
       address: "test://parakeet/author-labels",
       command: commandHandler(commandResult),
       extension: noExtension,
@@ -198,6 +200,8 @@ it("updates the live tail without rehighlighting settled messages or rescanning 
     }),
   };
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/settled-rendering",
     command: commandHandler(commandResult),
     extension: noExtension,
@@ -733,6 +737,29 @@ it("keeps admission diagnostics out of the chat and preserves dismissal", async 
   expect(dismiss).toHaveBeenCalledWith("request-1");
 });
 
+it("words a failed Agent message for an Agent, not as the human's prompt", async () => {
+  const { container, root } = mount();
+  await settle(() => {
+    root.render(
+      <TimelineItem
+        item={{
+          id: "failed-agent-message",
+          kind: "user_message",
+          text: "From the other Agent",
+          status: "failed",
+          requestId: "request-2",
+          author: { id: "agent_a", name: "Research agent", kind: "agent" },
+        }}
+        onDismissFailed={vi.fn()}
+      />,
+    );
+  });
+  expect(container.textContent).toContain(
+    "That Agent message didn’t make it through.",
+  );
+  expect(container.textContent).not.toContain("Your prompt");
+});
+
 it("updates settled host output when renderer dependencies change", () => {
   const { container, root } = mount();
   const item: ParakeetTimelineRow = {
@@ -786,6 +813,75 @@ it("shows the admitted key name on the simple user rail without an avatar", asyn
   ).toBe("Zed local project");
   expect(container.textContent).toContain("Inspect the project");
   expect(container.querySelector("img")).toBeNull();
+});
+
+const agentReply: ParakeetTimelineRow = {
+  id: "agent-reply",
+  kind: "user_message",
+  status: "confirmed",
+  text: "Findings: three kilns ready",
+  author: { id: "agent_research", name: "Research agent", kind: "agent" },
+};
+
+it("starts another Agent's message collapsed as one line: sigil, name, preview (Levi: should start collapsed)", () => {
+  const { container, root } = mount();
+  act(() => {
+    root.render(<DisclosureHarness item={agentReply} />);
+  });
+  const block = container.querySelector("[data-agent-message]");
+  const toggle = block?.querySelector("button");
+  expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle?.querySelector('[data-sigil="agent"]')).not.toBeNull();
+  expect(toggle?.textContent).toBe(
+    "Research agent· Findings: three kilns ready",
+  );
+  expect(block?.children).toHaveLength(1);
+  expect(container.textContent).not.toContain("↳");
+  expect(container.querySelector('[data-speaker="user"]')).toBeNull();
+  expect(container.querySelector("img")).toBeNull();
+});
+
+it("expands another Agent's message to the full block and collapses it back (Levi: and be expandable)", () => {
+  const { container, root } = mount();
+  act(() => {
+    root.render(<DisclosureHarness item={agentReply} />);
+  });
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>("[data-agent-message] button");
+  act(() => {
+    toggle()?.click();
+  });
+  const block = container.querySelector("[data-agent-message]");
+  expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
+  expect(toggle()?.textContent).toBe("Research agent");
+  expect(block?.children[1]?.textContent).toBe("Findings: three kilns ready");
+  expect(container.textContent).not.toContain("↳");
+  act(() => {
+    toggle()?.click();
+  });
+  expect(toggle()?.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    container.querySelector("[data-agent-message]")?.children,
+  ).toHaveLength(1);
+});
+
+it("keeps a human-authored line as the user bubble (human lines unchanged)", async () => {
+  const { container, root } = mount();
+  await settle(() => {
+    root.render(
+      <TimelineItem
+        item={{
+          id: "human-line",
+          kind: "user_message",
+          status: "confirmed",
+          text: "↳ Research agent replied: done",
+          author: { id: "visitor_ada", name: "Ada" },
+        }}
+      />,
+    );
+  });
+  expect(container.querySelector('[data-speaker="user"]')).not.toBeNull();
+  expect(container.querySelector("[data-agent-message]")).toBeNull();
 });
 
 it("shows a single tool call once and expands that call directly", () => {
@@ -860,4 +956,33 @@ it("shows a single tool call once and expands that call directly", () => {
       ?.getAttribute("aria-expanded"),
   ).toBe("true");
   expect(container.textContent).toContain("Passed");
+});
+
+it("labels each compaction notice result, stale and insufficient as skipped", () => {
+  const { container, root } = mount();
+  const labels = (
+    ["nothing_to_compact", "failed", "stale", "insufficient"] as const
+  ).map((result) => {
+    act(() => {
+      root.render(
+        <TimelineItem
+          item={{
+            id: `notice-${result}`,
+            kind: "compaction_notice",
+            at: 1,
+            trigger: "threshold",
+            result,
+            diagnostic: null,
+          }}
+        />,
+      );
+    });
+    return container.textContent;
+  });
+  expect(labels).toEqual([
+    "· nothing to compact",
+    "· compaction failed",
+    "· compaction skipped: the context moved on",
+    "· compaction skipped: the summary would not fit",
+  ]);
 });

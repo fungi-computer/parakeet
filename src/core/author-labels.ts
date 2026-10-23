@@ -6,6 +6,8 @@ export type ParakeetAuthor = Readonly<{
   id: string;
   /** The name shown beside the line. */
   name: string;
+  /** Another Agent wrote the line; it shows as a compact block, not a bubble. */
+  kind?: "agent" | undefined;
 }>;
 
 /**

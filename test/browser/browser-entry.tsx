@@ -221,6 +221,8 @@ function terminateLatestRun(outcome: "failed" | "cancelled"): void {
 }
 
 const session: ParakeetSession = {
+  latestPending: () => Promise.resolve(null),
+  withdraw: () => Promise.resolve({ status: "unknown" }),
   address: "test://parakeet/browser-session",
   command: commandHandler(
     (input) => {

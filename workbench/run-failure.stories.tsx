@@ -16,6 +16,7 @@ function FailureStory({
   return (
     <div className="mx-auto max-w-[42rem] p-md">
       <ChatComposer
+        queuedRecall={undefined}
         draft={draft}
         failure={retried ? undefined : failure}
         status={retried ? "sending" : "error"}

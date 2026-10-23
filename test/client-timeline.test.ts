@@ -7,15 +7,19 @@ import { placeClientTimeline } from "../src/core/client-timeline.js";
 
 const cell = (
   sequence: number,
-  commandId: string | null,
+  afterSequence: number | null,
   at = sequence,
-): ClientTimelineCellV1 => ({
-  id: String(sequence),
-  sequence,
-  commandId,
-  at,
-  rows: [{ id: "state", title: `Change ${String(sequence)}` }],
-});
+): ClientTimelineCellV1 => {
+  const value: ClientTimelineCellV1 = {
+    id: String(sequence),
+    sequence,
+    commandId: null,
+    at,
+    rows: [{ id: "state", title: `Change ${String(sequence)}` }],
+  };
+  if (afterSequence === null) return value;
+  return { ...value, afterSequence };
+};
 const contribution = (
   cells: readonly ClientTimelineCellV1[],
   omitted = 0,
@@ -26,26 +30,31 @@ const contribution = (
   timeline: { cells, omitted },
 });
 
-it("places committed cells after their real loaded command and labels unanchored changes separately", () => {
+it("distinguishes an empty Session position from an unanchored change", () => {
+  const entries = [
+    { entryId: "goal", value: contribution([cell(1, 0), cell(2, null)]) },
+  ];
+  const placed = placeClientTimeline(entries, new Map(), new Map([[0, null]]));
+  expect(placed.before.map(({ cell }) => cell.id)).toEqual(["1"]);
+  expect(placed.unanchored.map(({ cell }) => cell.id)).toEqual(["2"]);
+  expect(placed.after.size).toBe(0);
+});
+
+it("places committed cells at fixed loaded Session positions and labels unanchored changes separately", () => {
   const entries = [
     {
       entryId: "probe",
       value: contribution(
-        [
-          cell(1, "command-one"),
-          cell(2, "command-two"),
-          cell(3, null),
-          cell(4, "older-command"),
-        ],
+        [cell(1, 10), cell(2, 20), cell(3, null), cell(4, 5)],
         9,
       ),
     },
   ];
   const anchors = new Map([
-    ["command-one", "assistant-final"],
-    ["command-two", "tool-group-final"],
+    [10, "assistant-final"],
+    [20, "tool-group-final"],
   ]);
-  const placed = placeClientTimeline(entries, anchors);
+  const placed = placeClientTimeline(entries, new Map(), anchors);
   expect(
     [...placed.after].map(([id, cells]) => [
       id,
@@ -57,9 +66,9 @@ it("places committed cells after their real loaded command and labels unanchored
   ]);
   expect(placed.unanchored.map(({ cell }) => cell.id)).toEqual(["3"]);
   expect(placed.omitted).toEqual([{ entryId: "probe", count: 9 }]);
-  anchors.set("older-command", "older-message");
+  anchors.set(5, "older-message");
   expect(
-    placeClientTimeline(entries, anchors)
+    placeClientTimeline(entries, new Map(), anchors)
       .after.get("older-message")
       ?.map(({ cell }) => cell.id),
   ).toEqual(["4"]);
@@ -82,12 +91,26 @@ it("merges producer heads deterministically without reversing a producer after c
     ),
   ).toEqual(["b:1", "b:2", "a:1", "a:2"]);
   const tied = [
-    { entryId: "b", value: contribution([cell(1, "same", 1)]) },
-    { entryId: "a", value: contribution([cell(1, "same", 1)]) },
+    { entryId: "b", value: contribution([cell(1, 12, 1)]) },
+    { entryId: "a", value: contribution([cell(1, 12, 1)]) },
   ];
   expect(
-    placeClientTimeline(tied, new Map([["same", "last"]]))
+    placeClientTimeline(tied, new Map(), new Map([[12, "last"]]))
       .after.get("last")
       ?.map(({ entryId }) => entryId),
   ).toEqual(["a", "b"]);
+});
+
+it("retains V1 command placement for entries that choose a command anchor", () => {
+  const entries = [
+    {
+      entryId: "command-entry",
+      value: contribution([{ ...cell(1, null), commandId: "work" }]),
+    },
+  ];
+  expect(
+    placeClientTimeline(entries, new Map([["work", "last-loaded-output"]]))
+      .after.get("last-loaded-output")
+      ?.map(({ cell }) => cell.id),
+  ).toEqual(["1"]);
 });

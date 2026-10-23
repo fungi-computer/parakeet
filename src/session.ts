@@ -42,7 +42,10 @@ export type ParakeetSessionCommand = {
 
 /** The exact Shiitake operations consumed by the retained conversation UI. */
 export type ParakeetSession = Readonly<
-  Pick<ShiitakeSession, "address" | "extension" | "read" | "watch"> & {
+  Pick<
+    ShiitakeSession,
+    "address" | "extension" | "read" | "watch" | "withdraw" | "latestPending"
+  > & {
     /** Submit commands through this Session's admitted owner boundary. */
     command: ParakeetSessionCommand;
   }

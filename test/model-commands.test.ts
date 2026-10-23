@@ -1,4 +1,4 @@
-import { parsePromptAnswer } from "@fungi.computer/whistle/wire";
+import { parsePrompt, parsePromptAnswer } from "@fungi.computer/whistle/wire";
 import {
   createWhistle,
   type WhistleInteraction,
@@ -6,6 +6,83 @@ import {
 import type { ModelPreference } from "@fungi.computer/shiitake/model-preference";
 import { expect, it, vi } from "vitest";
 import type { ModelAccountContext } from "../src/account-commands.js";
+import { createParakeetInteractions } from "../src/commands/interactions.js";
+
+it.each(["save", "read"])(
+  "retries a failed model %s without repeating choices or successful work",
+  async (failure) => {
+    let preference: ModelPreference | null = null;
+    let reads = 0;
+    const writes: (ModelPreference | null)[] = [];
+    const commands = createWhistle();
+    const store = createParakeetInteractions();
+    const detach = store.attach(commands.present);
+    contributeModelCommands(
+      commands,
+      {
+        modelPreference: {
+          read: () => {
+            reads += 1;
+            return failure === "read" && reads === 2
+              ? Promise.reject(new Error("The model read failed."))
+              : Promise.resolve(preference);
+          },
+          set: (next) => {
+            writes.push(next);
+            if (failure === "save" && writes.length === 1)
+              return Promise.reject(new Error("The model save failed."));
+            preference = next;
+            return Promise.resolve();
+          },
+        },
+      },
+      {
+        account,
+        sourceId: "retry-model",
+        namespace: "session",
+        models: ["Alpha", "Beta"].map((name) => ({
+          providerId: "provider",
+          providerName: "Provider",
+          id: name,
+          name,
+          reasoning: ["high"],
+        })),
+        refreshModels: () => Promise.resolve([]),
+      },
+    );
+    const running = commands.execute("session:model", { origin: "slash" });
+    try {
+      for (const answer of ["provider", "1", "high"]) {
+        await vi.waitFor(() => {
+          expect(store.snapshot().open?.host.snapshot().prompt).toBeDefined();
+        });
+        const host = store.snapshot().open?.host;
+        const prompt = host?.snapshot().prompt;
+        if (host === undefined || prompt === undefined)
+          throw new Error("The model question is missing.");
+        host.answer(prompt.sequence, answer);
+      }
+      await vi.waitFor(() => {
+        expect(store.snapshot().open?.host.snapshot().retryable).toBe(true);
+      });
+      store.snapshot().open?.host.retry();
+      expect((await running).status).toBe("handled");
+      const chosen = {
+        providerId: "provider",
+        modelId: "Beta",
+        reasoning: "high",
+      };
+      expect(writes).toEqual(failure === "save" ? [chosen, chosen] : [chosen]);
+      expect(reads).toBe(failure === "save" ? 2 : 3);
+      expect(store.snapshot().open).toBeUndefined();
+    } finally {
+      store.close();
+      await running;
+      detach();
+      commands.close();
+    }
+  },
+);
 
 const account: ModelAccountContext = {
   host: "local",
@@ -33,6 +110,59 @@ const account: ModelAccountContext = {
 };
 import { contributeModelCommands } from "../src/model-commands.js";
 
+it("Enter after a provider choice selects its most recently used model", async () => {
+  let preference: ModelPreference | null = null;
+  const commands = createWhistle();
+  const owner = {
+    modelPreference: {
+      read: () => Promise.resolve(preference),
+      set: (next: ModelPreference | null) => {
+        preference = next;
+        return Promise.resolve();
+      },
+    },
+  };
+  contributeModelCommands(commands, owner, {
+    account,
+    sourceId: "recent-models",
+    namespace: "session",
+    models: ["Alpha", "Zeta"].map((name) => ({
+      providerId: "provider",
+      providerName: "Provider",
+      id: name,
+      name,
+      reasoning: [],
+    })),
+    refreshModels: () => Promise.resolve([]),
+  });
+  await commands.execute("session:model", {
+    origin: "agent",
+    arguments: { providerId: "provider", modelId: "Zeta" },
+  });
+  await commands.execute("session:model", { origin: "agent", arguments: null });
+  let step = 0;
+  const interaction: WhistleInteraction = {
+    run: (operation) => operation(),
+    signal: new AbortController().signal,
+    notify: () => undefined,
+    prompt: (prompt) => {
+      const choice = parsePrompt(prompt);
+      if (choice.type !== "choice") throw new Error("Expected a picker");
+      step += 1;
+      if (step === 1)
+        return Promise.resolve(parsePromptAnswer(prompt, "provider"));
+      const first = choice.options[0];
+      if (first === undefined) throw new Error("Expected a provider model");
+      expect(first.label).toBe("Provider · Zeta");
+      return Promise.resolve(parsePromptAnswer(prompt, first.value));
+    },
+  };
+  expect(
+    await commands.execute("session:model", { origin: "slash", interaction }),
+  ).toMatchObject({ status: "handled" });
+  expect(preference).toEqual({ providerId: "provider", modelId: "Zeta" });
+});
+
 it("uses one model owner for human and agent selection, inheritance and failures", async () => {
   let preference: ModelPreference | null = null;
   const read = vi.fn(() => Promise.resolve(preference));
@@ -44,6 +174,7 @@ it("uses one model owner for human and agent selection, inheritance and failures
   const answers = ["provider", "0", "low"];
   const asked: string[] = [];
   const interaction: WhistleInteraction = {
+    run: (operation) => operation(),
     signal: new AbortController().signal,
     prompt: (prompt) => {
       asked.push(prompt.message);
@@ -204,6 +335,7 @@ async function interactiveProviderFlow({
   const prompts: import("@fungi.computer/whistle").WhistlePrompt[] = [];
   const remaining = [...answers];
   const interaction: WhistleInteraction = {
+    run: (operation) => operation(),
     signal,
     prompt: (prompt) => {
       prompts.push(prompt);
@@ -312,10 +444,7 @@ it("signs in an unsigned provider before offering only its models", async () => 
     ],
   });
   expect(flow.prompts[2]).toMatchObject({
-    options: [
-      { value: "default", label: "Use agent model" },
-      { value: "0", label: "DeepSeek · Chat" },
-    ],
+    options: [{ value: "0", label: "DeepSeek · Chat" }],
   });
   expect(flow.login).toHaveBeenCalledOnce();
   expect(flow.set).toHaveBeenCalledWith({
@@ -412,6 +541,7 @@ it("offers Fungi without a catalog, signs in once and uses the newly authenticat
   const prompts: import("@fungi.computer/whistle").WhistlePrompt[] = [];
   const answers = ["fungi", "0"];
   const interaction: WhistleInteraction = {
+    run: (operation) => operation(),
     signal: new AbortController().signal,
     prompt: (prompt) => {
       prompts.push(prompt);
@@ -472,7 +602,7 @@ it("offers Fungi without a catalog, signs in once and uses the newly authenticat
       ],
     });
     expect(prompts[1]).toMatchObject({
-      options: [{ value: "default" }, { value: "0", label: "Fungi · Luna" }],
+      options: [{ value: "0", label: "Fungi · Luna" }],
     });
     expect(login).toHaveBeenCalledExactlyOnceWith(
       { providerId: "fungi", method: "subscription" },

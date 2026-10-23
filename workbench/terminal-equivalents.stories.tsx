@@ -31,6 +31,7 @@ function composer(
       <main className="mx-auto flex min-h-96 w-full max-w-[48rem] flex-col justify-end p-md">
         <ChatComposer
           {...extra}
+          queuedRecall={undefined}
           draft={draft}
           failure={status === "error" ? extra.failure : undefined}
           model={{ provider: "fungi", model: "@fungi/luna" }}

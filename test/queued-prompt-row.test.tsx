@@ -80,22 +80,90 @@ const settle = () =>
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   });
 
-const statusWords = /Sending|Queued|Prompt accepted/u;
+it("announces owner state changes outside the transcript while the footer stays quiet", async () => {
+  const live = frames();
+  const snapshot = sessionSnapshot();
+  const session: ParakeetSession = {
+    address: "test://parakeet/quiet-footer",
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    command: commandHandler(acceptedPrompt),
+    extension: noExtension,
+    read: () => Promise.resolve(snapshot),
+    watch: () =>
+      Promise.resolve({
+        snapshot,
+        changes: live.changes,
+        close: () => Promise.resolve(),
+      }),
+  };
+  function acceptedPrompt() {
+    return Promise.resolve(accepted("unused"));
+  }
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const client = new QueryClient();
+  try {
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Parakeet session={session} commands={createWhistle()} />
+        </QueryClientProvider>,
+      );
+    });
+    const announcement = () =>
+      container.querySelector('[aria-live="polite"][aria-atomic="true"]');
+    await vi.waitFor(() => {
+      expect(announcement()?.textContent).toBe("idle");
+    });
+    const region = announcement();
+    for (const status of [
+      "streaming",
+      "thinking",
+      "idle",
+    ] satisfies readonly import("./fixtures/session.fixture.js").FixtureStatus[]) {
+      act(() => {
+        live.push({
+          kind: "reset",
+          reason: "history_unavailable",
+          cursor: null,
+          baseline: sessionSnapshot({ status }),
+        });
+      });
+      await vi.waitFor(() => {
+        expect(announcement()?.textContent).toBe(
+          status === "streaming" ? "writing" : status,
+        );
+      });
+      expect(announcement()).toBe(region);
+      expect(container.querySelector(".composer-footer")?.textContent).toBe("");
+    }
+  } finally {
+    act(() => {
+      root.unmount();
+    });
+    client.clear();
+  }
+});
 
 it("keeps one dimmed row per prompt until the Agent takes it, then snaps it in place", async () => {
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   const live = frames();
   const admissions = new Map<string, (result: ParakeetPromptResult) => void>();
+  const requestIds = new Map<string, string>();
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/queued-prompt-row",
     read: () => Promise.resolve(sessionSnapshot({ status: "thinking" })),
-    command: commandHandler(
-      (input) =>
-        new Promise((resolve) => {
-          admissions.set(input.text, resolve);
-        }),
-    ),
+    command: commandHandler((input) => {
+      requestIds.set(input.text, input.requestId);
+      return new Promise((resolve) => {
+        admissions.set(input.text, resolve);
+      });
+    }),
     extension: noExtension,
     watch: () =>
       Promise.resolve({
@@ -150,14 +218,13 @@ it("keeps one dimmed row per prompt until the Agent takes it, then snaps it in p
   const dimmed = (row: HTMLElement) =>
     row.querySelector('[data-speaker="user"]')?.getAttribute("data-pending") ===
     "true";
-  // Every intermediate state shows the same element, dimmed, with no sub-line.
+  // Every waiting state keeps the same element and announces its pending state.
   const expectWaiting = (first: HTMLElement, second: HTMLElement) => {
     expect(rowOf("First while busy")).toBe(first);
     expect(rowOf("Second while busy")).toBe(second);
     for (const row of [first, second]) {
       expect(dimmed(row)).toBe(true);
-      expect(row.textContent).not.toMatch(statusWords);
-      expect(row.querySelector('[role="status"]')).toBeNull();
+      expect(row.querySelector('[role="status"]')?.textContent).toBe("Sending");
     }
   };
 
@@ -175,12 +242,24 @@ it("keeps one dimmed row per prompt until the Agent takes it, then snaps it in p
     await Promise.resolve();
   });
   await settle();
-  expectWaiting(first, second);
+  expect(rowOf("First while busy")).toBe(first);
+  expect(rowOf("Second while busy")).toBe(second);
+  expect(dimmed(first)).toBe(false);
+  expect(dimmed(second)).toBe(false);
 
   // Reported queued behind the running turn.
+  const firstRequestId = requestIds.get("First while busy");
+  const secondRequestId = requestIds.get("Second while busy");
+  if (!firstRequestId || !secondRequestId) throw new Error("Requests missing");
   const queued: SessionPendingPrompt[] = [
-    { commandId: "command-first", text: "First while busy", delivery: "steer" },
     {
+      requestId: firstRequestId,
+      commandId: "command-first",
+      text: "First while busy",
+      delivery: "steer",
+    },
+    {
+      requestId: secondRequestId,
       commandId: "command-second",
       text: "Second while busy",
       delivery: "steer",
@@ -200,6 +279,7 @@ it("keeps one dimmed row per prompt until the Agent takes it, then snaps it in p
         {
           id: "message-first",
           commandId: "command-first",
+          requestId: firstRequestId,
           sequence: 1,
           value: { role: "user", content: "First while busy", timestamp: 1 },
         },
@@ -213,7 +293,8 @@ it("keeps one dimmed row per prompt until the Agent takes it, then snaps it in p
   expect(dimmed(first)).toBe(false);
   expect(rowOf("Second while busy")).toBe(second);
   expect(dimmed(second)).toBe(true);
-  expect(host.textContent).not.toMatch(statusWords);
+  expect(first.querySelector('[role="status"]')).toBeNull();
+  expect(second.querySelector('[role="status"]')?.textContent).toBe("Sending");
 
   // A bounded reconnect can retain the owner's terminal without the older
   // message page. The accepted row must not remain an optimistic ghost.
@@ -251,6 +332,8 @@ it("keeps a failed prompt visible with its error affordance", async () => {
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
   const live = frames();
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://parakeet/failed-prompt-row",
     read: () => Promise.resolve(sessionSnapshot({ status: "thinking" })),
     command: commandHandler(() =>

@@ -145,7 +145,9 @@ try {
     );
   });
 
-  const goalPanel = page.getByRole("region", { name: "Session goal" });
+  const goalPanel = page.getByRole("region", {
+    name: "Session extension controls",
+  });
   await goalPanel.waitFor();
   assert.ok(
     (await goalPanel.boundingBox()).height <= 34,
@@ -436,14 +438,16 @@ try {
     throw new Error("browser proof did not load the compiled stylesheet");
 
   const proof = await page.evaluate(() => globalThis.__parakeetBrowserProof);
-  if (
-    proof.attempts !== 3 ||
-    proof.commands.length !== 3 ||
-    proof.commands[0].requestId !== proof.commands[1].requestId
-  )
-    throw new Error(`retry identity drifted: ${JSON.stringify(proof)}`);
-  // Separately exercise the new Retry control after the original admission
-  // identity contract above has been checked unchanged.
+  if (proof.attempts !== 3 || proof.commands.length !== 3)
+    throw new Error(`retry admission count drifted: ${JSON.stringify(proof)}`);
+  assert.notEqual(
+    proof.commands[0].requestId,
+    proof.commands[1].requestId,
+    "a human retry must create a fresh admission",
+  );
+  assert.equal(proof.commands[1].text, proof.commands[0].text);
+  assert.equal(proof.commands[1].delivery, proof.commands[0].delivery);
+  // A settled run's Retry control likewise creates a new admission.
   await textarea.fill("A run to retry");
   await textarea.press("Enter");
   await page

@@ -26,11 +26,10 @@ What the head is doing: at rest, working something out, or talking.
 type InteractionPanelProps = Readonly<{
   host: WhistleInteractionHost;
   onClose?: () => void;
-  onRetry?: () => void;
 }>;
 ```
 
-The interaction to draw and the page's close and retry callbacks.
+The interaction to draw and the page's close callback.
 
 ---
 
@@ -96,8 +95,11 @@ Conversation activity presented by Parakeet.
 
 ```ts
 type TimelineController = Readonly<{
+  cancelQueued: (commandId) => Promise<void>;
+  cancellingQueued: boolean;
   settled: readonly ParakeetTimelineItem[];
   tail: readonly ParakeetTimelineItem[];
+  positionAnchors: ReadonlyMap<number, string | null>;
   commandAnchors: ReadonlyMap<string, string>;
   queued: SessionPendingPrompts;
   pendingHasMore: boolean;
@@ -117,12 +119,33 @@ Stable history and replaceable work rendered by a conversation client.
 
 ---
 
+### ParakeetDraftCheckpoint
+
+```ts
+type ParakeetDraftCheckpoint =
+  | Readonly<{
+      status: "saved";
+    }>
+  | Readonly<{
+      status: "failed";
+      reason: string;
+    }>;
+```
+
+A host may proceed with restart only after the current journal committed.
+
+---
+
 ### ComposerController
 
 ```ts
 type ComposerController = Readonly<{
   cancel: () => Promise<void>;
   draft: string;
+  images: PromptCommand["images"];
+  recallState: QueuedRecallState;
+  recall: () => Promise<QueuedRecallOutcome>;
+  checkpointDraft: () => ParakeetDraftCheckpoint;
   failure: "admission" | "failed" | "cancelled" | "interrupted" | undefined;
   admissionError: "queue_full" | undefined;
   retry: () => void;
@@ -160,6 +183,7 @@ Session activity, observation, and Agent-lifetime controls.
 type ParakeetAuthor = Readonly<{
   id: string;
   name: string;
+  kind?: "agent";
 }>;
 ```
 
@@ -185,6 +209,60 @@ Parakeet never interprets metadata itself.
 #### Returns
 
 [`ParakeetAuthor`](#parakeetauthor) \| `undefined`
+
+---
+
+### ParakeetDraftIdentity
+
+```ts
+type ParakeetDraftIdentity = Readonly<{
+  agentId: string;
+  sessionId: string;
+}>;
+```
+
+Durable owner identity, independent of the current service endpoint.
+
+---
+
+### ParakeetDraftStorage
+
+```ts
+type ParakeetDraftStorage = Readonly<{
+  getItem: (key) => string | null;
+  setItem: (key, value) => void;
+}>;
+```
+
+Hosts must commit a replacement before returning, or throw without changing it.
+
+---
+
+### QueuedRecallState
+
+```ts
+type QueuedRecallState =
+  | Readonly<{
+      kind: "idle" | "recalling" | "restored";
+    }>
+  | Readonly<{
+      kind: "too_late" | "uncertain";
+      message: string;
+    }>;
+```
+
+Ephemeral composer reservation, never an admission journal or queue.
+
+---
+
+### QueuedRecallOutcome
+
+```ts
+type QueuedRecallOutcome =
+  "ignored" | "empty" | "restored" | "too_late" | "uncertain";
+```
+
+Result of one recall gesture; an empty queue permits local input history.
 
 ---
 
@@ -482,14 +560,17 @@ type ParakeetSessionCommand = {
         commandId: string;
       }>
     | Readonly<{
+        status: "recorded";
+      }>
+    | Readonly<{
         status: "too_late";
         commandId: string;
       }>
     | Readonly<{
-        sessionId: string;
+        status: "unknown";
       }>
     | Readonly<{
-        status: "recorded";
+        sessionId: string;
       }>
     | undefined
   >;
@@ -508,9 +589,9 @@ Admit Agent work or record a prompt held for a human reply.
 
 ##### Parameters
 
-| Parameter | Type                                                                                                                                                                                                                         |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `input`   | \| \{ `delivery`: `"followUp"` \| `"steer"`; `requestId`: `string`; `type`: `"prompt"`; `text`: `string`; `images?`: readonly `object`[]; \} \| \{ `type`: `"compact"`; `requestId`: `string`; `instructions?`: `string`; \} |
+| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`   | \| \{ `delivery`: `Schema.Literals`\<readonly \[`"steer"`, `"followUp"`\]\>; `requestId`: `Schema.String`; `type`: `Schema.Literal`\<`"prompt"`\>; `text`: `Schema.String`; `images?`: `Schema.optionalKey`\<`Schema.$Array`\<`Schema.Struct`\<\{ `type`: `Schema.Literal`\<`"image"`\>; `data`: `Schema.String`; `mimeType`: `Schema.String`; \}\>\>\>; \} \| \{ `type`: `Schema.Literal`\<`"compact"`\>; `requestId`: `Schema.String`; `instructions?`: `Schema.optionalKey`\<`Schema.String`\>; \} |
 
 ##### Returns
 
@@ -526,12 +607,12 @@ Cancel the named queued or running command.
 
 ##### Parameters
 
-| Parameter              | Type                                                                          |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `input`                | \{ `commandId`: `string`; `onlyIfPending?`: `boolean`; `type`: `"cancel"`; \} |
-| `input.commandId`      | `string`                                                                      |
-| `input.onlyIfPending?` | `boolean`                                                                     |
-| `input.type`           | `"cancel"`                                                                    |
+| Parameter              | Type                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `input`                | \{ `commandId`: `Schema.String`; `onlyIfPending?`: `Schema.optional`\<`Schema.Boolean`\>; `type`: `Schema.Literal`\<`"cancel"`\>; \} |
+| `input.commandId`      | `Schema.String`                                                                                                                      |
+| `input.onlyIfPending?` | `Schema.optional`\<`Schema.Boolean`\>                                                                                                |
+| `input.type`           | `Schema.Literal`\<`"cancel"`\>                                                                                                       |
 
 ##### Returns
 
@@ -547,9 +628,9 @@ Forward an owner-supported Session control command.
 
 ##### Parameters
 
-| Parameter | Type                                                                                                                                                                                                                                                |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `input`   | \| \{ `type`: `"abort"`; \} \| \{ `type`: `"branch"`; `entryId`: `string`; \} \| \{ `type`: `"operator"`; `requestId`: `string`; `author`: `"operator"` \| `"party"`; `text`: `string`; \} \| \{ `type`: `"title"`; `title`: `string` \| `null`; \} |
+| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`   | \| \{ `type`: `Schema.Literal`\<`"branch"`\>; `entryId`: `Schema.String`; \} \| \{ `type`: `Schema.Literal`\<`"operator"`\>; `requestId`: `Schema.String`; `author`: `Schema.Literals`\<readonly \[`"operator"`, `"party"`\]\>; `text`: `Schema.String`; \} \| \{ `type`: `Schema.Literal`\<`"title"`\>; `title`: `Schema.NullOr`\<`Schema.String`\>; \} \| \{ `type`: `Schema.Literal`\<`"abort"`\>; \} |
 
 ##### Returns
 
@@ -567,11 +648,11 @@ Return the owner-issued address of a forked Session.
 
 ##### Parameters
 
-| Parameter       | Type                                         |
-| --------------- | -------------------------------------------- |
-| `input`         | \{ `type`: `"fork"`; `entryId`: `string`; \} |
-| `input.type`    | `"fork"`                                     |
-| `input.entryId` | `string`                                     |
+| Parameter       | Type                                                                    |
+| --------------- | ----------------------------------------------------------------------- |
+| `input`         | \{ `type`: `Schema.Literal`\<`"fork"`\>; `entryId`: `Schema.String`; \} |
+| `input.type`    | `Schema.Literal`\<`"fork"`\>                                            |
+| `input.entryId` | `Schema.String`                                                         |
 
 ##### Returns
 
@@ -586,14 +667,17 @@ Return the owner-issued address of a forked Session.
   commandId: string;
 }>
   | Readonly<{
+  status: "recorded";
+}>
+  | Readonly<{
   status: "too_late";
   commandId: string;
 }>
   | Readonly<{
-  sessionId: string;
+  status: "unknown";
 }>
   | Readonly<{
-  status: "recorded";
+  sessionId: string;
 }>
 | undefined>;
 ```
@@ -602,16 +686,16 @@ Dispatch a typed command without inventing an admission result.
 
 ##### Parameters
 
-| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `input`   | \| \{ `delivery`: `"followUp"` \| `"steer"`; `requestId`: `string`; `type`: `"prompt"`; `text`: `string`; `images?`: readonly `object`[]; \} \| \{ `type`: `"abort"`; \} \| \{ `commandId`: `string`; `onlyIfPending?`: `boolean`; `type`: `"cancel"`; \} \| \{ `type`: `"branch"`; `entryId`: `string`; \} \| \{ `type`: `"fork"`; `entryId`: `string`; \} \| \{ `type`: `"operator"`; `requestId`: `string`; `author`: `"operator"` \| `"party"`; `text`: `string`; \} \| \{ `type`: `"compact"`; `requestId`: `string`; `instructions?`: `string`; \} \| \{ `type`: `"title"`; `title`: `string` \| `null`; \} |
+| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input`   | \| \{ `delivery`: `Schema.Literals`\<readonly \[`"steer"`, `"followUp"`\]\>; `requestId`: `Schema.String`; `type`: `Schema.Literal`\<`"prompt"`\>; `text`: `Schema.String`; `images?`: `Schema.optionalKey`\<`Schema.$Array`\<`Schema.Struct`\<\{ `type`: `Schema.Literal`\<`"image"`\>; `data`: `Schema.String`; `mimeType`: `Schema.String`; \}\>\>\>; \} \| \{ `type`: `Schema.Literal`\<`"abort"`\>; \} \| \{ `commandId`: `Schema.String`; `onlyIfPending?`: `Schema.optional`\<`Schema.Boolean`\>; `type`: `Schema.Literal`\<`"cancel"`\>; \} \| \{ `type`: `Schema.Literal`\<`"branch"`\>; `entryId`: `Schema.String`; \} \| \{ `type`: `Schema.Literal`\<`"fork"`\>; `entryId`: `Schema.String`; \} \| \{ `type`: `Schema.Literal`\<`"operator"`\>; `requestId`: `Schema.String`; `author`: `Schema.Literals`\<readonly \[`"operator"`, `"party"`\]\>; `text`: `Schema.String`; \} \| \{ `type`: `Schema.Literal`\<`"compact"`\>; `requestId`: `Schema.String`; `instructions?`: `Schema.optionalKey`\<`Schema.String`\>; \} \| \{ `type`: `Schema.Literal`\<`"title"`\>; `title`: `Schema.NullOr`\<`Schema.String`\>; \} |
 
 ##### Returns
 
 `Promise`\< \| `Readonly`\<\{ `status`: `"accepted"`; `commandId`: `string`;
-\}\> \| `Readonly`\<\{ `status`: `"too_late"`; `commandId`: `string`; \}\> \|
-`Readonly`\<\{ `sessionId`: `string`; \}\> \| `Readonly`\<\{ `status`:
-`"recorded"`; \}\> \| `undefined`\>
+\}\> \| `Readonly`\<\{ `status`: `"recorded"`; \}\> \| `Readonly`\<\{ `status`:
+`"too_late"`; `commandId`: `string`; \}\> \| `Readonly`\<\{ `status`:
+`"unknown"`; \}\> \| `Readonly`\<\{ `sessionId`: `string`; \}\> \| `undefined`\>
 
 ---
 
@@ -619,7 +703,11 @@ Dispatch a typed command without inventing an admission result.
 
 ```ts
 type ParakeetSession = Readonly<
-  Pick<ShiitakeSession, "address" | "extension" | "read" | "watch"> & object
+  Pick<
+    ShiitakeSession,
+    "address" | "extension" | "read" | "watch" | "withdraw" | "latestPending"
+  > &
+    object
 >;
 ```
 
@@ -681,6 +769,7 @@ type ParakeetToolItem = Readonly<{
   kind: "tool";
   name: string;
   result?: ToolResultMessage;
+  data?: SessionMessage["data"];
   startedAt?: number;
   status: "completed" | "error" | "running" | "unknown";
 }>;
@@ -728,7 +817,7 @@ type ParakeetTimelineItem =
       kind: "compaction_notice";
       at: number;
       trigger: SessionCompactionTrigger;
-      result: "failed" | "nothing_to_compact";
+      result: "failed" | "nothing_to_compact" | "stale" | "insufficient";
       diagnostic: string | null;
     }
   | ParakeetToolGroupItem
@@ -773,19 +862,19 @@ Stable row grammar rendered by Parakeet's timeline.
   kind: "compaction_notice";
   at: number;
   trigger: SessionCompactionTrigger;
-  result: "failed" | "nothing_to_compact";
+  result: "failed" | "nothing_to_compact" | "stale" | "insufficient";
   diagnostic: string | null;
 }
 ```
 
-| Name         | Type                                 | Description                                                       |
-| ------------ | ------------------------------------ | ----------------------------------------------------------------- |
-| `id`         | `string`                             | Stable rendered-item identity, from the durable notice entry.     |
-| `kind`       | `"compaction_notice"`                | Compaction-notice timeline discriminator.                         |
-| `at`         | `number`                             | When it was recorded, in milliseconds since the epoch.            |
-| `trigger`    | `SessionCompactionTrigger`           | What started it: the user, the context threshold, or an overflow. |
-| `result`     | `"failed"` \| `"nothing_to_compact"` | What the compaction did: nothing to summarize, or a failure.      |
-| `diagnostic` | `string` \| `null`                   | A failure's bounded reason; null for "nothing to compact".        |
+| Name         | Type                                                                  | Description                                                                                                                                                                                                        |
+| ------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`         | `string`                                                              | Stable rendered-item identity, from the durable notice entry.                                                                                                                                                      |
+| `kind`       | `"compaction_notice"`                                                 | Compaction-notice timeline discriminator.                                                                                                                                                                          |
+| `at`         | `number`                                                              | When it was recorded, in milliseconds since the epoch.                                                                                                                                                             |
+| `trigger`    | `SessionCompactionTrigger`                                            | What started it: the user, the context threshold, or an overflow.                                                                                                                                                  |
+| `result`     | `"failed"` \| `"nothing_to_compact"` \| `"stale"` \| `"insufficient"` | What the compaction did: nothing to summarize, a failure, or a summary dropped because its head no longer fit the context (stale) or because placing it would have left the context over the limit (insufficient). |
+| `diagnostic` | `string` \| `null`                                                    | A failure's bounded reason; null otherwise.                                                                                                                                                                        |
 
 ---
 
@@ -801,6 +890,7 @@ Stable row grammar rendered by Parakeet's timeline.
 
 ```ts
 const AgentHead: NamedExoticComponent<{
+  timeMs?: number;
   activity?: AgentHeadActivity;
   avatar: {
     v: 1;
@@ -909,9 +999,9 @@ Own one renderer-neutral conversation scope over the existing query cache.
 
 #### Parameters
 
-| Parameter           | Type                                                                                                                                                                                                                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `__namedParameters` | `Readonly`\<\{ `children`: `ReactNode`; `session`: [`ParakeetSession`](#parakeetsession); `clients?`: readonly `ClientEntryV1`[]; `interactionStore?`: [`ParakeetInteractions`](headless.md#parakeetinteractions); `authorOf?`: [`ParakeetAuthorOf`](#parakeetauthorof); \}\> |
+| Parameter           | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `__namedParameters` | `Readonly`\<\{ `children`: `ReactNode`; `session`: [`ParakeetSession`](#parakeetsession); `clients?`: readonly `ClientEntryV1`[]; `interactionStore?`: [`ParakeetInteractions`](headless.md#parakeetinteractions); `onToast?`: (`toast`) => `void`; `draftStorage?`: [`ParakeetDraftStorage`](#parakeetdraftstorage); `draftIdentity?`: [`ParakeetDraftIdentity`](#parakeetdraftidentity); `authorOf?`: [`ParakeetAuthorOf`](#parakeetauthorof); \}\> |
 
 #### Returns
 
@@ -1023,6 +1113,28 @@ The durable assistant's provider/model ids, shared by browser and terminal.
 
 ---
 
+### formatModelWithLevel()
+
+```ts
+function formatModelWithLevel(model, level): string;
+```
+
+The model identity with its thinking level, "provider/model (level)"; no level,
+no suffix.
+
+#### Parameters
+
+| Parameter | Type                              |
+| --------- | --------------------------------- |
+| `model`   | [`ParakeetModel`](#parakeetmodel) |
+| `level`   | `string` \| `undefined`           |
+
+#### Returns
+
+`string`
+
+---
+
 ### toolGroupDefaultOpen()
 
 ```ts
@@ -1057,7 +1169,7 @@ function visibleToolCalls(
   activeVerb: string;
   label: string;
   paths: readonly string[];
-  status: "error" | "unknown" | "completed" | "running";
+  status: "error" | "unknown" | "running" | "completed";
   durationMs?: number;
   exitCode?: number;
   error?: string;
@@ -1079,7 +1191,7 @@ Even a folded group shows recent calls, rather than hiding all tool work.
 readonly `Readonly`\<\{ `id`: `string`; `kind`:
 [`ParakeetToolKind`](#parakeettoolkind); `name`: `string`; `verb`: `string`;
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
-`status`: `"error"` \| `"unknown"` \| `"completed"` \| `"running"`;
+`status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
 `durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`; `sections`:
 readonly [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; \}\>[]
 

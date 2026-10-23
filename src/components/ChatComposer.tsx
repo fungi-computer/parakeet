@@ -101,6 +101,9 @@ type ComposerFooterProps = {
 };
 
 export type ChatComposerProps = {
+  /** Undefined for visitor composers without a caller-owned pending queue. */
+  queuedRecall:
+    Pick<ComposerController, "recall" | "recallState" | "images"> | undefined;
   /** Caller-owned prompt hint; omitted for the ordinary Session composer. */
   placeholder?: string | undefined;
   /** Hide internal model, usage and status readouts for visitors. */
@@ -139,7 +142,9 @@ function HostComposerTextarea({
   textareaId,
   textareaRef,
   value,
+  queuedRecall,
 }: {
+  queuedRecall: ChatComposerProps["queuedRecall"];
   placeholder: string | undefined;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -154,6 +159,15 @@ function HostComposerTextarea({
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   latestValue.current = value;
+  const recallState = queuedRecall?.recallState;
+  const recalling = recallState?.kind === "recalling";
+  useLayoutEffect(() => {
+    if (recallState?.kind !== "restored") return;
+    setHistoryIndex(-1);
+    const textarea = textareaRef.current;
+    if (textarea !== null)
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }, [recallState, textareaRef]);
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
@@ -164,17 +178,19 @@ function HostComposerTextarea({
 
   const saveAndSend = useCallback(() => {
     const draft = latestValue.current.trim();
-    if (!draft) return;
+    if (!draft && (queuedRecall?.images?.length ?? 0) === 0) return;
     onSend();
-    setHistory((previous) =>
-      previous.at(-1) === draft ? previous : [...previous, draft],
-    );
+    if (draft)
+      setHistory((previous) =>
+        previous.at(-1) === draft ? previous : [...previous, draft],
+      );
     setHistoryIndex(-1);
-  }, [onSend]);
+  }, [onSend, queuedRecall?.images?.length]);
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
       if (isImeComposing(event)) return;
+      if (recalling) return;
       if (slash?.open === true) {
         const handled =
           event.key === "ArrowDown"
@@ -194,6 +210,40 @@ function HostComposerTextarea({
       if (event.key === "Escape") {
         event.preventDefault();
         onAbort();
+        return;
+      }
+      if (
+        queuedRecall !== undefined &&
+        event.key === "ArrowUp" &&
+        !event.repeat &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        slash?.open !== true &&
+        latestValue.current === "" &&
+        (queuedRecall.images?.length ?? 0) === 0 &&
+        document.activeElement === event.currentTarget
+      ) {
+        event.preventDefault();
+        const input = event.currentTarget;
+        void queuedRecall.recall().then((outcome) => {
+          if (
+            outcome !== "empty" ||
+            !input.isConnected ||
+            input.value !== "" ||
+            textareaRef.current !== input ||
+            history.length === 0
+          )
+            return;
+          const next =
+            historyIndex === -1 ? history.length - 1 : historyIndex - 1;
+          const entry = history[next];
+          if (entry !== undefined) {
+            setHistoryIndex(next);
+            onChange(entry);
+          }
+        });
         return;
       }
       if (event.key === "Enter" && !event.shiftKey) {
@@ -228,7 +278,17 @@ function HostComposerTextarea({
         }
       }
     },
-    [history, historyIndex, onAbort, onChange, saveAndSend, slash, textareaRef],
+    [
+      history,
+      historyIndex,
+      onAbort,
+      onChange,
+      saveAndSend,
+      slash,
+      textareaRef,
+      queuedRecall,
+      recalling,
+    ],
   );
   const listOpen =
     slash?.open === true && slash.completion.kind !== "none"
@@ -241,6 +301,18 @@ function HostComposerTextarea({
         Message
       </label>
       <Textarea
+        aria-describedby={
+          [
+            slash === undefined ? undefined : `${textareaId}-guidance`,
+            queuedRecall === undefined
+              ? undefined
+              : `${textareaId}-recall-guidance`,
+          ]
+            .filter((id) => id !== undefined)
+            .join(" ") || undefined
+        }
+        aria-busy={recalling}
+        readOnly={recalling}
         aria-autocomplete="list"
         aria-controls={listOpen ? slashListId : undefined}
         aria-expanded={listOpen}
@@ -265,11 +337,21 @@ function HostComposerTextarea({
         rows={1}
         value={value}
       />
+      {queuedRecall === undefined ? null : (
+        <span id={`${textareaId}-recall-guidance`} className="sr-only">
+          Press Up on an empty composer to recall your newest queued message.
+        </span>
+      )}
+      {(queuedRecall?.images?.length ?? 0) === 0 ? null : (
+        <p className="text-xs">
+          {queuedRecall?.images?.length} attached image(s)
+        </p>
+      )}
     </div>
   );
 }
 
-/** Shared visible and screen-reader readout of the observed Session state. */
+/** Full Session readout for announcements; the footer only draws attention states. */
 export function sessionReadout(
   status: ParakeetStatus,
   view: ParakeetSessionViewState,
@@ -318,10 +400,15 @@ function ComposerFooter({
 }: ComposerFooterProps) {
   const tone =
     viewState.kind === "error" ? "error" : presentations[status].tone;
-  const label = sessionReadout(status, viewState);
+  // Admission must not replace an outstanding owner attention readout.
+  const label = sessionReadout("idle", viewState);
+  const needsAttention =
+    viewState.kind === "waiting_for_you" || viewState.kind === "error";
   return (
     <div className="composer-footer">
-      <Status label={label} title={label} tone={tone} />
+      {needsAttention ? (
+        <Status label={label} title={label} tone={tone} />
+      ) : null}
       {statusChips?.map((chip, index) => (
         <span key={index} className="min-w-0 truncate" title={chip}>
           {chip}
@@ -356,6 +443,7 @@ function ComposerFooter({
 }
 
 export const ChatComposer = memo(function ChatComposer({
+  queuedRecall,
   placeholder,
   showFooter = true,
   statusChips,
@@ -379,13 +467,17 @@ export const ChatComposer = memo(function ChatComposer({
   const textareaId = useId();
   const slashListId = `${textareaId}-commands`;
   const { busy } = presentations[status];
+  const recallBusy = queuedRecall?.recallState.kind === "recalling";
+  const cannotSend =
+    recallBusy ||
+    (draft.trim().length === 0 && (queuedRecall?.images?.length ?? 0) === 0);
   const composerAction = busy ? (
     <div className="flex items-stretch">
       <Button
         aria-label="Stop current turn"
         className="join-item h-auto min-h-0 self-stretch"
         data-testid="composer-stop"
-        disabled={status === "queued" || status === "cancelling"}
+        disabled={recallBusy || status === "queued" || status === "cancelling"}
         onClick={onAbort}
         title="Stop the current turn. Queued messages keep running in order."
         size="lg"
@@ -396,7 +488,7 @@ export const ChatComposer = memo(function ChatComposer({
       <Button
         aria-label="Queue follow-up"
         className="join-item h-auto min-h-0 self-stretch"
-        disabled={draft.trim().length === 0}
+        disabled={cannotSend}
         onClick={() => {
           onSend("followUp");
         }}
@@ -410,7 +502,7 @@ export const ChatComposer = memo(function ChatComposer({
     <Button
       aria-label="Send message"
       className="join-item h-auto min-h-0 self-stretch"
-      disabled={draft.trim().length === 0}
+      disabled={cannotSend}
       onClick={() => {
         onSend("steer");
       }}
@@ -423,6 +515,7 @@ export const ChatComposer = memo(function ChatComposer({
   );
   const composerInput = (
     <HostComposerTextarea
+      queuedRecall={queuedRecall}
       placeholder={placeholder}
       onChange={onChange}
       onAbort={onAbort}
@@ -482,7 +575,7 @@ export const ChatComposer = memo(function ChatComposer({
       </div>
       {showFooter ? <ComposerFooter {...footerProps} /> : null}
       {slash === undefined ? null : (
-        <p className="parakeet-key-hints" aria-live="polite">
+        <p className="sr-only" id={`${textareaId}-guidance`}>
           {formatHints(slash.hints)}
         </p>
       )}

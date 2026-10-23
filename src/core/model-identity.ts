@@ -7,3 +7,13 @@ export function formatModelIdentity(model: ParakeetModel): string {
     ? model.model
     : `${prefix}${model.model}`;
 }
+
+/** The model identity with its thinking level, "provider/model (level)"; no level, no suffix. */
+export function formatModelWithLevel(
+  model: ParakeetModel,
+  level: string | undefined,
+): string {
+  return level === undefined
+    ? formatModelIdentity(model)
+    : `${formatModelIdentity(model)} (${level})`;
+}

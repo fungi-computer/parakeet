@@ -113,15 +113,6 @@
   color: var(--color-success);
 }
 
-.chat-composer .parakeet-key-hints {
-  margin: 0;
-  padding: 0 0.75rem 0.25rem;
-  background: var(--color-base-200);
-  font-family: var(--font-sans);
-  font-size: 0.6rem;
-  color: var(--stipe-fg-muted);
-}
-
 .chat-composer .footer-divider {
   width: 3px;
   height: 3px;

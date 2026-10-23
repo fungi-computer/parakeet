@@ -16,6 +16,7 @@ createRoot(root).render(
       </div>
     </Display>
     <ChatComposer
+      queuedRecall={undefined}
       draft=""
       failure={undefined}
       model={{ model: "gpt-6-astra", provider: "openai" }}

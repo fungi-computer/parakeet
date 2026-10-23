@@ -61,6 +61,8 @@ it("drops a footerless extension's omitted notice and unanchored rows entirely",
   };
   const snapshot = sessionSnapshot({ extensions: slots });
   const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
     address: "test://footerless-browser-rows",
     command: commandHandler(commandResult),
     extension: () => ({

@@ -61,25 +61,37 @@ export type SessionModelCommandOptions = Readonly<{
 
 const defaultChoice = "default";
 
+// Session-local picker memory survives contribution refreshes, not the owner.
+const recentModels = new WeakMap<
+  ModelPreferenceOwner["modelPreference"]["read"],
+  Map<string, ModelPreference>
+>();
+/** Private memory ceiling, independent of how many models a provider offers. */
+const maximumRememberedProviders = 256;
+
 function modelLabel(model: SessionModelChoice) {
   return `${model.providerName} · ${model.name}`;
 }
 
-/** Current model first, then providers and models by name; no provider is favoured. */
+/** Each provider's current or last-used model first, then catalog order. */
 function orderModels(
   models: readonly SessionModelChoice[],
   current: ModelPreference | null,
+  recent: ReadonlyMap<string, ModelPreference>,
 ) {
   return [...models].sort((left, right) => {
-    const leftCurrent =
-      left.id === current?.modelId && left.providerId === current.providerId;
-    const rightCurrent =
-      right.id === current?.modelId && right.providerId === current.providerId;
+    const leftPreference =
+      current?.providerId === left.providerId
+        ? current
+        : recent.get(left.providerId);
+    const rightPreference =
+      current?.providerId === right.providerId
+        ? current
+        : recent.get(right.providerId);
+    const leftCurrent = left.id === leftPreference?.modelId;
+    const rightCurrent = right.id === rightPreference?.modelId;
     if (leftCurrent !== rightCurrent) return leftCurrent ? -1 : 1;
-    return (
-      left.providerName.localeCompare(right.providerName) ||
-      left.name.localeCompare(right.name)
-    );
+    return left.providerName.localeCompare(right.providerName);
   });
 }
 
@@ -174,7 +186,7 @@ async function chooseProviderModels(
   let catalog = models;
   if (!access.some((candidate) => candidate.providerId === providerId)) {
     await signInProvider(owner, provider, interaction);
-    catalog = await refreshModels(interaction.signal);
+    catalog = await interaction.run(() => refreshModels(interaction.signal));
   }
   const selectedModels = catalog
     .filter((model) => model.providerId === providerId)
@@ -192,6 +204,19 @@ export function sessionModelCommandDefinitions(
   session: ModelPreferenceOwner,
   options: SessionModelCommandOptions,
 ): WhistleContribution["commands"] {
+  const recent =
+    recentModels.get(session.modelPreference.read) ??
+    new Map<string, ModelPreference>();
+  recentModels.set(session.modelPreference.read, recent);
+  const remember = (preference: ModelPreference | null) => {
+    if (preference === null) return;
+    recent.delete(preference.providerId);
+    recent.set(preference.providerId, preference);
+    if (recent.size > maximumRememberedProviders) {
+      const oldest = recent.keys().next().value;
+      if (oldest !== undefined) recent.delete(oldest);
+    }
+  };
   const preferenceSchema = z
     .record(z.string(), z.json())
     .parse(modelPreferenceJsonSchema);
@@ -218,7 +243,7 @@ export function sessionModelCommandDefinitions(
         agent: {},
         palette: {},
         help: {},
-        slash: { aliases: ["model"] },
+        slash: { aliases: ["model"], consumesDraft: true },
       },
       action: {
         inputSchema: {
@@ -233,53 +258,58 @@ export function sessionModelCommandDefinitions(
           if (input.origin === "agent" || interaction === undefined)
             return session.modelPreference.read();
           const current = await session.modelPreference.read();
-          const ordered = await chooseProviderModels(
+          remember(current);
+          const providerModels = await chooseProviderModels(
             interaction,
-            orderModels(options.models, current),
+            options.models,
             options.account,
             options.refreshModels,
           );
-          if (ordered === null) {
-            await session.modelPreference.set(null);
-            return session.modelPreference.read();
+          if (providerModels === null) {
+            await interaction.run(() => session.modelPreference.set(null));
+            return interaction.run(() => session.modelPreference.read());
           }
+          const ordered = orderModels(providerModels, current, recent);
           const answer = await interaction.prompt({
             type: "choice",
             message: "Model",
-            options: [
-              { value: defaultChoice, label: "Use agent model" },
-              ...ordered.map((model, index) => ({
-                value: String(index),
-                label:
-                  model.providerId === current?.providerId &&
-                  model.id === current.modelId
-                    ? `${modelLabel(model)} (current)`
-                    : modelLabel(model),
-              })),
-            ],
+            options: ordered.map((model, index) => ({
+              value: String(index),
+              label:
+                model.providerId === current?.providerId &&
+                model.id === current.modelId
+                  ? `${modelLabel(model)} (current)`
+                  : modelLabel(model),
+            })),
           });
-          const model =
-            answer === defaultChoice ? undefined : ordered[Number(answer)];
-          let chosen: ModelPreference | null = null;
-          if (model !== undefined) {
-            const reasoning = await chooseReasoning(
-              interaction,
-              model,
-              current?.reasoning,
+          const model = ordered[Number(answer)];
+          if (model === undefined)
+            throw new WhistleActionError(
+              "model_unavailable",
+              "Choose a listed model.",
             );
-            chosen =
-              reasoning === undefined
-                ? { providerId: model.providerId, modelId: model.id }
-                : {
-                    providerId: model.providerId,
-                    modelId: model.id,
-                    reasoning,
-                  };
-          }
-          await session.modelPreference.set(chosen);
+          const previous =
+            current?.providerId === model.providerId
+              ? current
+              : recent.get(model.providerId);
+          const reasoning = await chooseReasoning(
+            interaction,
+            model,
+            previous?.reasoning,
+          );
+          const chosen: ModelPreference =
+            reasoning === undefined
+              ? { providerId: model.providerId, modelId: model.id }
+              : {
+                  providerId: model.providerId,
+                  modelId: model.id,
+                  reasoning,
+                };
+          await interaction.run(() => session.modelPreference.set(chosen));
+          remember(chosen);
           // The mounted owner's effective-model label confirms the choice.
           // A success notice would keep the choice dialog focused until Esc.
-          return session.modelPreference.read();
+          return interaction.run(() => session.modelPreference.read());
         }
         let preference: ModelPreference | null;
         try {
@@ -312,6 +342,7 @@ export function sessionModelCommandDefinitions(
             );
         }
         await session.modelPreference.set(preference);
+        remember(preference);
         return session.modelPreference.read();
       },
     },
@@ -358,8 +389,8 @@ export function sessionModelCommandDefinitions(
           reasoning === undefined
             ? { providerId: model.providerId, modelId: model.id }
             : { providerId: model.providerId, modelId: model.id, reasoning };
-        await session.modelPreference.set(chosen);
-        return session.modelPreference.read();
+        await interaction.run(() => session.modelPreference.set(chosen));
+        return interaction.run(() => session.modelPreference.read());
       },
     },
   ];

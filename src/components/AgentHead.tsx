@@ -1,6 +1,6 @@
 import { Monogram } from "@fungi.computer/caps/components/monogram";
 import type { Avatar } from "@fungi.computer/sprite/avatar";
-import { Sprite } from "@fungi.computer/sprite/react";
+import { Sprite, useAnimationTime } from "@fungi.computer/sprite/react";
 import { memo, useMemo, useState } from "react";
 
 import { avatarPresentation } from "./avatar-presentation.js";
@@ -22,7 +22,10 @@ export const AgentHead = memo(function AgentHead({
   className,
   name,
   size = 24,
+  timeMs: explicitTimeMs,
 }: {
+  /** External animation clock in milliseconds; omitted uses live motion. */
+  timeMs?: number;
   /** Motion presented by the head; defaults to idle. */
   activity?: AgentHeadActivity;
   /** The Agent's avatar, from its Agent record. */
@@ -34,6 +37,7 @@ export const AgentHead = memo(function AgentHead({
   /** Width and height in pixels. */
   size?: number;
 }) {
+  const timeMs = useAnimationTime(explicitTimeMs);
   const [ready, setReady] = useState(false);
   const presentation = useMemo(() => avatarPresentation(avatar), [avatar]);
   return (
@@ -48,13 +52,14 @@ export const AgentHead = memo(function AgentHead({
       )}
       <Sprite
         activity={activity}
+        {...(timeMs === undefined ? {} : { timeMs })}
         appearance={presentation.appearance}
         className="absolute inset-0"
         expression={presentation.expression}
         onState={(state) => {
           setReady(state.status === "ready");
         }}
-        paused={activity === "idle"}
+        paused={timeMs !== undefined || activity === "idle"}
         renderStyle={presentation.renderStyle}
         service={shiitakeSprite}
         src={presentation.src}

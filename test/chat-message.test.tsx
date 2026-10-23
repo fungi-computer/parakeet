@@ -4,6 +4,20 @@ import { describe, expect, it } from "vitest";
 import { ChatMessage } from "../src/components/ChatMessage.js";
 
 describe("the simple transcript", () => {
+  it("announces a pending user message without relying on opacity", () => {
+    const pending = renderToStaticMarkup(
+      <ChatMessage speaker="user" pending>
+        Keep these words
+      </ChatMessage>,
+    );
+    expect(pending).toContain('role="status"');
+    expect(pending).toContain("Sending");
+    expect(
+      renderToStaticMarkup(
+        <ChatMessage speaker="user">Keep these words</ChatMessage>,
+      ),
+    ).not.toContain("Sending");
+  });
   it("renders visitor Markdown labels without loading images or unsafe links", () => {
     const markup = renderToStaticMarkup(
       <ChatMessage speaker="agent" markdownPolicy="visitor">
