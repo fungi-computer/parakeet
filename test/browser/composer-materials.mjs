@@ -99,19 +99,19 @@ try {
   await page.evaluate(() => globalThis.document.fonts.ready);
 
   assert.ok(
-    (await page.locator(".composer-footer").textContent())?.includes(
-      "openai/gpt-6-astra",
-    ),
+    (
+      await page.locator("#root > main .composer-footer").textContent()
+    )?.includes("openai/gpt-6-astra"),
   );
   assert.ok(
-    !(await page.locator(".composer-footer").textContent())?.includes(
-      "@openai",
-    ),
+    !(
+      await page.locator("#root > main .composer-footer").textContent()
+    )?.includes("@openai"),
   );
   assert.ok(
-    (await page.locator(".composer-footer").textContent())?.includes(
-      "openai/gpt-6-astra12K/200K",
-    ),
+    (
+      await page.locator("#root > main .composer-footer").textContent()
+    )?.includes("openai/gpt-6-astra12K/200K"),
   );
   const screenshotDirectory = process.env.PARAKEET_SCREENSHOT_DIR;
   const screenshotPrefix = process.env.PARAKEET_SCREENSHOT_PREFIX;
@@ -262,6 +262,48 @@ try {
       `${theme}: disabled Queue contrast ${result.queueContrast.toFixed(2)}:1; sans interface and monospace data passed.\n`,
     );
   }
+
+  const desktopComposer = page.getByTestId("keyboard-composer");
+  const desktopTextarea = desktopComposer.locator("textarea");
+  await desktopTextarea.fill("Desktop draft");
+  await desktopTextarea.press("Enter");
+  assert.equal(
+    await desktopComposer.getByTestId("send-count").textContent(),
+    "1",
+  );
+
+  const phonePage = await browser.newPage({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { height: 844, width: 390 },
+  });
+  await phonePage.goto(`http://127.0.0.1:${address.port}/`, {
+    waitUntil: "load",
+  });
+  assert.equal(
+    await phonePage.evaluate(
+      () => globalThis.matchMedia("(pointer: coarse)").matches,
+    ),
+    true,
+    "touch-primary browser exposes a coarse primary pointer",
+  );
+  const phoneComposer = phonePage.getByTestId("keyboard-composer");
+  const phoneTextarea = phoneComposer.locator("textarea");
+  await phoneTextarea.fill("Half-written message");
+  await phoneTextarea.press("Enter");
+  assert.equal(await phoneTextarea.inputValue(), "Half-written message\n");
+  assert.equal(
+    await phoneComposer.getByTestId("send-count").textContent(),
+    "0",
+  );
+  await phoneComposer.getByRole("button", { name: "Send message" }).click();
+  assert.equal(
+    await phoneComposer.getByTestId("send-count").textContent(),
+    "1",
+  );
+  process.stdout.write(
+    "desktop Enter sends; touch-primary Enter inserts a newline and Send submits.\n",
+  );
 } finally {
   if (browser) await browser.close();
   if (server?.listening)

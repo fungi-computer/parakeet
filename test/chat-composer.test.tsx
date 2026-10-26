@@ -14,6 +14,7 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
 const roots = new Set<Root>();
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   act(() => {
     for (const root of roots) root.unmount();
   });
@@ -156,6 +157,25 @@ it("keeps IME, normal Enter, and Shift+Enter submission semantics", () => {
     action?.click();
   });
   expect(busy.onAbort).toHaveBeenCalledTimes(1);
+});
+
+it("leaves Enter to insert a newline when the primary pointer is coarse", () => {
+  vi.stubGlobal("matchMedia", (media: string) => ({
+    matches: media === "(pointer: coarse)",
+    media,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
+
+  const phone = renderComposer();
+  const enterKey = enter(phone.textarea);
+
+  expect(phone.onSend).not.toHaveBeenCalled();
+  expect(enterKey.defaultPrevented).toBe(false);
 });
 
 it("submits the send button as steer without passing its click event", () => {

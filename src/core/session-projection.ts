@@ -196,6 +196,11 @@ export function applySessionFrame(
       ),
     };
 
+  if (frame.kind === "activity")
+    return sameActivity(current.activity, frame.activity)
+      ? current
+      : { ...current, activity: frame.activity };
+
   if (frame.kind === "tool_output") {
     const completed = new Set(
       current.messages.flatMap((message) =>

@@ -70,6 +70,9 @@ does not cancel accepted work or close a borrowed Agent. When replacing a
 Session, provide its new handle rather than copying a snapshot into another
 writable store.
 
+On touch-primary devices, Enter inserts a newline and the Send button submits
+the draft. On desktop, Enter submits and Shift+Enter inserts a newline.
+
 The [standalone composer tests](test/standalone-composer.test.tsx) exercise the
 provider, query cache, observations and prompt admission with typed fixtures.
 The browser contract uses the real component with a fixture Session. A fake

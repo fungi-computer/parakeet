@@ -171,6 +171,15 @@ export const TimelineItem = memo(function TimelineItem({
           >
             {formatAssistantText?.(item.text) ?? item.text}
           </ChatMessage>
+          {item.isError && item.providerError !== undefined ? (
+            <div className="px-3 text-error" data-provider-error={item.id}>
+              <p className="whitespace-pre-wrap">{item.providerError}</p>
+              <details>
+                <summary>Provider details</summary>
+                <pre className="whitespace-pre-wrap">{item.providerError}</pre>
+              </details>
+            </div>
+          ) : null}
           {!item.pending && !item.isError
             ? renderAssistantAttachment?.(item.text)
             : null}

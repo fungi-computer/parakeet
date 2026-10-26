@@ -82,6 +82,8 @@ export type AssistantMessageItem = Readonly<{
   at?: number;
   /** Assistant-visible response text. */
   text: string;
+  /** Pi's private failed-turn error text; never a terminal or delegation diagnostic. */
+  providerError?: string;
   /** Assistant reasoning text, when supplied by the model. */
   thinking?: string;
   /** Usage carried by the exact assistant message. */

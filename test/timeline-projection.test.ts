@@ -672,7 +672,7 @@ it("orders pending interrupts before cues without changing order within either g
   ]);
 });
 
-it("keeps provider error details out of the visible assistant message", () => {
+it("shows provider error text on the failed turn, separate from assistant content", () => {
   const assistant = messages.find(
     (message) => message.value.role === "assistant",
   );
@@ -686,7 +686,8 @@ it("keeps provider error details out of the visible assistant message", () => {
           ...assistant.value,
           content: [],
           stopReason: "error",
-          errorMessage: "provider diagnostic fixture",
+          errorMessage: "Safe model failure",
+          providerError: "provider diagnostic fixture",
         },
       },
     ],
@@ -700,10 +701,8 @@ it("keeps provider error details out of the visible assistant message", () => {
     kind: "assistant_message",
     isError: true,
     text: "This run couldn’t finish.",
+    providerError: "provider diagnostic fixture",
   });
-  expect(JSON.stringify(timeline.items)).not.toContain(
-    "provider diagnostic fixture",
-  );
 });
 
 it("shows safe refusal content and its Billing link in saved history", () => {

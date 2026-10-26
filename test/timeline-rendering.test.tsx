@@ -623,6 +623,29 @@ it("adds caller attachments only to settled successful assistant replies", async
   expect(container.textContent).toContain("Attachment for Share:");
 });
 
+it("shows a failed turn's private provider text in its bubble and details without markdown interpretation", async () => {
+  const { container, root } = mount();
+  const privateText = "provider_error: 401 Bearer sk-live-private\nretry later";
+  await settle(() => {
+    root.render(
+      <TimelineItem
+        item={{
+          id: "failed-turn",
+          kind: "assistant_message",
+          isError: true,
+          pending: false,
+          text: "This run couldn’t finish.",
+          providerError: privateText,
+        }}
+      />,
+    );
+  });
+  const bubble = container.querySelector('[data-provider-error="failed-turn"]');
+  expect(bubble?.querySelector("p")?.textContent).toBe(privateText);
+  expect(bubble?.querySelector("details pre")?.textContent).toBe(privateText);
+  expect(bubble?.querySelector("a")).toBeNull();
+});
+
 it("formats only the visible assistant text and preserves the attachment input", async () => {
   const { container, root } = mount();
   const attachment = vi.fn((text: string) => <aside>{text}</aside>);

@@ -209,9 +209,13 @@ function assistantMessageItem(
       tokens: value.usage.totalTokens,
     },
   };
+  const withProviderError =
+    value.stopReason === "error" && value.providerError !== undefined
+      ? { ...item, providerError: value.providerError }
+      : item;
   return blocks.thinking.length === 0
-    ? item
-    : { ...item, thinking: blocks.thinking.join("\n") };
+    ? withProviderError
+    : { ...withProviderError, thinking: blocks.thinking.join("\n") };
 }
 
 function projectAssistant(

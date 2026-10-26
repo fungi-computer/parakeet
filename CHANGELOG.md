@@ -1,5 +1,27 @@
 # @fungi.computer/parakeet
 
+## 0.3.0
+
+### Minor Changes
+
+- Changes since 0.2.1:
+
+  - feat(parakeet): keep Enter for newline on touch
+  - fix(shiitake): target queued session activity wakes
+  - fix: isolate provider prose to recorded failed turns
+  - fix: project readonly provider error without mutation
+  - fix: retain provider error text on failed turns
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/caps@0.3.0
+  - @fungi.computer/knapsack@0.3.0
+  - @fungi.computer/shiitake@0.4.0
+  - @fungi.computer/agar@0.3.1
+
 ## 0.2.1
 
 ### Patch Changes
