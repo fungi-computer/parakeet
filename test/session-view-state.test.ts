@@ -199,6 +199,15 @@ it.each(table)("decides %s", (_name, input, expected) => {
   expect(sessionViewState(input)).toEqual(expected);
 });
 
+it("removes terminal programs before preparing a bounded failure diagnostic", () => {
+  const view = sessionViewState(
+    facts(idleFacts, [
+      terminal("failed", 4, "safe\u001b]52;c;Y21k\u0007\u009d\u202e end"),
+    ]),
+  );
+  expect(view).toEqual({ kind: "error", cause: "safe end" });
+});
+
 it("derives the coarse composer status from the view state", () => {
   const status = (input: SessionViewFacts) =>
     sessionActivityStatus(sessionViewState(input));

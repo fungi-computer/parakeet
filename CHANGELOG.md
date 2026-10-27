@@ -1,5 +1,39 @@
 # @fungi.computer/parakeet
 
+## 0.4.0
+
+### Minor Changes
+
+- Changes since 0.3.0:
+
+  - fix(tui): footer stop loop asks first; modal rules walk the real producers
+  - fix(parakeet): strip terminal programs before bounding diagnostics
+  - fix(parakeet): redact terminal diagnostics before display cutoff
+  - feat(tui): migrate the Loop, extension, Archive, Skills, question and
+    recovery modals
+  - fix(parakeet): redact and clarify turn failure notices
+  - fix(parakeet): no current marker on the sign-in provider list
+  - feat(tui): migrate the model, sign-in, resume, fork and Home pickers to the
+    shared modal
+  - fix(grove): show interrupted model reason with retry
+  - feat(tui): shared modal anatomy with safe-first confirmations and Goal
+    paused
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.4.0
+  - @fungi.computer/bird-dog@0.2.1
+  - @fungi.computer/caps@0.3.1
+  - @fungi.computer/knapsack@0.3.1
+  - @fungi.computer/shiitake@0.5.0
+  - @fungi.computer/whistle@0.2.0
+
 ## 0.3.0
 
 ### Minor Changes

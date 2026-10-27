@@ -177,7 +177,7 @@ async function chooseProvider(
   providers: readonly LoginProvider[],
   requested: string | undefined,
   interaction: WhistleInteraction,
-  message: string,
+  prompt: Readonly<{ message: string; summary: string }>,
   choices: Extract<WhistlePrompt, { type: "choice" }>["options"],
 ) {
   if (requested !== undefined) {
@@ -196,7 +196,8 @@ async function chooseProvider(
     );
   const id = await interaction.prompt({
     type: "choice",
-    message,
+    message: prompt.message,
+    summary: prompt.summary,
     collapsedGroup: "More providers",
     options: choices,
   });
@@ -225,6 +226,7 @@ async function chooseMethod(
   const kind = await interaction.prompt({
     type: "choice",
     message: `How do you want to sign in to ${provider.name}?`,
+    summary: "You can add the other kind later.",
     options: provider.methods.map((method) => ({
       value: method.kind,
       label: method.label,
@@ -276,9 +278,11 @@ async function signOutProvider(
 ): Promise<void> {
   const confirmed = await interaction.prompt({
     type: "confirmation",
-    message: `Sign out of ${provider.name}? Local Sessions stop using this account.`,
+    message: `Sign out of ${provider.name}?`,
+    summary: "Conversations on this device stop using this account.",
     confirmLabel: "Sign out",
     cancelLabel: "Keep signed in",
+    destructive: true,
   });
   if (!confirmed) return;
   await interaction.run(() => owner.logout(provider.id, interaction));
@@ -347,11 +351,17 @@ export function accountCommandDefinitions(
             request.providerId === undefined
               ? await owner.access(interaction.signal)
               : [];
+          // Several providers can be signed in at once, so none is "current";
+          // the Signed in group already comes first and takes the highlight.
           const provider = await chooseProvider(
             registry,
             request.providerId,
             interaction,
-            "Choose a model provider",
+            {
+              message: "Sign in to a model provider",
+              summary:
+                "Use a subscription or an API key. You can add more later.",
+            },
             providerChoices(
               registry,
               access,
@@ -365,10 +375,11 @@ export function accountCommandDefinitions(
           ) {
             const action = await interaction.prompt({
               type: "choice",
-              message: provider.name,
+              message: `Already signed in to ${provider.name}`,
+              summary: "Switch to another account, or sign out of this one.",
               options: [
                 { value: "switch", label: "Switch account" },
-                { value: "logout", label: "Sign out" },
+                { value: "logout", label: "Sign out…", destructive: true },
               ],
             });
             if (action === "logout") {
@@ -413,7 +424,10 @@ export function accountCommandDefinitions(
             signedIn,
             request.providerId,
             interaction,
-            "Sign out of which provider?",
+            {
+              message: "Sign out of which provider?",
+              summary: "Other providers stay signed in.",
+            },
             signedIn.map((provider) => ({
               value: provider.id,
               label: provider.name,

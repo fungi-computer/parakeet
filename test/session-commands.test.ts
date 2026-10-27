@@ -254,7 +254,7 @@ describe("shared Parakeet Session commands", () => {
     lease.dispose();
   });
 
-  it("offers durable user messages newest first, truncated to 100 characters, and forks the chosen one", async () => {
+  it("offers durable user messages newest first, cut to one line, and forks the chosen one", async () => {
     const runtime = createWhistle();
     const long = "x".repeat(150);
     const forkCalls: string[] = [];
@@ -308,14 +308,14 @@ describe("shared Parakeet Session commands", () => {
     expect(prompts).toHaveLength(1);
     const prompt = prompts[0];
     if (prompt?.type !== "choice") throw new Error("Expected a choice prompt");
-    expect(prompt.message).toBe("Fork from message");
+    expect(prompt.message).toBe("Fork from which message?");
     expect(prompt.options.map((option) => option.value)).toEqual([
       "m3",
       "m2",
       "m1",
     ]);
     expect(prompt.options.find((option) => option.value === "m2")?.label).toBe(
-      long.slice(0, 100),
+      `${long.slice(0, 43)}…`,
     );
     expect(forkCalls).toEqual(["m2"]);
     expect(forked).toEqual(["forked-xyz"]);

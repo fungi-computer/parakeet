@@ -11,6 +11,7 @@ export type {
   ParakeetDraftStorage,
 } from "./core/draft-storage.js";
 export { formatContextUsage, formatTokenCount } from "./core/format-context.js";
+export { formatWhen, oneLine } from "./core/picker-text.js";
 export { providerChoices } from "./provider-choices.js";
 export {
   ParakeetProvider,

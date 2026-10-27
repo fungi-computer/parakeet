@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/parakeet",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "Levi <levi@technomancy.dev>",
   "private": false,
   "description": "Standalone React composer for a typed Shiitake Session",
@@ -85,8 +85,10 @@
   },
   "dependencies": {
     "@fungi.computer/agar": "workspace:*",
+    "@fungi.computer/bird-dog": "workspace:*",
     "@fungi.computer/cairn": "workspace:*",
     "@fungi.computer/caps": "workspace:*",
+    "@fungi.computer/gills": "workspace:*",
     "@fungi.computer/knapsack": "workspace:*",
     "@fungi.computer/shiitake": "workspace:*",
     "@fungi.computer/sigils": "workspace:*",
@@ -101,8 +103,7 @@
     "jotai-tanstack-query": "0.11.0",
     "lucide-react": "0.460.0",
     "strip-ansi": "7.2.0",
-    "zod": "4.4.3",
-    "@fungi.computer/gills": "workspace:*"
+    "zod": "4.4.3"
   },
   "dependenciesMeta": {
     "@fungi.computer/caps": {

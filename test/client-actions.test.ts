@@ -115,26 +115,34 @@ it("waiting cancellation toasts an advertised info notice and never echoes a suc
   f.actions.dispose();
 });
 
-it("waiting cancellation rejects an advertised prompt without opening or answering it", async () => {
-  let calls = 0;
-  const f = fixture(() => {
-    calls += 1;
-    return Promise.resolve({
-      type: "prompt",
-      prompt: { type: "text", message: "Explain why" },
-      next: { arguments: {}, answer: "reason" },
-    });
+it("waiting cancellation opens an advertised prompt for the person to answer", async () => {
+  const stops: unknown[] = [];
+  const f = fixture((_id, args) => {
+    stops.push(args);
+    return Promise.resolve(
+      Object.hasOwn(args, "confirmed")
+        ? { type: "done", notice: { type: "info", message: "Kept it." } }
+        : {
+            type: "prompt",
+            prompt: { type: "confirmation", message: "Stop the timer?" },
+            next: { arguments: { reason: "human" }, answer: "confirmed" },
+          },
+    );
   });
-  await f.actions.execute("probe", f.action, true);
-  expect(calls).toBe(1);
-  expect(f.interactions.snapshot().open).toBeUndefined();
-  expect(f.interactions.snapshot().notice).toEqual({
-    tone: "error",
-    message: "A waiting cancellation cannot request an answer",
-  });
-  expect(f.actions.snapshot().get(f.action)?.error).toBe(
-    "A waiting cancellation cannot request an answer",
-  );
+  const running = f.actions.execute("probe", f.action, true);
+  await expect.poll(() => f.interactions.snapshot().open).toBeDefined();
+  const host = f.interactions.snapshot().open?.host;
+  const pending = host?.snapshot().prompt;
+  expect(pending?.request).toMatchObject({ message: "Stop the timer?" });
+  if (host === undefined || pending === undefined)
+    throw new Error("The advertised prompt did not open");
+  host.answer(pending.sequence, false);
+  await running;
+  expect(stops).toEqual([
+    { reason: "human" },
+    { reason: "human", confirmed: false },
+  ]);
+  expect(f.actions.snapshot().get(f.action)).toEqual({ pending: false });
   f.actions.dispose();
 });
 

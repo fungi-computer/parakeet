@@ -106,7 +106,7 @@ describe("account commands", () => {
     });
     const { presenter, shown, hosts } = scriptedPresenter((prompt) =>
       prompt.type === "choice"
-        ? prompt.message.startsWith("Choose")
+        ? prompt.message.startsWith("Sign in")
           ? "alpha"
           : "subscription"
         : true,
@@ -366,8 +366,8 @@ it.each(["switch", "logout"])(
     });
     const flow = scriptedPresenter((prompt) => {
       if (prompt.type === "confirmation") return true;
-      if (prompt.message === "Choose a model provider") return "alpha";
-      if (prompt.message === "Alpha") return action;
+      if (prompt.message === "Sign in to a model provider") return "alpha";
+      if (prompt.message === "Already signed in to Alpha") return action;
       return "subscription";
     });
     commands.present(flow.presenter);
@@ -384,7 +384,7 @@ it.each(["switch", "logout"])(
     expect(flow.shown[1]).toMatchObject({
       options: [
         { value: "switch", label: "Switch account" },
-        { value: "logout", label: "Sign out" },
+        { value: "logout", label: "Sign out…", destructive: true },
       ],
     });
     if (action === "switch") {
@@ -397,6 +397,7 @@ it.each(["switch", "logout"])(
       expect(flow.shown[2]).toMatchObject({
         type: "confirmation",
         confirmLabel: "Sign out",
+        destructive: true,
       });
       expect(account.logout).toHaveBeenCalledWith("alpha", expect.anything());
       expect(account.login).not.toHaveBeenCalled();

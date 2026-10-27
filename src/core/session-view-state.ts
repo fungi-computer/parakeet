@@ -3,6 +3,8 @@ import type {
   SessionCompactionTrigger,
   SessionSnapshot,
 } from "@fungi.computer/shiitake/client";
+import { boundedDiagnostic } from "@fungi.computer/bird-dog/effect";
+import stripAnsi from "strip-ansi";
 
 /**
  * What a person's readout of one Session says, decided from Shiitake's raw
@@ -57,7 +59,7 @@ export type SessionViewState =
   | Readonly<{
       /** The latest terminal failed or was interrupted. */
       kind: "error";
-      /** Bounded terminal diagnostic suitable for presentation. */
+      /** Redacted, bounded terminal diagnostic for presentation. */
       cause: string;
     }>;
 
@@ -72,10 +74,19 @@ export type SessionActivityStatus =
   "cancelling" | "idle" | "queued" | "retrying" | "streaming" | "thinking";
 
 const retryCauseLimit = 160;
-const errorCauseLimit = 200;
 
 function collapsed(text: string, limit: number): string {
   return text.replace(/\s+/gu, " ").trim().slice(0, limit);
+}
+
+function displayDiagnostic(text: string): string | undefined {
+  // Recognize whole terminal programs before dropping individual controls:
+  // otherwise OSC payloads become visible text after their ESC is removed.
+  const safe = stripAnsi(text).replace(
+    /[\p{Cc}\u200b\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069\u2060\ufeff]/gu,
+    (character) => (/\s/u.test(character) ? " " : ""),
+  );
+  return boundedDiagnostic(safe);
 }
 
 function idleViewState({
@@ -94,17 +105,16 @@ function idleViewState({
     activity.lastModelChoiceSequence > terminal.sequence
   )
     return { kind: "waiting_for_you" };
-  if (terminal.outcome === "failed" || terminal.outcome === "interrupted")
+  if (terminal.outcome === "failed" || terminal.outcome === "interrupted") {
+    const fallback =
+      terminal.outcome === "interrupted"
+        ? "Run was interrupted"
+        : "Run failed without a diagnostic";
     return {
       kind: "error",
-      cause: collapsed(
-        terminal.diagnostic ??
-          (terminal.outcome === "interrupted"
-            ? "Run was interrupted"
-            : "Run failed without a diagnostic"),
-        errorCauseLimit,
-      ),
+      cause: displayDiagnostic(terminal.diagnostic ?? fallback) ?? fallback,
     };
+  }
   return { kind: "waiting_for_you" };
 }
 

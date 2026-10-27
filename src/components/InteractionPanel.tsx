@@ -1,5 +1,7 @@
 import { Alert } from "@fungi.computer/caps/components/alert";
 import { Button } from "@fungi.computer/caps/components/button";
+import { DataList, DataRow } from "@fungi.computer/caps/components/data-list";
+import { Disclosure } from "@fungi.computer/caps/components/disclosure";
 import { Field } from "@fungi.computer/caps/components/field";
 import { Input } from "@fungi.computer/caps/components/input";
 import { Listbox } from "@fungi.computer/caps/components/listbox";
@@ -20,6 +22,49 @@ export type InteractionPanelProps = Readonly<{
   onClose?: () => void;
 }>;
 
+type PromptFields = WhistlePendingPrompt["request"];
+
+/** Summary, facts, long text and on-demand details: the shared modal anatomy. */
+function PromptHeader({ request }: Readonly<{ request: PromptFields }>) {
+  const [open, setOpen] = useState(false);
+  const entries = (list: PromptFields["facts"]) =>
+    list === undefined ? null : (
+      <DataList density="compact">
+        {list.map((entry) => (
+          <DataRow key={entry.label}>
+            <span className="text-sm opacity-70">{entry.label}</span>{" "}
+            <span className="break-words">{entry.value}</span>
+          </DataRow>
+        ))}
+      </DataList>
+    );
+  return (
+    <>
+      <p className="font-medium">{request.message}</p>
+      {request.summary === undefined ? null : (
+        <p className="text-sm opacity-70">{request.summary}</p>
+      )}
+      {entries(request.facts)}
+      {request.body === undefined ? null : (
+        <p className="line-clamp-3 whitespace-pre-line break-words">
+          {request.bodyLabel === undefined ? null : (
+            <span className="text-sm opacity-70">{request.bodyLabel} </span>
+          )}
+          {request.body}
+        </p>
+      )}
+      {request.details === undefined && request.body === undefined ? null : (
+        <Disclosure open={open} onOpenChange={setOpen} summary="Details">
+          {request.body === undefined ? null : (
+            <p className="whitespace-pre-line break-words">{request.body}</p>
+          )}
+          {entries(request.details)}
+        </Disclosure>
+      )}
+    </>
+  );
+}
+
 function PromptView({
   host,
   pending,
@@ -29,7 +74,7 @@ function PromptView({
   if (request.type === "choice")
     return (
       <div className="flex flex-col gap-xs">
-        <p className="font-medium">{request.message}</p>
+        <PromptHeader request={request} />
         <Listbox<WhistlePromptOption>
           aria-label={request.message}
           items={request.options}
@@ -39,8 +84,13 @@ function PromptView({
             if (value !== null) host.answer(pending.sequence, value);
           }}
           renderItem={(option) => (
-            <span className="flex flex-col">
-              <span>{option.label}</span>
+            <span
+              className={`flex flex-col${option.destructive === true ? " text-error" : ""}`}
+            >
+              <span>
+                {option.value === request.current ? "● " : ""}
+                {option.label}
+              </span>
               {option.description === undefined ? null : (
                 <span className="text-sm opacity-70">{option.description}</span>
               )}
@@ -52,15 +102,20 @@ function PromptView({
   if (request.type === "confirmation")
     return (
       <div className="flex flex-col gap-sm">
-        <p>{request.message}</p>
+        <PromptHeader request={request} />
         <div className="flex justify-end gap-xs">
           <Button
+            // A destructive question focuses the safe answer, which comes first.
+            autoFocus={request.destructive === true}
             variant="ghost"
             onClick={() => host.answer(pending.sequence, false)}
           >
             {request.cancelLabel ?? "Cancel"}
           </Button>
-          <Button onClick={() => host.answer(pending.sequence, true)}>
+          <Button
+            variant={request.destructive === true ? "destructive" : "primary"}
+            onClick={() => host.answer(pending.sequence, true)}
+          >
             {request.confirmLabel ?? "Confirm"}
           </Button>
         </div>
@@ -72,6 +127,11 @@ function PromptView({
   };
   return (
     <form className="flex flex-col gap-sm" onSubmit={submit}>
+      {request.summary === undefined &&
+      request.facts === undefined &&
+      request.body === undefined ? null : (
+        <PromptHeader request={request} />
+      )}
       <Field label={request.message}>
         <Input
           autoComplete="off"

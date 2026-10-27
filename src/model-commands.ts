@@ -69,10 +69,6 @@ const recentModels = new WeakMap<
 /** Private memory ceiling, independent of how many models a provider offers. */
 const maximumRememberedProviders = 256;
 
-function modelLabel(model: SessionModelChoice) {
-  return `${model.providerName} · ${model.name}`;
-}
-
 /** Each provider's current or last-used model first, then catalog order. */
 function orderModels(
   models: readonly SessionModelChoice[],
@@ -104,12 +100,11 @@ async function chooseReasoning(
   const answer = await interaction.prompt({
     type: "choice",
     message: `Thinking level for ${model.name}`,
+    summary: "How long the model thinks before it answers.",
+    current: current ?? defaultChoice,
     options: [
       { value: defaultChoice, label: "Model default" },
-      ...model.reasoning.map((level) => ({
-        value: level,
-        label: level === current ? `${level} (current)` : level,
-      })),
+      ...model.reasoning.map((level) => ({ value: level, label: level })),
     ],
   });
   return model.reasoning.find((level) => level === answer);
@@ -123,6 +118,7 @@ async function chooseProviderModels(
   models: readonly SessionModelChoice[],
   account: ModelAccountContext,
   refreshModels: SessionModelCommandOptions["refreshModels"],
+  currentProviderId: string | undefined,
 ) {
   const { owner } = account;
   const [access, registry] = await Promise.all([
@@ -164,7 +160,9 @@ async function chooseProviderModels(
   }
   const providerId = await interaction.prompt({
     type: "choice",
-    message: "Model",
+    message: "Choose a provider",
+    summary: "Or follow the Agent's own model.",
+    current: currentProviderId ?? defaultChoice,
     collapsedGroup: "More providers",
     options: [
       { value: defaultChoice, label: "Use agent model" },
@@ -264,22 +262,26 @@ export function sessionModelCommandDefinitions(
             options.models,
             options.account,
             options.refreshModels,
+            current?.providerId,
           );
           if (providerModels === null) {
             await interaction.run(() => session.modelPreference.set(null));
             return interaction.run(() => session.modelPreference.read());
           }
           const ordered = orderModels(providerModels, current, recent);
+          const currentIndex = ordered.findIndex(
+            (model) =>
+              model.providerId === current?.providerId &&
+              model.id === current.modelId,
+          );
           const answer = await interaction.prompt({
             type: "choice",
-            message: "Model",
+            message: "Choose a model",
+            summary: `Models from ${ordered[0]?.providerName ?? "this provider"}.`,
+            current: currentIndex < 0 ? undefined : String(currentIndex),
             options: ordered.map((model, index) => ({
               value: String(index),
-              label:
-                model.providerId === current?.providerId &&
-                model.id === current.modelId
-                  ? `${modelLabel(model)} (current)`
-                  : modelLabel(model),
+              label: model.name,
             })),
           });
           const model = ordered[Number(answer)];

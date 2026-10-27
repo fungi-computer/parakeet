@@ -9,6 +9,7 @@ import type {
 import { z } from "zod";
 
 import { buildDurableTimeline } from "./core/build-timeline.js";
+import { formatWhen, oneLine } from "./core/picker-text.js";
 import {
   sessionActivityStatus,
   sessionViewState,
@@ -218,12 +219,16 @@ export function contributeSessionCommands(
           if (interaction === undefined)
             throw new Error("Forking a Session needs a person.");
           const ordered = [...candidates].reverse().slice(0, maxForkOptions);
+          const now = Date.now();
           const answer = await interaction.prompt({
             type: "choice",
-            message: "Fork from message",
+            message: "Fork from which message?",
+            summary: "Start a new conversation from your message.",
             options: ordered.map((item) => ({
               value: item.id,
-              label: item.text.slice(0, 100) || "(empty message)",
+              label: oneLine(item.text, 44) || "(empty message)",
+              description:
+                item.at === undefined ? undefined : formatWhen(item.at, now),
             })),
           });
           const forked = await interaction.run(async () => {

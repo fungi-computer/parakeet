@@ -153,7 +153,7 @@ it("Enter after a provider choice selects its most recently used model", async (
         return Promise.resolve(parsePromptAnswer(prompt, "provider"));
       const first = choice.options[0];
       if (first === undefined) throw new Error("Expected a provider model");
-      expect(first.label).toBe("Provider · Zeta");
+      expect(first.label).toBe("Zeta");
       return Promise.resolve(parsePromptAnswer(prompt, first.value));
     },
   };
@@ -208,7 +208,11 @@ it("uses one model owner for human and agent selection, inheritance and failures
   await expect(
     commands.execute("session:model", { origin: "slash", interaction }),
   ).resolves.toMatchObject({ status: "handled" });
-  expect(asked).toEqual(["Model", "Model", "Thinking level for Model"]);
+  expect(asked).toEqual([
+    "Choose a provider",
+    "Choose a model",
+    "Thinking level for Model",
+  ]);
   expect(set).toHaveBeenLastCalledWith({
     providerId: "provider",
     modelId: "model",
@@ -432,9 +436,9 @@ it("signs in an unsigned provider before offering only its models", async () => 
   });
   expect(flow.result.status).toBe("handled");
   expect(flow.prompts.map((prompt) => prompt.message)).toEqual([
-    "Model",
+    "Choose a provider",
     "DeepSeek API key",
-    "Model",
+    "Choose a model",
   ]);
   expect(flow.prompts[0]).toMatchObject({
     collapsedGroup: "More providers",
@@ -444,7 +448,7 @@ it("signs in an unsigned provider before offering only its models", async () => 
     ],
   });
   expect(flow.prompts[2]).toMatchObject({
-    options: [{ value: "0", label: "DeepSeek · Chat" }],
+    options: [{ value: "0", label: "Chat" }],
   });
   expect(flow.login).toHaveBeenCalledOnce();
   expect(flow.set).toHaveBeenCalledWith({
@@ -602,7 +606,7 @@ it("offers Fungi without a catalog, signs in once and uses the newly authenticat
       ],
     });
     expect(prompts[1]).toMatchObject({
-      options: [{ value: "0", label: "Fungi · Luna" }],
+      options: [{ value: "0", label: "Luna" }],
     });
     expect(login).toHaveBeenCalledExactlyOnceWith(
       { providerId: "fungi", method: "subscription" },
@@ -629,4 +633,62 @@ it("reports a post-login catalog failure without choosing another provider", asy
   });
   expect(flow.login).toHaveBeenCalledOnce();
   expect(flow.set).not.toHaveBeenCalled();
+});
+
+it("marks the current provider, model and thinking level as current in each picker", async () => {
+  let preference: ModelPreference | null = {
+    providerId: "provider",
+    modelId: "Zeta",
+    reasoning: "high",
+  };
+  const commands = createWhistle();
+  const choices: Extract<ReturnType<typeof parsePrompt>, { type: "choice" }>[] =
+    [];
+  const answers = ["provider", "1", "high"];
+  const interaction: WhistleInteraction = {
+    run: (operation) => operation(),
+    signal: new AbortController().signal,
+    prompt: (prompt) => {
+      const parsed = parsePrompt(prompt);
+      if (parsed.type !== "choice") throw new Error("Expected a picker");
+      choices.push(parsed);
+      return Promise.resolve(parsePromptAnswer(prompt, answers.shift() ?? ""));
+    },
+    notify: () => undefined,
+  };
+  contributeModelCommands(
+    commands,
+    {
+      modelPreference: {
+        read: () => Promise.resolve(preference),
+        set: (next) => {
+          preference = next;
+          return Promise.resolve();
+        },
+      },
+    },
+    {
+      account,
+      sourceId: "current-marks",
+      namespace: "session",
+      models: ["Alpha", "Zeta"].map((name) => ({
+        providerId: "provider",
+        providerName: "Provider",
+        id: name,
+        name,
+        reasoning: ["low", "high"],
+      })),
+      refreshModels: () => Promise.resolve([]),
+    },
+  );
+  await commands.execute("session:model", { origin: "slash", interaction });
+  const [providers, models, thinking] = choices;
+  expect(providers).toMatchObject({
+    message: "Choose a provider",
+    current: "provider",
+  });
+  expect(models).toMatchObject({ message: "Choose a model", current: "0" });
+  expect(models?.options[0]?.label).toBe("Zeta");
+  expect(thinking).toMatchObject({ current: "high" });
+  expect(JSON.stringify(choices)).not.toContain("(current)");
 });

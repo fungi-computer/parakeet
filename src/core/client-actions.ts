@@ -1,10 +1,8 @@
 import type { ClientContributionV1 } from "@fungi.computer/shiitake/client-entry";
 
 import {
-  WhistleActionError,
   type WhistleExecutionInput,
   type WhistleExecutionOutcome,
-  type WhistleInteraction,
   type WhistleRuntime,
 } from "@fungi.computer/whistle";
 import type { ParakeetInteractions } from "../commands/interactions.js";
@@ -108,29 +106,6 @@ export function createClientActions(
       const intent = key(entryId, action);
       if (intents.get(intent)?.pending) return;
       publish(intent, { pending: true });
-      const notificationOnly: WhistleInteraction = {
-        // Waiting cancellation has no interactive retry surface.
-        run: (operation) => operation(),
-        signal: controller.signal,
-        prompt: () =>
-          Promise.reject(
-            new WhistleActionError(
-              "client_waiting_prompt",
-              "A waiting cancellation cannot request an answer",
-            ),
-          ),
-        notify: (notice) => {
-          // A success only confirms the person's own action: no echo.
-          if (retired() || notice.type === "success") return;
-          options.interactions.toast({
-            variant: "info",
-            message:
-              notice.type === "handoff"
-                ? (notice.message ?? notice.url)
-                : notice.message,
-          });
-        },
-      };
       let outcome: WhistleExecutionOutcome;
       try {
         let input: WhistleExecutionInput = {
@@ -139,7 +114,6 @@ export function createClientActions(
         };
         if (action.input !== undefined)
           input = { ...input, arguments: action.input };
-        if (waiting) input = { ...input, interaction: notificationOnly };
         outcome = await options.commands.execute(
           `${entryId}:${action.id}`,
           input,
