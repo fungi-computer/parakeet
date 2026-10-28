@@ -42,122 +42,174 @@ export function ClientRows({
   if (rows.length === 0) return null;
   return (
     <div className="px-3 text-xs text-base-content" data-client-entry={entryId}>
-      {rows.map((row) => (
-        <div key={row.id} data-client-row={row.id} className="py-1">
-          <div className="flex items-start gap-2">
-            <span
-              aria-hidden="true"
-              data-client-row-dot=""
-              className={`w-3 shrink-0 text-center leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
-            >
-              {row.tone === undefined ? "" : "●"}
-            </span>
-            <details className="min-w-0 flex-1">
-              <summary
-                className={`cursor-pointer break-words leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
-              >
-                {row.title}
-                {row.inspection === undefined || row.detail === undefined
-                  ? null
-                  : ` · ${row.detail}`}
-              </summary>
-              {row.detail === undefined ? null : (
-                <p className="max-h-32 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words pb-2">
-                  {row.detail}
-                </p>
-              )}
-            </details>
-            {row.open === undefined ? null : (
+      {rows.map((row) => {
+        // A row that only opens a waiting decision is one tap target: the
+        // whole line, so its key never outgrows the line's text.
+        const decision =
+          row.open === undefined &&
+          row.inspection === undefined &&
+          row.actions?.length === 1 &&
+          row.actions[0]?.awaiting !== undefined
+            ? row.actions[0]
+            : undefined;
+        if (decision !== undefined) {
+          const state = actions.state.get(decision);
+          return (
+            <div key={row.id} data-client-row={row.id}>
               <Button
                 size="xs"
-                variant="outline"
-                disabled={onOpen === undefined}
+                variant="ghost"
+                className="-mx-xs flex w-[calc(100%+2*var(--spacing-xs))] justify-start gap-2 px-xs font-normal"
+                disabled={!actions.enabled || state?.pending === true}
+                loading={state?.pending === true}
                 onClick={() => {
-                  if (row.open !== undefined) onOpen?.(row.open);
+                  void actions.execute(entryId, decision);
                 }}
               >
-                Open
+                <span
+                  aria-hidden="true"
+                  data-client-row-dot=""
+                  className={`w-3 shrink-0 text-center ${row.tone === undefined ? "" : rowColors[row.tone]}`}
+                >
+                  {row.tone === undefined ? "" : "●"}
+                </span>
+                <span
+                  className={`min-w-0 flex-1 truncate text-start ${row.tone === undefined ? "" : rowColors[row.tone]}`}
+                >
+                  {row.title}
+                  {row.detail === undefined ? null : (
+                    <span className="text-dim"> · {row.detail}</span>
+                  )}
+                </span>
+                <span className="shrink-0 text-dim" data-client-row-action="">
+                  {decision.label}
+                </span>
               </Button>
-            )}
-            {row.actions?.map((action) => {
-              const state = actions.state.get(action);
-              return (
+              {state?.error === undefined ? null : (
+                <p className="text-error" role="alert">
+                  {state.error}
+                </p>
+              )}
+            </div>
+          );
+        }
+        return (
+          <div key={row.id} data-client-row={row.id} className="py-1">
+            <div className="flex items-start gap-2">
+              <span
+                aria-hidden="true"
+                data-client-row-dot=""
+                className={`w-3 shrink-0 text-center leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
+              >
+                {row.tone === undefined ? "" : "●"}
+              </span>
+              <details className="min-w-0 flex-1">
+                <summary
+                  className={`cursor-pointer break-words leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
+                >
+                  {row.title}
+                  {row.inspection === undefined || row.detail === undefined
+                    ? null
+                    : ` · ${row.detail}`}
+                </summary>
+                {row.detail === undefined ? null : (
+                  <p className="max-h-32 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words pb-2">
+                    {row.detail}
+                  </p>
+                )}
+              </details>
+              {row.open === undefined ? null : (
                 <Button
-                  key={action.id}
                   size="xs"
                   variant="outline"
-                  className="shrink-0"
-                  disabled={!actions.enabled || state?.pending === true}
-                  loading={state?.pending === true}
+                  disabled={onOpen === undefined}
                   onClick={() => {
-                    void actions.execute(entryId, action);
+                    if (row.open !== undefined) onOpen?.(row.open);
                   }}
                 >
-                  {action.label}
+                  Open
                 </Button>
+              )}
+              {row.actions?.map((action) => {
+                const state = actions.state.get(action);
+                return (
+                  <Button
+                    key={action.id}
+                    size="xs"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={!actions.enabled || state?.pending === true}
+                    loading={state?.pending === true}
+                    onClick={() => {
+                      void actions.execute(entryId, action);
+                    }}
+                  >
+                    {action.label}
+                  </Button>
+                );
+              })}
+            </div>
+            {row.inspection !== undefined &&
+            inspection?.entryId === entryId &&
+            inspection.rowId === row.id ? (
+              <section aria-label={row.title} data-client-inspection={row.id}>
+                <DataListHeading
+                  aside={
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => {
+                        store.inspect(undefined);
+                      }}
+                    >
+                      Close
+                    </Button>
+                  }
+                >
+                  {row.title}
+                </DataListHeading>
+                <DataList
+                  density="compact"
+                  tabIndex={0}
+                  className="max-h-64 overflow-y-auto overscroll-contain"
+                >
+                  {row.inspection.rows.map((child) => (
+                    <DataRow key={child.id}>
+                      <Status
+                        glyph="dot"
+                        size="compact"
+                        tone={
+                          child.tone === "settled"
+                            ? "success"
+                            : child.tone === "running"
+                              ? "info"
+                              : child.tone === "error"
+                                ? "error"
+                                : child.tone === "attention"
+                                  ? "warning"
+                                  : "neutral"
+                        }
+                        label={child.title}
+                      />
+                      {child.detail === undefined ? null : (
+                        <span>{child.detail}</span>
+                      )}
+                    </DataRow>
+                  ))}
+                </DataList>
+              </section>
+            ) : null}
+            {row.actions?.map((action) => {
+              const error = actions.state.get(action)?.error;
+              return error === undefined ? null : (
+                <p key={action.id} className="text-error" role="alert">
+                  {error}
+                </p>
               );
             })}
           </div>
-          {row.inspection !== undefined &&
-          inspection?.entryId === entryId &&
-          inspection.rowId === row.id ? (
-            <section aria-label={row.title} data-client-inspection={row.id}>
-              <DataListHeading
-                aside={
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => {
-                      store.inspect(undefined);
-                    }}
-                  >
-                    Close
-                  </Button>
-                }
-              >
-                {row.title}
-              </DataListHeading>
-              <DataList
-                density="compact"
-                tabIndex={0}
-                className="max-h-64 overflow-y-auto overscroll-contain"
-              >
-                {row.inspection.rows.map((child) => (
-                  <DataRow key={child.id}>
-                    <Status
-                      glyph="dot"
-                      size="compact"
-                      tone={
-                        child.tone === "settled"
-                          ? "success"
-                          : child.tone === "running"
-                            ? "info"
-                            : child.tone === "error"
-                              ? "error"
-                              : child.tone === "attention"
-                                ? "warning"
-                                : "neutral"
-                      }
-                      label={child.title}
-                    />
-                    {child.detail === undefined ? null : (
-                      <span>{child.detail}</span>
-                    )}
-                  </DataRow>
-                ))}
-              </DataList>
-            </section>
-          ) : null}
-          {row.actions?.map((action) => {
-            const error = actions.state.get(action)?.error;
-            return error === undefined ? null : (
-              <p key={action.id} className="text-error" role="alert">
-                {error}
-              </p>
-            );
-          })}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

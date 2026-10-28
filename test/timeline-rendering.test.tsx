@@ -583,6 +583,49 @@ it("offers host tool actions only for completed successful results and preserves
   expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
 });
 
+it("hides a tool body's image parts only for results the host claims", async () => {
+  const { container, root } = mount();
+  const item: ToolItem = {
+    id: "picture",
+    kind: "tool",
+    name: "execute",
+    args: {},
+    status: "completed",
+    result: {
+      role: "toolResult",
+      toolCallId: "picture",
+      toolName: "execute",
+      content: [
+        { type: "text", text: "{}" },
+        { type: "image", data: "AQID", mimeType: "image/png" },
+      ],
+      timestamp: 1,
+      isError: false,
+    },
+  };
+  const expanded = toggleDisclosure(initialToolDisclosure, item.id, false);
+  const render = (claims?: (tool: ToolItem) => boolean) =>
+    settle(() => {
+      root.render(
+        <TimelineItem
+          item={toolGroup([item])}
+          toolDisclosure={expanded}
+          {...(claims === undefined ? {} : { claimsToolMedia: claims })}
+        />,
+      );
+    });
+  await render();
+  expect(container.querySelectorAll("img")).toHaveLength(1);
+  await render(() => false);
+  expect(container.querySelectorAll("img")).toHaveLength(1);
+  const claims = vi.fn(() => true);
+  await render(claims);
+  expect(claims).toHaveBeenCalledWith(
+    expect.objectContaining({ id: "picture" }),
+  );
+  expect(container.querySelectorAll("img")).toHaveLength(0);
+});
+
 it("adds caller attachments only to settled successful assistant replies", async () => {
   const { container, root } = mount();
   const renderAssistantAttachment = vi.fn((text: string) => (
@@ -623,7 +666,7 @@ it("adds caller attachments only to settled successful assistant replies", async
   expect(container.textContent).toContain("Attachment for Share:");
 });
 
-it("shows a failed turn's private provider text in its bubble and details without markdown interpretation", async () => {
+it("keeps provider text only in existing details without markdown interpretation", async () => {
   const { container, root } = mount();
   const privateText = "provider_error: 401 Bearer sk-live-private\nretry later";
   await settle(() => {
@@ -641,7 +684,8 @@ it("shows a failed turn's private provider text in its bubble and details withou
     );
   });
   const bubble = container.querySelector('[data-provider-error="failed-turn"]');
-  expect(bubble?.querySelector("p")?.textContent).toBe(privateText);
+  expect(bubble?.querySelector("p")).toBeNull();
+  expect(bubble?.querySelector("details")?.open).toBe(false);
   expect(bubble?.querySelector("details pre")?.textContent).toBe(privateText);
   expect(bubble?.querySelector("a")).toBeNull();
 });

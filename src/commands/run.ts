@@ -52,9 +52,9 @@ export async function runSlashDraft(
   if (command.consumesDraft && command.availability.status === "available")
     consumeDraft?.();
   if (parsed.arguments === undefined)
-    return commands.execute(command.commandId, { origin });
+    return commands.execute(command.command, { origin });
   if (requestIdField === undefined)
-    return commands.execute(command.commandId, {
+    return commands.execute(command.command, {
       origin,
       arguments: parsed.arguments,
     });
@@ -69,7 +69,7 @@ export async function runSlashDraft(
   };
   states.set(command.commandId, state);
   const running = commands
-    .execute(command.commandId, {
+    .execute(command.command, {
       origin,
       arguments: { ...parsed.arguments, [requestIdField]: state.requestId },
     })

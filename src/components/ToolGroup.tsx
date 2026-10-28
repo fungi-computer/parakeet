@@ -181,9 +181,11 @@ function CallBody({
   tool,
   disclosure,
   onToggle,
+  mediaClaimed,
 }: Readonly<{
   call: ToolCallView;
   tool: ToolItem | undefined;
+  mediaClaimed: boolean;
   disclosure: ToolDisclosureState;
   onToggle: ToggleToolDisclosure;
 }>) {
@@ -210,7 +212,7 @@ function CallBody({
           section={section}
         />
       ))}
-      {tool?.result?.content
+      {(mediaClaimed ? [] : (tool?.result?.content ?? []))
         .filter((part) => part.type === "image")
         .map((part, index) => (
           <img
@@ -233,6 +235,7 @@ function CallRow({
   disclosure,
   onToggle,
   renderToolActions,
+  claimsToolMedia,
 }: Readonly<{
   call: ToolCallView;
   tool: ToolItem | undefined;
@@ -241,6 +244,7 @@ function CallRow({
   disclosure: ToolDisclosureState;
   onToggle: ToggleToolDisclosure;
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
+  claimsToolMedia?: ((item: ToolItem) => boolean) | undefined;
 }>) {
   const defaultOpen = toolCallDefaultOpen(call);
   const open = disclosureOpen(disclosure, disclosureId, defaultOpen);
@@ -287,6 +291,7 @@ function CallRow({
           call={call}
           disclosure={disclosure}
           onToggle={onToggle}
+          mediaClaimed={tool !== undefined && claimsToolMedia?.(tool) === true}
           tool={tool}
         />
       </Disclosure>
@@ -303,11 +308,13 @@ export const ToolGroup = memo(function ToolGroup({
   disclosure,
   onToggle,
   renderToolActions,
+  claimsToolMedia,
 }: Readonly<{
   group: ToolGroupItem;
   disclosure: ToolDisclosureState;
   onToggle: ToggleToolDisclosure;
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
+  claimsToolMedia?: ((item: ToolItem) => boolean) | undefined;
 }>) {
   const defaultOpen = toolGroupDefaultOpen(group);
   const open = disclosureOpen(disclosure, group.id, defaultOpen);
@@ -323,6 +330,7 @@ export const ToolGroup = memo(function ToolGroup({
           disclosureId={single.id}
           onToggle={onToggle}
           renderToolActions={renderToolActions}
+          claimsToolMedia={claimsToolMedia}
           size="row"
           tool={group.tools[0]}
         />
@@ -381,6 +389,7 @@ export const ToolGroup = memo(function ToolGroup({
           key={call.id}
           onToggle={onToggle}
           renderToolActions={renderToolActions}
+          claimsToolMedia={claimsToolMedia}
           size="row"
           tool={group.tools.find((tool) => tool.id === call.id)}
         />

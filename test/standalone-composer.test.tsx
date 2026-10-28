@@ -387,7 +387,7 @@ it("recovers the exact submitted text after closing before acceptance and reopen
   });
   expect(input.value).toBe("");
   expect(
-    localStorage.getItem(`fungi.parakeet.drafts.v1:${session.address}`),
+    localStorage.getItem(`fungi.parakeet.drafts.v2:${session.address}`),
   ).toContain(original);
   await settle(() => {
     first.root.unmount();
@@ -476,7 +476,7 @@ for (const mode of ["timeout", "service loss", "disconnect", "refusal"]) {
       if (mode === "service loss") {
         expect(input.value).toBe("New typing");
         expect(
-          localStorage.getItem(`fungi.parakeet.drafts.v1:${session.address}`),
+          localStorage.getItem(`fungi.parakeet.drafts.v2:${session.address}`),
         ).toContain("Exact text");
         connected = true;
         act(() => {
@@ -657,7 +657,7 @@ it("keeps an admitted send on reopen and preserves the newer durable draft", asy
   ).toHaveLength(1);
   expect(
     JSON.parse(
-      localStorage.getItem(`fungi.parakeet.drafts.v1:${session.address}`) ??
+      localStorage.getItem(`fungi.parakeet.drafts.v2:${session.address}`) ??
         "null",
     ),
   ).toEqual({ draft: "Newer draft", pending: [] });
@@ -3346,4 +3346,52 @@ it("keeps the owner's failed status when the failed prompt is outside the loaded
   expect(container.firstElementChild?.getAttribute("data-status")).toBe(
     "error",
   );
+});
+
+it("sends images the person attached with the draft and keeps them in the draft journal", async () => {
+  const address = "test://parakeet/attached-images";
+  const images: NonNullable<PromptCommand["images"]> = [
+    { type: "image", data: "YXR0YWNoZWQ=", mimeType: "image/png" },
+  ];
+  const commands: PromptCommand[] = [];
+  const session: ParakeetSession = {
+    address,
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.reject(new Error("No withdrawal expected")),
+    command: commandHandler((input) => {
+      commands.push(input);
+      return new Promise<Accepted>(() => undefined);
+    }),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(frameQueue()),
+  };
+  let current: ComposerController | undefined;
+  const composer = () => {
+    if (current === undefined) throw new Error("Missing composer");
+    return current;
+  };
+  mount(session, new QueryClient(), undefined, undefined, {
+    onComposer: (value) => {
+      current = value;
+    },
+  });
+  await settle();
+  await settle(() => {
+    composer().setImages(images);
+  });
+  expect(composer().images).toEqual(images);
+  expect(draftJournal(address, localStorage).read().images).toEqual(images);
+  await settle(() => {
+    composer().setDraft("Look at this layout");
+  });
+  await settle(() => {
+    composer().send();
+  });
+  expect(commands[0]?.text).toBe("Look at this layout");
+  expect(commands[0]?.images).toEqual(images);
+  await settle(() => {
+    composer().setImages([]);
+  });
+  expect(composer().images).toBeUndefined();
 });

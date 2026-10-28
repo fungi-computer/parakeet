@@ -243,7 +243,7 @@ export type ComposerController = Readonly<{
   /** Typed reason the latest prompt did not complete. */
   failure: "admission" | "failed" | "cancelled" | "interrupted" | undefined;
   /** Current send could not enter the bounded local admission queue. */
-  admissionError: "queue_full" | undefined;
+  admissionError: "offline_queue_full" | "queue_full" | undefined;
   /** Retry the exact most recent failed prompt. */
   retry: () => void;
   /** Remove one failed local admission from this conversation. */
@@ -265,6 +265,8 @@ export type ComposerController = Readonly<{
   ) => Promise<WhistleExecutionOutcome | undefined>;
   /** Replace the local input. */
   setDraft: (value: string) => void;
+  /** Replace the images riding with the draft; the Session owner admits them on send. */
+  setImages: (images: PromptCommand["images"]) => void;
 }>;
 
 /** Session activity, observation, and Agent-lifetime controls. */
@@ -345,7 +347,11 @@ function composerStatus(
   const status = sessionActivityStatus(view);
   if (status !== "idle") return status;
   if (failure !== undefined || view.kind === "error") return "error";
-  if (admissions.some(({ status: state }) => state === "accepted"))
+  if (
+    admissions.some(
+      ({ status: state }) => state === "accepted" || state === "queued-local",
+    )
+  )
     return "queued";
   if (admissions.some(({ status: state }) => state === "admitting"))
     return "sending";
@@ -420,18 +426,17 @@ function createConversationAtoms(
   const saved = journal.read();
   let mounted = false;
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  const recoveryReasons = new Map(
-    saved.pending.map(({ requestId }) => [
-      requestId,
-      "Closed before confirmation",
-    ]),
-  );
+  const recoveryReasons = new Map<string, string>();
+  for (const pending of saved.pending)
+    if (pending.status === "admitting")
+      recoveryReasons.set(pending.requestId, "Closed before confirmation");
   const recovering = new Set<string>();
   const queryAtom = atomWithQuery(
     () => sessionQueryOptions(session),
     () => queryClient,
   );
   const snapshotAtom = atom((get) => get(queryAtom).data?.snapshot);
+  const lastReplyAtAtom = atom((get) => get(queryAtom).data?.lastReplyAt);
 
   const pinnedHistoryAtom = atom<SessionSnapshot | undefined>(undefined);
   const historyBeforeAtom = atom(
@@ -636,10 +641,7 @@ function createConversationAtoms(
   let recallOwner: QueuedRecall | undefined;
   const draftRevisionAtom = atom(0);
   const rawAdmissionsAtom = atom<readonly SubmittedPromptAdmission[]>(
-    saved.pending.map((pending): SubmittedPromptAdmission => ({
-      ...pending,
-      status: "admitting",
-    })),
+    saved.pending,
   );
   const persistAtom = atom(
     null,
@@ -673,25 +675,30 @@ function createConversationAtoms(
           state?.recall === null
             ? undefined
             : (state?.recall ?? get(recallReservationAtom)),
-        pending: (state?.admissions ?? get(rawAdmissionsAtom))
-          .filter(({ status }) => status === "admitting")
-          .map(
-            ({
-              requestId,
-              content,
-              submittedDraft,
-              delivery,
-              images,
-              restoreDraft,
-            }) => ({
-              requestId,
-              content,
-              submittedDraft,
-              delivery,
-              images,
-              restoreDraft,
-            }),
-          ),
+        pending: (state?.admissions ?? get(rawAdmissionsAtom)).flatMap(
+          ({
+            status,
+            requestId,
+            content,
+            submittedDraft,
+            delivery,
+            images,
+            restoreDraft,
+          }) =>
+            status === "admitting" || status === "queued-local"
+              ? [
+                  {
+                    status,
+                    requestId,
+                    content,
+                    submittedDraft,
+                    delivery,
+                    images,
+                    restoreDraft,
+                  },
+                ]
+              : [],
+        ),
       });
     },
   );
@@ -823,7 +830,8 @@ function createConversationAtoms(
       return unresolved.length === current.length ? current : unresolved;
     });
   });
-  const admissionErrorAtom = atom<"queue_full" | undefined>(undefined);
+  const admissionErrorAtom =
+    atom<ComposerController["admissionError"]>(undefined);
   const setDraftAtom = atom(null, (get, set, value: string) => {
     try {
       set(persistAtom, { draft: value });
@@ -839,6 +847,27 @@ function createConversationAtoms(
     set(draftAtom, value);
     set(admissionErrorAtom, undefined);
   });
+  const setImagesAtom = atom(
+    null,
+    (get, set, images: PromptCommand["images"]) => {
+      const next =
+        images === undefined || images.length === 0 ? undefined : images;
+      try {
+        set(persistAtom, {
+          draftPayload: { images: next, delivery: get(draftDeliveryAtom) },
+        });
+      } catch (cause) {
+        reportFailure("save draft images", cause);
+        interactions.toast({
+          variant: "error",
+          message: `Images not saved: ${errorMessage(cause)}`,
+        });
+      }
+      set(draftImagesAtom, next);
+      set(draftRevisionAtom, (revision) => revision + 1);
+      set(admissionErrorAtom, undefined);
+    },
+  );
   /** Consume only the exact draft a command submitted. */
   const clearSubmittedDraftAtom = atom(
     null,
@@ -1088,6 +1117,9 @@ function createConversationAtoms(
         set(draftDeliveryAtom, undefined);
         set(setDraftAtom, "");
       }
+      // The offline prompt is saved alongside the draft. Await a fresh owner
+      // baseline before attempting admission.
+      if (admission.status === "queued-local") return;
       const prompt: PromptCommand = {
         type: "prompt",
         text: admission.content,
@@ -1234,6 +1266,24 @@ function createConversationAtoms(
   const maintainRecoveryAtom = atom(null, (get, set) => {
     const observation = get(observationAtom).status;
     const admissions = get(rawAdmissionsAtom);
+    if (observation === "live") {
+      if (get(admissionErrorAtom) === "offline_queue_full")
+        set(admissionErrorAtom, undefined);
+      const queued = admissions.find(({ status }) => status === "queued-local");
+      if (queued !== undefined) {
+        const sending: SubmittedPromptAdmission = {
+          ...queued,
+          status: "admitting",
+        };
+        set(rawAdmissionsAtom, (current) =>
+          current.map((candidate) =>
+            candidate.requestId === queued.requestId ? sending : candidate,
+          ),
+        );
+        // Preserve the idempotent request id when reconnect admits the prompt.
+        set(dispatchAdmissionAtom, { admission: sending, consumeDraft: false });
+      }
+    }
     for (const [id, timer] of timers) {
       if (
         !admissions.some(
@@ -1287,6 +1337,14 @@ function createConversationAtoms(
         return;
       const admissions = get(admissionsAtom);
       const unresolved = admissions.filter(({ status }) => status !== "failed");
+      const offline = get(observationAtom).status !== "live";
+      if (
+        offline &&
+        unresolved.some(({ status }) => status === "queued-local")
+      ) {
+        set(admissionErrorAtom, "offline_queue_full");
+        return;
+      }
       if (unresolved.length >= MAX_UNRESOLVED_LOCAL_ADMISSIONS) {
         set(admissionErrorAtom, "queue_full");
         return;
@@ -1298,7 +1356,7 @@ function createConversationAtoms(
         requestId: nanoid(),
         submittedDraft: draft,
         restoreDraft: true,
-        status: "admitting",
+        status: offline ? "queued-local" : "admitting",
       };
       set(rawAdmissionsAtom, [...admissions, admission]);
       set(latestSubmissionIdAtom, admission.requestId);
@@ -1525,6 +1583,7 @@ function createConversationAtoms(
     jumpToLatestAtom,
     loadOlderHistoryAtom,
     loadNewerHistoryAtom,
+    lastReplyAtAtom,
     observationAtom,
     observedCommandIdsAtom,
     rawAdmissionsAtom,
@@ -1536,6 +1595,7 @@ function createConversationAtoms(
     reconnectAtom,
     retryAtom,
     setDraftAtom,
+    setImagesAtom,
     sendAtom,
     snapshotAtom,
     statusAtom,
@@ -1811,6 +1871,7 @@ export function useComposer(): ComposerController {
   const failure = useStoreAtom(atoms.failureAtom);
   const admissionError = useStoreAtom(atoms.admissionErrorAtom);
   const setDraft = useStoreSetter(atoms.setDraftAtom);
+  const setImages = useStoreSetter(atoms.setImagesAtom);
   const checkpointDraft = useStoreSetter(atoms.checkpointDraftAtom);
   const send = useStoreSetter(atoms.sendAtom);
   const submitCommand = useStoreSetter(atoms.submitCommandAtom);
@@ -1834,6 +1895,7 @@ export function useComposer(): ComposerController {
       retry: retryLatest,
       send,
       setDraft,
+      setImages,
       submitCommand,
     }),
     [
@@ -1849,6 +1911,7 @@ export function useComposer(): ComposerController {
       retryLatest,
       send,
       setDraft,
+      setImages,
       submitCommand,
     ],
   );
@@ -1890,6 +1953,11 @@ export function useStatus(): StatusController {
     }),
     [commandId, context, observation, reconnect, status, viewState],
   );
+}
+
+/** Time of the last delivered watch snapshot or frame, not an SSE comment. */
+export function useLastSessionReplyAt(): number | undefined {
+  return useStoreAtom(useConversationScope().atoms.lastReplyAtAtom);
 }
 
 /** Presentation admitted once from the selected Session's already observed slots. */

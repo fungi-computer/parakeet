@@ -12,7 +12,12 @@ import type {
   WhistlePendingPrompt,
 } from "@fungi.computer/whistle/interaction";
 import type { WhistlePromptOption } from "@fungi.computer/whistle";
-import { useState, useSyncExternalStore, type FormEvent } from "react";
+import {
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 /** The interaction to draw and the page's close callback. */
 export type InteractionPanelProps = Readonly<{
@@ -22,16 +27,28 @@ export type InteractionPanelProps = Readonly<{
   onClose?: () => void;
 }>;
 
-type PromptFields = WhistlePendingPrompt["request"];
+/** The text every prompt carries above its choices. */
+export type PromptContent = Pick<
+  WhistlePendingPrompt["request"],
+  "message" | "summary" | "facts" | "body" | "bodyLabel" | "details"
+>;
 
 /** Summary, facts, long text and on-demand details: the shared modal anatomy. */
-function PromptHeader({ request }: Readonly<{ request: PromptFields }>) {
+export function PromptHeader({
+  request,
+  trailing,
+}: Readonly<{
+  request: PromptContent;
+  /** Drawn at the end of the title line, e.g. a `1 of 3` marker. */
+  trailing?: ReactNode;
+}>) {
   const [open, setOpen] = useState(false);
-  const entries = (list: PromptFields["facts"]) =>
+  const entries = (list: PromptContent["facts"]) =>
     list === undefined ? null : (
       <DataList density="compact">
         {list.map((entry) => (
-          <DataRow key={entry.label}>
+          // Facts read as one block of label/value lines, with no rules between.
+          <DataRow key={entry.label} className="after:hidden">
             <span className="text-sm opacity-70">{entry.label}</span>{" "}
             <span className="break-words">{entry.value}</span>
           </DataRow>
@@ -40,7 +57,14 @@ function PromptHeader({ request }: Readonly<{ request: PromptFields }>) {
     );
   return (
     <>
-      <p className="font-medium">{request.message}</p>
+      {trailing === undefined ? (
+        <p className="font-medium">{request.message}</p>
+      ) : (
+        <div className="flex items-baseline justify-between gap-sm">
+          <p className="font-medium">{request.message}</p>
+          {trailing}
+        </div>
+      )}
       {request.summary === undefined ? null : (
         <p className="text-sm opacity-70">{request.summary}</p>
       )}
@@ -121,6 +145,8 @@ function PromptView({
         </div>
       </div>
     );
+  // A decision is answered in the composer; no dialog ever receives one.
+  if (request.type === "decision") return null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     host.answer(pending.sequence, text);

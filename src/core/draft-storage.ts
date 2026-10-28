@@ -34,6 +34,7 @@ export type ParakeetDraftStorage = Readonly<{
 }>;
 
 const pendingDraft = z.object({
+  status: z.enum(["queued-local", "admitting"]),
   requestId: z.string().min(1),
   content: z.string(),
   submittedDraft: z.string(),
@@ -55,14 +56,19 @@ export function draftJournal(
   scope: string,
   storage: ParakeetDraftStorage | undefined,
 ) {
-  const key = `fungi.parakeet.drafts.v1:${scope}`;
+  const key = `fungi.parakeet.drafts.v2:${scope}`;
   return {
     read(): DraftJournal {
       if (storage === undefined) return { draft: "", pending: [] };
-      const saved = storage.getItem(key);
-      return saved === null
-        ? { draft: "", pending: [] }
-        : journal.parse(JSON.parse(saved));
+      try {
+        const saved = storage.getItem(key);
+        return saved === null
+          ? { draft: "", pending: [] }
+          : journal.parse(JSON.parse(saved));
+      } catch {
+        // Preview journals are disposable; a broken load must not break chat.
+        return { draft: "", pending: [] };
+      }
     },
     write(value: DraftJournal): void {
       if (storage === undefined)

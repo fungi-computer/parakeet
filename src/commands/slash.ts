@@ -1,5 +1,6 @@
 import type {
   WhistleAvailability,
+  WhistleCommandKey,
   WhistleJsonObject,
   WhistleSlashArguments,
   WhistleSlashWord,
@@ -10,8 +11,10 @@ import type {
 export type SlashCommand = Readonly<{
   /** The alias typed after `/`. */
   alias: string;
-  /** Canonical Whistle command identity. */
+  /** Opaque Whistle render key. */
   commandId: string;
+  /** The command's typed Whistle identity; execute it by this. */
+  command: WhistleCommandKey;
   /** Consume this draft on dispatch, including for a dialog or refusal. */
   consumesDraft?: boolean | undefined;
   /** Human-facing title. */
@@ -32,8 +35,10 @@ export type SlashCommand = Readonly<{
 
 /** One key binding as help and hint surfaces list it. */
 export type KeyBindingRow = Readonly<{
-  /** Canonical Whistle command identity. */
+  /** Opaque Whistle render key. */
   commandId: string;
+  /** The command's typed Whistle identity; execute it by this. */
+  command: WhistleCommandKey;
   /** Human key label, e.g. `Ctrl+O`. */
   keys: string;
   /** What the key does. */
@@ -83,6 +88,7 @@ export function slashRegistry(
   return snapshot.slash.map((row) => ({
     alias: row.alias,
     commandId: row.commandId,
+    command: row.command,
     title: row.title,
     description: row.description,
     category: row.category,
@@ -103,6 +109,7 @@ export function keyBindings(
     const current = rows.get(row.commandId);
     rows.set(row.commandId, {
       commandId: row.commandId,
+      command: row.command,
       keys:
         current === undefined
           ? keyLabel(row.binding)

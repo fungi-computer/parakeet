@@ -23,6 +23,7 @@ import {
   useStatus,
   useTimeline,
 } from "./conversation.js";
+import { awaitingTakeover } from "./core/awaiting-answer.js";
 import { initialToolDisclosure, toggleDisclosure } from "./core/tool-groups.js";
 import {
   authorDisplayNames,
@@ -77,6 +78,8 @@ export type ParakeetProps = Readonly<{
   composerActionVariant?: "primary" | "outline" | undefined;
   /** Optional caller-owned actions for a completed tool result. */
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
+  /** Optional host claim: true hides this item's image parts from the tool body because the host shows them. */
+  claimsToolMedia?: ((item: ToolItem) => boolean) | undefined;
   /** Optional caller-owned attachment below a settled assistant reply. */
   renderAssistantAttachment?: ((text: string) => ReactNode) | undefined;
   /** Optional display text; attachments still receive the original reply. */
@@ -101,6 +104,8 @@ export type ParakeetViewProps = Readonly<{
   composerActionVariant?: "primary" | "outline" | undefined;
   /** Optional caller-owned actions for a completed tool result. */
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
+  /** Optional host claim: true hides this item's image parts from the tool body because the host shows them. */
+  claimsToolMedia?: ((item: ToolItem) => boolean) | undefined;
   /** Optional caller-owned attachment below a settled assistant reply. */
   renderAssistantAttachment?: ((text: string) => ReactNode) | undefined;
   /** Optional display text; attachments still receive the original reply. */
@@ -127,6 +132,7 @@ export function ParakeetView({
   empty,
   commands,
   renderToolActions,
+  claimsToolMedia,
   renderAssistantAttachment,
   formatAssistantText,
   onLink,
@@ -143,6 +149,9 @@ export function ParakeetView({
   });
   const clientActions = useClientActions(commands ?? ownCommands);
   const contributions = useClientContributions();
+  const { draft } = useComposer();
+  // The decision in the composer is not also a footer row.
+  const answering = awaitingTakeover(slash.awaiting, draft)?.key;
   const timelineController = useTimeline();
   const placed = useMemo(
     () =>
@@ -181,15 +190,26 @@ export function ParakeetView({
           focusAfterJump={textareaRef}
           empty={empty}
           renderToolActions={renderToolActions}
+          claimsToolMedia={claimsToolMedia}
           renderAssistantAttachment={renderAssistantAttachment}
           formatAssistantText={formatAssistantText}
         />
-        {contributions.some(({ value }) => value.panel.length > 0) ? (
+        {contributions.some(({ entryId, value }) =>
+          value.panel.some(
+            (row) => JSON.stringify([entryId, row.id]) !== answering,
+          ),
+        ) ? (
           <section
             aria-label="Session extension controls"
             className="w-full shrink-0 border-t border-base-300 bg-base-100"
           >
-            {contributions.map(({ entryId, value }) => {
+            {contributions.map(({ entryId, value: contribution }) => {
+              const value = {
+                ...contribution,
+                panel: contribution.panel.filter(
+                  (row) => JSON.stringify([entryId, row.id]) !== answering,
+                ),
+              };
               // An extension's retained-event notice and null-anchor rows
               // join its own footer entry; one with no panel row here keeps
               // none of this, rather than growing a section just to show it.
@@ -293,12 +313,14 @@ function ConversationTimeline({
   focusAfterJump,
   empty,
   renderToolActions,
+  claimsToolMedia,
   renderAssistantAttachment,
   formatAssistantText,
 }: Pick<
   ParakeetViewProps,
   | "empty"
   | "renderToolActions"
+  | "claimsToolMedia"
   | "renderAssistantAttachment"
   | "formatAssistantText"
   | "disambiguateAuthors"
@@ -523,6 +545,7 @@ function ConversationTimeline({
                     cancellingQueued={timelineController.cancellingQueued}
                     onToggleTool={toggleTool}
                     renderToolActions={renderToolActions}
+                    claimsToolMedia={claimsToolMedia}
                     renderAssistantAttachment={renderAssistantAttachment}
                     formatAssistantText={formatAssistantText}
                     toolDisclosure={toolDisclosure}
@@ -633,6 +656,7 @@ function ConversationComposer({
   }, [composer.cancel]);
   const composerProps: ChatComposerProps = {
     queuedRecall: visitor === undefined ? composer : undefined,
+    onImagesChange: visitor === undefined ? composer.setImages : undefined,
     statusChips: contributions
       .flatMap(({ value }) => value.chips)
       .sort((left, right) => left.order - right.order)
@@ -674,6 +698,7 @@ export function Parakeet({
   session,
   clients,
   renderToolActions,
+  claimsToolMedia,
   renderAssistantAttachment,
   formatAssistantText,
   commands,
@@ -689,6 +714,7 @@ export function Parakeet({
           composerActionVariant={composerActionVariant}
           empty={empty}
           renderToolActions={renderToolActions}
+          claimsToolMedia={claimsToolMedia}
           renderAssistantAttachment={renderAssistantAttachment}
           formatAssistantText={formatAssistantText}
           commands={commands}

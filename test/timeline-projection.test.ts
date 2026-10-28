@@ -672,7 +672,7 @@ it("orders pending interrupts before cues without changing order within either g
   ]);
 });
 
-it("shows provider error text on the failed turn, separate from assistant content", () => {
+it("shows the safe provider headline, keeping raw provider text separate", () => {
   const assistant = messages.find(
     (message) => message.value.role === "assistant",
   );
@@ -700,9 +700,54 @@ it("shows provider error text on the failed turn, separate from assistant conten
   expect(timeline.items[0]).toMatchObject({
     kind: "assistant_message",
     isError: true,
-    text: "This run couldn’t finish.",
+    text: "Safe model failure",
     providerError: "provider diagnostic fixture",
   });
+});
+
+it("folds consecutive matching provider errors without losing command or committed-position anchors", () => {
+  const assistant = messages.find(
+    (message) => message.value.role === "assistant",
+  );
+  if (assistant?.value.role !== "assistant")
+    throw new Error("Missing assistant fixture");
+  const value = {
+    ...assistant.value,
+    content: [],
+    stopReason: "error" as const,
+    errorMessage: "Anthropic is overloaded.",
+  };
+  const failures = Array.from({ length: 7 }, (_, index): SessionMessage => ({
+    ...assistant,
+    id: `error-${String(index)}`,
+    commandId: `work-${String(index)}`,
+    sequence: index + 1,
+    value: { ...value, providerError: `request_id: req_${String(index)}` },
+  }));
+  const projection = buildDurableTimeline(
+    failures,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [],
+    [7],
+  );
+  expect(projection.items).toHaveLength(1);
+  expect(projection.items[0]).toMatchObject({
+    id: "error-0",
+    text: "Anthropic is overloaded.",
+    repeatCount: 7,
+    providerError: "request_id: req_6",
+  });
+  expect([...projection.commandAnchors.values()]).toEqual(
+    Array(7).fill("error-0"),
+  );
+  expect(projection.positionAnchors.get(7)).toBe("error-0");
+  expect(
+    buildDurableTimeline(failures, [], undefined, undefined, undefined, [], [3])
+      .items,
+  ).toHaveLength(2);
 });
 
 it("shows safe refusal content and its Billing link in saved history", () => {

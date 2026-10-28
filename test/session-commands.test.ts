@@ -119,7 +119,10 @@ describe("shared Parakeet Session commands", () => {
         },
       },
     );
-    const running = runtime.execute("fork-retry:fork", { origin: "slash" });
+    const running = runtime.execute(
+      { namespace: "fork-retry", id: "fork" },
+      { origin: "slash" },
+    );
     try {
       await vi.waitFor(() => {
         expect(
@@ -203,10 +206,13 @@ describe("shared Parakeet Session commands", () => {
       status: "failed",
     });
     await expect(
-      runtime.execute("queue-test:queue", {
-        origin: "slash",
-        arguments: { action: "editLast" },
-      }),
+      runtime.execute(
+        { namespace: "queue-test", id: "queue" },
+        {
+          origin: "slash",
+          arguments: { action: "editLast" },
+        },
+      ),
     ).resolves.toMatchObject({ status: "failed" });
     expect(notices).toHaveLength(1);
     lease.dispose();

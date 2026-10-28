@@ -265,9 +265,13 @@ it("dispatches a slash command typed during an active run through the host", asy
   expect(executed).toEqual(["model"]);
   expect(input.value).toBe("");
 
+  // With a draft, the running composer's one key does what Enter does.
   await settle(() => {
     type(input, "/model");
   });
+  expect(
+    container.querySelector('[aria-label="Stop current turn"]'),
+  ).toBeNull();
   await settle(() => {
     container
       .querySelector<HTMLButtonElement>('[aria-label="Queue follow-up"]')

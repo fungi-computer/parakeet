@@ -32,6 +32,8 @@
     "package/dist/components/ClientRows.js",
     "package/dist/components/CodeBlock.d.ts",
     "package/dist/components/CodeBlock.js",
+    "package/dist/components/CompletionMenu.d.ts",
+    "package/dist/components/CompletionMenu.js",
     "package/dist/components/InteractionPanel.d.ts",
     "package/dist/components/InteractionPanel.js",
     "package/dist/components/MarkdownRenderer.d.ts",

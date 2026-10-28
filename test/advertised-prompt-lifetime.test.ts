@@ -76,13 +76,16 @@ it.each(["explicit", "implicit", "late reply", "chooser"])(
       },
     } as const;
     owner.update(slots);
-    const running = commands.execute("questions:answer", {
-      origin: "slash",
-      arguments:
-        admission === "implicit" || admission === "chooser"
-          ? {}
-          : { askId: "first" },
-    });
+    const running = commands.execute(
+      { namespace: "questions", id: "answer" },
+      {
+        origin: "slash",
+        arguments:
+          admission === "implicit" || admission === "chooser"
+            ? {}
+            : { askId: "first" },
+      },
+    );
     try {
       await expect.poll(() => calls).toBe(1);
       if (admission !== "late reply")
@@ -169,18 +172,24 @@ it("keeps concurrent invocation identities separate when caller signals are shar
     },
   } as const;
   owner.update(slots);
-  const first = commands.execute("questions:answer", {
-    origin: "slash",
-    arguments: {},
-    signal: controller.signal,
-    interaction: firstHost.begin().interaction,
-  });
-  const second = commands.execute("questions:answer", {
-    origin: "slash",
-    arguments: { askId: "second" },
-    signal: controller.signal,
-    interaction: secondHost.begin().interaction,
-  });
+  const first = commands.execute(
+    { namespace: "questions", id: "answer" },
+    {
+      origin: "slash",
+      arguments: {},
+      signal: controller.signal,
+      interaction: firstHost.begin().interaction,
+    },
+  );
+  const second = commands.execute(
+    { namespace: "questions", id: "answer" },
+    {
+      origin: "slash",
+      arguments: { askId: "second" },
+      signal: controller.signal,
+      interaction: secondHost.begin().interaction,
+    },
+  );
   try {
     await expect
       .poll(() => firstHost.snapshot().prompt?.request.message)

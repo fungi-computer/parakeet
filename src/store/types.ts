@@ -61,7 +61,7 @@ export type LocalPromptAdmission = Readonly<{
   /** Existing Session delivery intent. */
   delivery: PromptDelivery;
   /** Current local admission result. */
-  status: "admitting" | "accepted" | "failed";
+  status: "queued-local" | "admitting" | "accepted" | "failed";
   /** User-presentable admission error when status is failed. */
   error?: string;
 }>;
@@ -84,6 +84,10 @@ export type AssistantMessageItem = Readonly<{
   text: string;
   /** Pi's private failed-turn error text; never a terminal or delegation diagnostic. */
   providerError?: string;
+  /** Short assistant output retained before a provider failure, not provider prose. */
+  errorDetail?: string;
+  /** Consecutive failures with the same visible headline and detail. */
+  repeatCount?: number;
   /** Assistant reasoning text, when supplied by the model. */
   thinking?: string;
   /** Usage carried by the exact assistant message. */

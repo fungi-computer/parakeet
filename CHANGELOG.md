@@ -1,5 +1,54 @@
 # @fungi.computer/parakeet
 
+## 0.5.0
+
+### Minor Changes
+
+- Changes since 0.4.0:
+
+  - fix(parakeet): draw a multiple decision's picks as Caps checks
+  - fix(parakeet): polish the composer questions on the web and the terminal
+  - fix(parakeet): open waiting decisions by their typed command key
+  - refactor(whistle)!: execute commands by their typed key; only Whistle mints
+    ids
+  - feat(composer): one Caps composer surface for chat and Prints
+  - fix(parakeet): join the completion menu to the composer surface
+  - fix(parakeet): keep PromptContent self-contained so its signature leaks no
+    private type
+  - fix(clients): explain the occupied offline prompt slot
+  - fix(parakeet): reset disposable draft journals safely
+  - fix(prints): share Grove's completion menu so arrow keys work
+  - fix(parakeet): confirm the family rule and keep approvals steady across
+    resizes
+  - fix(parakeet): the Other row is the Listbox's last row, not a field beneath
+    it
+  - feat(parakeet): answer tool approvals in the composer on the terminal and
+    the web
+  - feat(parakeet): answer questions in the composer on the terminal and the web
+  - fix(parakeet): summarize repeated provider errors and disclose raw details
+  - feat(parakeet): let a host claim a tool result's images
+  - fix(clients): finish live recovery and prove single frame application
+  - fix(parakeet): require a delivered age in offline proof
+  - fix(parakeet): prove delivered reply age survives watch loss
+  - fix(tui): read observed reply age through Parakeet
+  - fix(parakeet): remove non-falsifiable retry prompt proof
+  - fix(tui): checkpoint bounded live client recovery
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.5.0
+  - @fungi.computer/bird-dog@0.3.0
+  - @fungi.computer/caps@0.4.0
+  - @fungi.computer/knapsack@0.4.0
+  - @fungi.computer/shiitake@0.6.0
+  - @fungi.computer/whistle@0.3.0
+
 ## 0.4.0
 
 ### Minor Changes

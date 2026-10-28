@@ -8,6 +8,7 @@ import {
   type WhistleInteractionHost,
   type WhistleMessageNotice,
 } from "@fungi.computer/whistle/interaction";
+import type { AwaitingItem } from "../core/awaiting-answer.js";
 
 /** One interaction a renderer should draw as a dialog or panel. */
 export type ParakeetOpenInteraction = Readonly<{
@@ -39,8 +40,22 @@ export type ParakeetToast = Readonly<{
   message: string;
 }>;
 
+/** The decisions waiting on the person, which the composer takes over for. */
+export type ParakeetAwaiting = Readonly<{
+  /** Every waiting decision, in the order it joined. */
+  items: readonly AwaitingItem[];
+  /** Keys the person postponed with Later; they wait in the footer row. */
+  later: ReadonlySet<string>;
+  /** The person asked for the composer even though a draft is in it. */
+  forced: boolean;
+  /** Counts each request to answer, so a stalled item can start over. */
+  requests: number;
+}>;
+
 /** Everything a renderer draws for command conversations. */
 export type ParakeetInteractionState = Readonly<{
+  /** Decisions that take over the composer instead of opening a dialog. */
+  awaiting: ParakeetAwaiting;
   /** The interaction that needs the human, when one does. */
   open?: ParakeetOpenInteraction | undefined;
   /** A manually opened, live panel row from an admitted client entry. */
@@ -76,6 +91,17 @@ export type ParakeetInteractions = Readonly<{
   attach: (present: WhistleRuntime["present"]) => () => void;
   /** How the most recent interaction ended; a dismissal is not a failure to report. */
   lastEnd: () => WhistleInteractionEnd["status"] | undefined;
+  /** The queue of decisions the composer answers. */
+  awaiting: Readonly<{
+    /** Join the queue; the returned function leaves it. */
+    add: (item: AwaitingItem) => () => void;
+    /** Leave the queue. */
+    remove: (key: string) => void;
+    /** Postpone one decision: it leaves the composer but stays waiting. */
+    later: (key: string) => void;
+    /** Bring back the earliest postponed decision, even over a draft. */
+    focus: () => void;
+  }>;
 }>;
 
 /**
@@ -84,7 +110,14 @@ export type ParakeetInteractions = Readonly<{
  * reports information emits a toast; ordinary success echoes are silent.
  */
 export function createParakeetInteractions(): ParakeetInteractions {
-  let state: ParakeetInteractionState = {};
+  let state: ParakeetInteractionState = {
+    awaiting: {
+      items: [],
+      later: new Set(),
+      forced: false,
+      requests: 0,
+    },
+  };
   let sequence = 0;
   let lastEnd: WhistleInteractionEnd["status"] | undefined;
   const listeners = new Set<() => void>();
@@ -101,6 +134,29 @@ export function createParakeetInteractions(): ParakeetInteractions {
     state = next;
     for (const listener of listeners) listener();
   };
+  const setAwaiting = (next: Partial<ParakeetAwaiting>) => {
+    publish({ ...state, awaiting: { ...state.awaiting, ...next } });
+  };
+  const removeAwaiting = (key: string) => {
+    const { items, later } = state.awaiting;
+    if (!items.some((item) => item.key === key)) return;
+    setAwaiting({
+      items: items.filter((item) => item.key !== key),
+      later: new Set([...later].filter((postponed) => postponed !== key)),
+      forced: false,
+    });
+  };
+  const addAwaiting = (item: AwaitingItem) => {
+    setAwaiting({
+      items: [
+        ...state.awaiting.items.filter(({ key }) => key !== item.key),
+        item,
+      ],
+    });
+    return () => {
+      removeAwaiting(item.key);
+    };
+  };
   const closeKey = (key: number) => {
     if (state.open?.key === key) publish({ ...state, open: undefined });
   };
@@ -112,6 +168,7 @@ export function createParakeetInteractions(): ParakeetInteractions {
       title,
       onEnd: (end) => {
         lastEnd = end.status;
+        leaveQueue?.();
         const message = host.snapshot().message;
         if (!shown) {
           if (end.status === "failed")
@@ -141,10 +198,29 @@ export function createParakeetInteractions(): ParakeetInteractions {
         if (end.status !== "failed") closeKey(key);
       },
     });
+    let leaveQueue: (() => void) | undefined;
     const unsubscribe = host.subscribe(() => {
       const current = host.snapshot();
       if (current.retryable) hadRetryableFailure = true;
-      if (shown) return;
+      // A decision is the composer's, never a dialog's, even when the same
+      // conversation reached it through a dialog (a row action chooser).
+      if (
+        leaveQueue === undefined &&
+        current.prompt?.request.type === "decision"
+      ) {
+        if (shown) {
+          shown = false;
+          closeKey(key);
+        }
+        leaveQueue = addAwaiting({
+          key: `interaction:${String(key)}`,
+          kind: "question",
+          arrivedAt: Date.now(),
+          host,
+        });
+        return;
+      }
+      if (leaveQueue !== undefined || shown) return;
       if (
         current.prompt === undefined &&
         current.handoff === undefined &&
@@ -196,5 +272,30 @@ export function createParakeetInteractions(): ParakeetInteractions {
     },
     attach: (present) => present(presenter),
     lastEnd: () => lastEnd,
+    awaiting: {
+      add: addAwaiting,
+      remove: removeAwaiting,
+      later: (key) => {
+        if (!state.awaiting.items.some((item) => item.key === key)) return;
+        setAwaiting({
+          later: new Set([...state.awaiting.later, key]),
+          forced: false,
+        });
+      },
+      focus: () => {
+        const { items, later, requests } = state.awaiting;
+        const earliest = [...items]
+          .sort((left, right) => left.arrivedAt - right.arrivedAt)
+          .find((item) => later.has(item.key));
+        setAwaiting({
+          later:
+            earliest === undefined
+              ? later
+              : new Set([...later].filter((key) => key !== earliest.key)),
+          forced: items.length > 0,
+          requests: requests + 1,
+        });
+      },
+    },
   };
 }

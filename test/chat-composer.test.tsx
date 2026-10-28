@@ -3,6 +3,8 @@ import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { createParakeetInteractions } from "../src/commands/interactions.js";
+import type { SlashCommandController } from "../src/commands/use-slash-commands.js";
 import { ChatComposer } from "../src/components/ChatComposer.js";
 
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
@@ -61,21 +63,46 @@ function renderComposer(
   return { container, onAbort, onSend, textarea };
 }
 
-it("keeps prompt copy sans and renders Queue through Caps' disabled contract", () => {
+it("keeps prompt copy sans on the composer surface, with one Caps send key", () => {
   const active = renderComposer("sending", "");
-  const row = active.container.querySelector<HTMLElement>(
-    ".caps-composer > .join",
-  );
-  const queue = active.container.querySelector<HTMLButtonElement>(
-    '[aria-label="Queue follow-up"]',
-  );
+  const surface = active.container.querySelector<HTMLElement>(".caps-composer");
+  const keys = active.container.querySelectorAll(".caps-send-action");
 
   expect(active.textarea.classList.contains("font-sans")).toBe(true);
   expect(active.textarea.classList.contains("font-mono")).toBe(false);
-  expect(row?.className).not.toContain("aura");
-  expect(queue?.disabled).toBe(true);
-  expect(queue?.className).toContain("caps-button");
-  expect(queue?.className).toContain("btn-primary");
+  expect(surface?.className).not.toContain("aura");
+  expect(active.textarea.closest(".caps-composer-input")?.parentElement).toBe(
+    surface,
+  );
+  expect(keys).toHaveLength(1);
+  expect(keys[0]?.className).toContain("caps-keycap-button");
+  expect(keys[0]?.closest(".caps-composer-bar")).not.toBeNull();
+});
+
+it("explains the single offline queue slot without implying an admission flood", () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.add(root);
+  act(() => {
+    root.render(
+      <ChatComposer
+        queuedRecall={undefined}
+        draft="Keep this second draft"
+        failure={undefined}
+        admissionError="offline_queue_full"
+        onAbort={vi.fn()}
+        onChange={vi.fn()}
+        onRetry={vi.fn()}
+        onSend={vi.fn()}
+        status="idle"
+        viewState={{ kind: "idle" }}
+        textareaRef={createRef<HTMLTextAreaElement>()}
+      />,
+    );
+  });
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "One prompt is already queued; it sends when the service is back.",
+  );
 });
 
 it.each(["admission", "failed", "interrupted"] as const)(
@@ -149,9 +176,9 @@ it("keeps IME, normal Enter, and Shift+Enter submission semantics", () => {
   expect(idle.onSend).toHaveBeenCalledTimes(1);
   expect(shifted.defaultPrevented).toBe(false);
 
-  const busy = renderComposer("sending");
+  const busy = renderComposer("sending", "");
   const action = busy.container.querySelector<HTMLButtonElement>(
-    '[data-testid="composer-stop"]',
+    '[aria-label="Stop current turn"]',
   );
   act(() => {
     action?.click();
@@ -183,9 +210,9 @@ it("submits the send button as steer without passing its click event", () => {
   const action = idle.container.querySelector<HTMLButtonElement>(
     '[aria-label="Send message"]',
   );
-  expect(action?.textContent).toBe("Send");
   expect(action?.disabled).toBe(false);
-  expect(action?.className).toContain("caps-button");
+  expect(action?.className).toContain("caps-keycap-button");
+  expect(action?.dataset.sendState).toBe("ready");
   act(() => {
     action?.click();
   });
@@ -197,10 +224,9 @@ it("keeps the empty Send action readable and disabled", () => {
   const action = idle.container.querySelector<HTMLButtonElement>(
     '[aria-label="Send message"]',
   );
-  expect(action?.textContent).toBe("Send");
   expect(action?.disabled).toBe(true);
-  expect(action?.classList.contains("caps-button-filled")).toBe(true);
-  expect(action?.classList.contains("disabled:pointer-events-none")).toBe(true);
+  expect(action?.classList.contains("caps-keycap-button")).toBe(true);
+  expect(action?.dataset.sendState).toBe("empty");
   act(() => {
     action?.click();
   });
@@ -210,31 +236,33 @@ it("keeps the empty Send action readable and disabled", () => {
 it("keeps composing during an active run and routes follow-ups through the one submit path", () => {
   const active = renderComposer("sending");
   expect(active.textarea.disabled).toBe(false);
+  // A draft turns the running composer's one key into Queue, as Enter does;
+  // Stop is not beside it.
+  expect(
+    active.container.querySelector('[aria-label="Stop current turn"]'),
+  ).toBeNull();
   const followUp = active.container.querySelector<HTMLButtonElement>(
     '[aria-label="Queue follow-up"]',
   );
-  const cancel = active.container.querySelector<HTMLButtonElement>(
-    '[aria-label="Stop current turn"]',
-  );
   act(() => {
     followUp?.click();
-    cancel?.click();
   });
   expect(active.onSend).toHaveBeenCalledExactlyOnceWith("followUp");
-  expect(active.onAbort).toHaveBeenCalledTimes(1);
+  expect(active.onAbort).not.toHaveBeenCalled();
   const event = enter(active.textarea);
   expect(event.defaultPrevented).toBe(true);
   expect(active.onSend).toHaveBeenCalledTimes(2);
   expect(active.onSend).toHaveBeenLastCalledWith("followUp");
 });
 
-it("offers plain Caps Stop and Send actions without an Agent avatar", () => {
-  const busy = renderComposer("sending");
+it("turns the one Send key into Stop while a run works, without an Agent avatar", () => {
+  const busy = renderComposer("sending", "");
   const stop = busy.container.querySelector<HTMLButtonElement>(
-    '[data-testid="composer-stop"]',
+    '[aria-label="Stop current turn"]',
   );
-  expect(stop?.textContent).toBe("Stop");
-  expect(stop?.className).toContain("caps-button");
+  expect(stop?.disabled).toBe(false);
+  expect(stop?.dataset.sendState).toBe("busy");
+  expect(busy.container.querySelectorAll("button")).toHaveLength(1);
   expect(busy.container.querySelector("canvas, img")).toBeNull();
 
   const idle = renderComposer();
@@ -307,16 +335,16 @@ it("shows context used over the model's window after the model, and the tokens a
   });
   expect(
     known.container.querySelector(".composer-footer")?.textContent,
-  ).toContain("openai/gpt-6-astra12K/200K");
+  ).toContain("openai/gpt-6-astraSettings12K/200K");
   const unknown = renderComposer("idle", "", model, undefined, {
     tokens: 12_345,
     window: null,
   });
   const footer = unknown.container.querySelector(".composer-footer");
-  expect(footer?.textContent).toMatch(/openai\/gpt-6-astra12K$/u);
+  expect(footer?.textContent).toMatch(/openai\/gpt-6-astraSettings12K$/u);
 });
 
-it("lets a host render readable text actions without a portrait", () => {
+it("keeps one key in the same place as a run starts and ends", () => {
   const container = document.createElement("div");
   const root = createRoot(container);
   roots.add(root);
@@ -325,7 +353,7 @@ it("lets a host render readable text actions without a portrait", () => {
       root.render(
         <ChatComposer
           queuedRecall={undefined}
-          draft="A visitor message"
+          draft=""
           failure={undefined}
           onAbort={vi.fn()}
           onChange={vi.fn()}
@@ -340,12 +368,45 @@ it("lets a host render readable text actions without a portrait", () => {
   };
   render("idle");
   const send = container.querySelector('[aria-label="Send message"]');
-  expect(send?.textContent).toBe("Send");
-  expect(send?.querySelector('[aria-hidden="true"]')).toBeNull();
   render("sending");
   const stop = container.querySelector('[aria-label="Stop current turn"]');
-  expect(stop?.textContent).toBe("Stop");
-  expect(stop?.querySelector('[aria-hidden="true"]')).toBeNull();
+  expect(stop).toBe(send);
+  expect(container.querySelectorAll("button")).toHaveLength(1);
+});
+
+it("shows images riding with the draft above the text", () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.add(root);
+  act(() => {
+    root.render(
+      <ChatComposer
+        queuedRecall={{
+          images: [{ type: "image", mimeType: "image/png", data: "AAAA" }],
+          recallState: { kind: "idle" },
+          recall: () => Promise.resolve("empty"),
+        }}
+        draft=""
+        failure={undefined}
+        onAbort={vi.fn()}
+        onChange={vi.fn()}
+        onRetry={vi.fn()}
+        onSend={vi.fn()}
+        status="idle"
+        viewState={{ kind: "idle" }}
+        textareaRef={createRef<HTMLTextAreaElement>()}
+      />,
+    );
+  });
+  const image = container.querySelector<HTMLImageElement>(
+    ".caps-composer-attachments img",
+  );
+  expect(image?.alt).toBe("Attached image 1");
+  expect(image?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  expect(
+    container.querySelector<HTMLButtonElement>('[aria-label="Send message"]')
+      ?.disabled,
+  ).toBe(false);
 });
 
 it.each([
@@ -364,4 +425,106 @@ it.each([
   expect(container.querySelector(".composer-footer")?.textContent).toContain(
     expected,
   );
+});
+
+it("offers Attach only when the host takes images, and removes one in place", () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.add(root);
+  const onImagesChange = vi.fn();
+  const images = [
+    { type: "image" as const, mimeType: "image/png", data: "AAAA" },
+    { type: "image" as const, mimeType: "image/png", data: "BBBB" },
+  ];
+  act(() => {
+    root.render(
+      <ChatComposer
+        queuedRecall={{
+          images,
+          recallState: { kind: "idle" },
+          recall: () => Promise.resolve("empty"),
+        }}
+        onImagesChange={onImagesChange}
+        draft=""
+        failure={undefined}
+        onAbort={vi.fn()}
+        onChange={vi.fn()}
+        onRetry={vi.fn()}
+        onSend={vi.fn()}
+        status="idle"
+        viewState={{ kind: "idle" }}
+        textareaRef={createRef<HTMLTextAreaElement>()}
+      />,
+    );
+  });
+  const attach = container.querySelector('[aria-label="Attach images"]');
+  expect(attach?.classList.contains("caps-keycap-button")).toBe(true);
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="file"]')?.accept,
+  ).toBe("image/png,image/jpeg,image/gif,image/webp");
+  act(() => {
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-label="Remove attached image 1"]',
+      )
+      ?.click();
+  });
+  expect(onImagesChange).toHaveBeenCalledExactlyOnceWith([images[1]]);
+
+  const visitor = renderComposer();
+  expect(
+    visitor.container.querySelector('[aria-label="Attach images"]'),
+  ).toBeNull();
+});
+
+it("opens the Session's own /model command from the model key", () => {
+  const store = createParakeetInteractions();
+  const runCommand = vi.fn();
+  const slash: SlashCommandController = {
+    completion: { kind: "none" },
+    open: false,
+    selected: 0,
+    hints: [],
+    interactions: store.snapshot(),
+    store,
+    awaiting: { items: [], position: 0, total: 0, forced: false },
+    move: () => false,
+    highlight: () => undefined,
+    complete: () => false,
+    dismiss: () => false,
+    submit: () => undefined,
+    choose: () => undefined,
+    available: (alias) => alias === "model",
+    runCommand,
+  };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.add(root);
+  act(() => {
+    root.render(
+      <ChatComposer
+        queuedRecall={undefined}
+        draft="Keep this draft"
+        model={{ provider: "openai", model: "gpt-6-astra" }}
+        failure={undefined}
+        onAbort={vi.fn()}
+        onChange={vi.fn()}
+        onRetry={vi.fn()}
+        onSend={vi.fn()}
+        status="idle"
+        viewState={{ kind: "idle" }}
+        textareaRef={createRef<HTMLTextAreaElement>()}
+        slash={slash}
+      />,
+    );
+  });
+  const key = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Model: openai/gpt-6-astra. Change model"]',
+  );
+  expect(key?.classList.contains("caps-keycap-button")).toBe(true);
+  act(() => {
+    key?.click();
+  });
+  expect(runCommand).toHaveBeenCalledExactlyOnceWith("model");
+  expect(container.querySelector("textarea")?.value).toBe("Keep this draft");
 });

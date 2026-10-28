@@ -113,7 +113,10 @@ describe("account commands", () => {
     );
     whistle.present(presenter);
     await expect(
-      whistle.execute("account:login", { origin: "slash" }),
+      whistle.execute(
+        { namespace: "account", id: "login" },
+        { origin: "slash" },
+      ),
     ).resolves.toEqual({ status: "handled" });
     expect(
       shown.map(
@@ -144,19 +147,25 @@ describe("account commands", () => {
     });
     whistle.present(scriptedPresenter(() => "unused").presenter);
     await expect(
-      whistle.execute("account:login", {
-        origin: "browser",
-        arguments: { providerId: "beta" },
-      }),
+      whistle.execute(
+        { namespace: "account", id: "login" },
+        {
+          origin: "browser",
+          arguments: { providerId: "beta" },
+        },
+      ),
     ).resolves.toMatchObject({
       status: "failed",
       error: { code: "unknown_provider" },
     });
     await expect(
-      whistle.execute("account:login", {
-        origin: "browser",
-        arguments: { providerId: "alpha", method: "subscription" },
-      }),
+      whistle.execute(
+        { namespace: "account", id: "login" },
+        {
+          origin: "browser",
+          arguments: { providerId: "alpha", method: "subscription" },
+        },
+      ),
     ).resolves.toMatchObject({
       status: "failed",
       error: { code: "method_unavailable" },
@@ -174,7 +183,10 @@ describe("account commands", () => {
       policy,
     });
     await expect(
-      whistle.execute("account:login", { origin: "agent" }),
+      whistle.execute(
+        { namespace: "account", id: "login" },
+        { origin: "agent" },
+      ),
     ).resolves.toMatchObject({
       status: "failed",
       error: { code: "interaction_required" },
@@ -188,7 +200,10 @@ describe("account commands", () => {
       return session;
     });
     await expect(
-      whistle.execute("account:login", { origin: "slash" }),
+      whistle.execute(
+        { namespace: "account", id: "login" },
+        { origin: "slash" },
+      ),
     ).resolves.toEqual({ status: "handled" });
     expect(account.login).not.toHaveBeenCalled();
   });
@@ -220,10 +235,13 @@ describe("account commands", () => {
     const toasts: unknown[] = [];
     store.subscribeToasts((toast) => toasts.push(toast));
     store.attach(whistle.present);
-    const running = whistle.execute("account:login", {
-      origin: "slash",
-      arguments: { providerId: "zeta", method: "api_key" },
-    });
+    const running = whistle.execute(
+      { namespace: "account", id: "login" },
+      {
+        origin: "slash",
+        arguments: { providerId: "zeta", method: "api_key" },
+      },
+    );
     await expect.poll(() => store.snapshot().open).toBeDefined();
     store.close();
     await expect(running).resolves.toEqual({ status: "handled" });
@@ -258,11 +276,17 @@ describe("account commands", () => {
     });
     const store = createParakeetInteractions();
     store.attach(whistle.present);
-    const running = whistle.execute("probe:wait", { origin: "slash" });
+    const running = whistle.execute(
+      { namespace: "probe", id: "wait" },
+      { origin: "slash" },
+    );
     await expect.poll(() => store.snapshot().open).toBeDefined();
     store.close();
     await running;
-    expect(store.snapshot()).toEqual({ notice: undefined, open: undefined });
+    expect(store.snapshot()).toMatchObject({
+      notice: undefined,
+      open: undefined,
+    });
   });
 
   // Locks in how the dialog treats a failed sign-in; it passed before the fix
@@ -283,10 +307,13 @@ describe("account commands", () => {
     });
     const { presenter, hosts } = scriptedPresenter(() => "zeta");
     whistle.present(presenter);
-    const outcome = whistle.execute("account:login", {
-      origin: "slash",
-      arguments: { providerId: "zeta" },
-    });
+    const outcome = whistle.execute(
+      { namespace: "account", id: "login" },
+      {
+        origin: "slash",
+        arguments: { providerId: "zeta" },
+      },
+    );
     try {
       await vi.waitFor(() => {
         expect(hosts[0]?.snapshot()).toMatchObject({
@@ -324,10 +351,16 @@ describe("account commands", () => {
         prompt.type === "confirmation" ? confirm : "zeta",
       ).presenter,
     );
-    await whistle.execute("account:logout", { origin: "slash" });
+    await whistle.execute(
+      { namespace: "account", id: "logout" },
+      { origin: "slash" },
+    );
     expect(account.logout).not.toHaveBeenCalled();
     confirm = true;
-    await whistle.execute("account:logout", { origin: "slash" });
+    await whistle.execute(
+      { namespace: "account", id: "logout" },
+      { origin: "slash" },
+    );
     expect(account.logout).toHaveBeenCalledWith("zeta", expect.anything());
   });
 
@@ -341,7 +374,10 @@ describe("account commands", () => {
       policy,
     });
     await expect(
-      whistle.execute("account:account", { origin: "agent" }),
+      whistle.execute(
+        { namespace: "account", id: "account" },
+        { origin: "agent" },
+      ),
     ).resolves.toEqual({ status: "handled", result: "Alpha: api_key" });
   });
 });
@@ -372,7 +408,10 @@ it.each(["switch", "logout"])(
     });
     commands.present(flow.presenter);
     await expect(
-      commands.execute("account:login", { origin: "slash" }),
+      commands.execute(
+        { namespace: "account", id: "login" },
+        { origin: "slash" },
+      ),
     ).resolves.toMatchObject({ status: "handled" });
     expect(flow.shown[0]).toMatchObject({
       collapsedGroup: "More providers",

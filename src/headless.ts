@@ -20,6 +20,7 @@ export {
   useParakeetInteractions,
   useExtensionSlots,
   useParakeetSession,
+  useLastSessionReplyAt,
   useStatus,
   useTimeline,
   type ComposerController,
@@ -111,6 +112,7 @@ export {
 export {
   createParakeetInteractions,
   type ParakeetInteractions,
+  type ParakeetAwaiting,
   type ParakeetInteractionState,
   type ParakeetNotice,
   type ParakeetOpenInteraction,
@@ -178,6 +180,45 @@ export {
 } from "./core/tool-groups.js";
 
 export { useClientActions } from "./client-contributions.js";
+export {
+  awaitingQueue,
+  awaitingTakeover,
+  decisionView,
+  decisionViewText,
+  initialDecisionState,
+  reduceDecision,
+  type AwaitingItem,
+  type AwaitingKind,
+  type AwaitingQueue,
+  type DecisionEffect,
+  type DecisionIntent,
+  type DecisionOutcome,
+  type DecisionPhase,
+  type DecisionPrompt,
+  type DecisionRowView,
+  type DecisionState,
+  type DecisionView,
+} from "./core/awaiting-answer.js";
+export { useDecision, type DecisionController } from "./use-decision.js";
+export { useApprovalAwaiting } from "./use-approval-awaiting.js";
+export {
+  approvalCardCopy,
+  approvalRefusal,
+  askApproval,
+  type ApprovalAbandoned,
+  type ApprovalAnswered,
+  type ApprovalAnswerInput,
+  type ApprovalAnswerResult,
+  type ApprovalCard,
+  type ApprovalContent,
+  type ApprovalDecision,
+  type ApprovalEntry,
+  type ApprovalFacts,
+  type ApprovalOutcome,
+  type ApprovalRefused,
+  type ApprovalReview,
+  type ApprovalSource,
+} from "./core/approval-decision.js";
 export {
   placeClientTimeline,
   type PlacedClientCell,

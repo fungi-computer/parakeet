@@ -103,7 +103,10 @@ it.each(["Enter"])(
 
 it("renders the login definition's choices and device handoff", async () => {
   const { whistle, fixture, container } = mountLogin();
-  const run = whistle.execute("account:login", { origin: "browser" });
+  const run = whistle.execute(
+    { namespace: "account", id: "login" },
+    { origin: "browser" },
+  );
   await settle();
   expect(container.querySelector("h2")?.textContent).toBe(
     "Sign in to a model provider",
@@ -136,10 +139,13 @@ it("renders the login definition's choices and device handoff", async () => {
 
 it("collects a secret without echoing it", async () => {
   const { whistle, container } = mountLogin();
-  const run = whistle.execute("account:login", {
-    origin: "browser",
-    arguments: { providerId: "openai", method: "api_key" },
-  });
+  const run = whistle.execute(
+    { namespace: "account", id: "login" },
+    {
+      origin: "browser",
+      arguments: { providerId: "openai", method: "api_key" },
+    },
+  );
   await settle();
   const input = container.querySelector("input");
   expect(input?.type).toBe("password");

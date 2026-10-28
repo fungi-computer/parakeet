@@ -103,6 +103,11 @@ export function createClientActions(
         (waiting && entry.value.waiting?.cancel !== action)
       )
         return;
+      // A decision answers in the composer; the row only asks for it.
+      if (action.awaiting !== undefined) {
+        options.interactions.awaiting.focus();
+        return;
+      }
       const intent = key(entryId, action);
       if (intents.get(intent)?.pending) return;
       publish(intent, { pending: true });
@@ -114,8 +119,9 @@ export function createClientActions(
         };
         if (action.input !== undefined)
           input = { ...input, arguments: action.input };
+        // A client row belongs to the extension whose namespace is its entry.
         outcome = await options.commands.execute(
-          `${entryId}:${action.id}`,
+          { namespace: entryId, id: action.id },
           input,
         );
       } catch (cause) {

@@ -1,6 +1,6 @@
-import { PopoverOption } from "@fungi.computer/caps/components/popover";
 import type { ReactNode } from "react";
 
+import { CompletionMenu } from "./CompletionMenu.js";
 import type { SlashCommandController } from "../commands/use-slash-commands.js";
 
 /** Split a label into matched and unmatched runs (UTF-16 indices, like the matcher). */
@@ -26,17 +26,12 @@ function emphasize(label: string, matches: readonly number[]): ReactNode {
   );
 }
 
-/** Stable id of one slash row, for `aria-activedescendant`. */
-export function slashOptionId(listId: string, index: number): string {
-  return `${listId}-${String(index)}`;
-}
-
-/** The browser slash menu: draws Parakeet's completion rows, nothing more. */
+/** Parakeet's slash adapter: maps its completion rows onto the shared menu. */
 export function SlashMenu({
   slash,
   listId,
 }: Readonly<{ slash: SlashCommandController; listId: string }>) {
-  const { completion, selected } = slash;
+  const { completion } = slash;
   if (completion.kind === "none") return null;
   const rows =
     completion.kind === "commands"
@@ -58,35 +53,16 @@ export function SlashMenu({
           disabled: false,
         }));
   return (
-    <div className="parakeet-slash-menu" data-kind={completion.kind}>
-      {completion.kind === "arguments" ? (
-        <p className="parakeet-slash-hint">{completion.hint}</p>
-      ) : null}
-      {rows.length === 0 ? null : (
-        <div id={listId} role="listbox" aria-label="Commands">
-          {rows.map((row, index) => (
-            <PopoverOption
-              key={row.key}
-              id={slashOptionId(listId, index)}
-              active={index === selected}
-              aria-disabled={row.disabled || undefined}
-              data-disabled={row.disabled}
-              onMouseEnter={() => {
-                slash.highlight(index);
-              }}
-              onClick={() => {
-                slash.choose(index);
-              }}
-            >
-              <span className="parakeet-slash-label">{row.label}</span>
-              <span className="parakeet-slash-detail">{row.detail}</span>
-              {row.keys.length === 0 ? null : (
-                <kbd className="parakeet-slash-keys">{row.keys}</kbd>
-              )}
-            </PopoverOption>
-          ))}
-        </div>
-      )}
-    </div>
+    <CompletionMenu
+      open={slash.open}
+      rows={rows}
+      selected={slash.selected}
+      listId={listId}
+      label="Commands"
+      kind={completion.kind}
+      hint={completion.kind === "arguments" ? completion.hint : undefined}
+      onHighlight={slash.highlight}
+      onChoose={slash.choose}
+    />
   );
 }

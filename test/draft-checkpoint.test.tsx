@@ -7,6 +7,7 @@ import {
   ParakeetProvider,
   createParakeetInteractions,
   useComposer,
+  useStatus,
   type ComposerController,
   type ParakeetDraftStorage,
   type ParakeetDraftIdentity,
@@ -47,6 +48,7 @@ function mount(
   }> = {},
 ) {
   let current: ComposerController | undefined;
+  let live = false;
   let sends = 0;
   const requests: string[] = [];
   const withdrawals: string[] = [];
@@ -79,6 +81,7 @@ function mount(
   };
   function Probe() {
     current = useComposer();
+    live = useStatus().observation.status === "live";
     return null;
   }
   const container = document.createElement("div");
@@ -100,6 +103,16 @@ function mount(
     );
   });
   return {
+    async ready() {
+      await vi.waitFor(async () => {
+        await act(async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
+        });
+        expect(live).toBe(true);
+      });
+    },
     composer() {
       if (current === undefined) throw new Error("Composer unavailable");
       return current;
@@ -117,11 +130,68 @@ function mount(
   };
 }
 
+it("drops disposable journals from the superseded storage key", async () => {
+  localStorage.setItem(
+    "fungi.parakeet.drafts.v1:test://checkpoint",
+    JSON.stringify({ draft: "Disposable old draft", pending: [] }),
+  );
+  const view = mount();
+  await view.ready();
+  expect(view.composer().draft).toBe("");
+  act(() => {
+    view.composer().setDraft("Current draft");
+  });
+  expect(
+    localStorage.getItem("fungi.parakeet.drafts.v2:test://checkpoint"),
+  ).toContain("Current draft");
+});
+
+it.each([
+  "{invalid JSON",
+  JSON.stringify({ draft: "Invalid journal shape", pending: "not an array" }),
+])(
+  "keeps the conversation usable with a malformed saved journal: %s",
+  async (saved) => {
+    const key = "fungi.parakeet.drafts.v2:test://checkpoint";
+    localStorage.setItem(key, saved);
+    const view = mount();
+    await view.ready();
+    expect(view.composer().draft).toBe("");
+    expect(view.sends()).toBe(0);
+    act(() => {
+      view.composer().setDraft("A fresh usable draft");
+    });
+    expect(localStorage.getItem(key)).toContain("A fresh usable draft");
+  },
+);
+
+it("keeps the conversation usable when reading its draft storage throws", async () => {
+  const storage: ParakeetDraftStorage = {
+    getItem() {
+      throw new DOMException("Storage denied for this origin", "SecurityError");
+    },
+    setItem(key, value) {
+      localStorage.setItem(key, value);
+    },
+  };
+  const view = mount(storage);
+  await view.ready();
+  expect(view.composer().draft).toBe("");
+  expect(view.sends()).toBe(0);
+  act(() => {
+    view.composer().setDraft("A fresh usable draft");
+  });
+  expect(
+    localStorage.getItem("fungi.parakeet.drafts.v2:test://checkpoint"),
+  ).toContain("A fresh usable draft");
+});
+
 it("keeps a sandboxed conversation usable when acquiring browser storage throws SecurityError", async () => {
   vi.spyOn(globalThis, "localStorage", "get").mockImplementation(() => {
     throw new DOMException("Storage denied for this origin", "SecurityError");
   });
   const first = mount();
+  await first.ready();
   expect(first.interactions.snapshot().notice).toEqual({
     tone: "info",
     message:
@@ -368,6 +438,7 @@ it.each(outcomes)(
       address: oldAddress,
       draftIdentity: identity,
     });
+    await first.ready();
     const submitted = "  Pending first line\nand exact second line  ";
     act(() => {
       first.composer().setDraft(submitted);
@@ -423,7 +494,7 @@ it("failed checkpoint leaves the live draft and existing durable journal untouch
     view.composer().setDraft(original);
   });
   const before = localStorage.getItem(
-    "fungi.parakeet.drafts.v1:test://checkpoint",
+    "fungi.parakeet.drafts.v2:test://checkpoint",
   );
   refuseWrites = true;
   expect(view.composer().checkpointDraft()).toEqual({
@@ -432,13 +503,14 @@ it("failed checkpoint leaves the live draft and existing durable journal untouch
   });
   expect(view.composer().draft).toBe(original);
   expect(
-    localStorage.getItem("fungi.parakeet.drafts.v1:test://checkpoint"),
+    localStorage.getItem("fungi.parakeet.drafts.v2:test://checkpoint"),
   ).toBe(before);
   expect(view.sends()).toBe(0);
 });
 
-it("checkpoints pending admission identities without resending or restoring them into the draft", () => {
+it("checkpoints pending admission identities without resending or restoring them into the draft", async () => {
   const view = mount();
+  await view.ready();
   const submitted = "  Pending exact text  ";
   act(() => {
     view.composer().setDraft(submitted);
@@ -450,11 +522,11 @@ it("checkpoints pending admission identities without resending or restoring them
     view.composer().setDraft("Unsubmitted newer text");
   });
   const before = localStorage.getItem(
-    "fungi.parakeet.drafts.v1:test://checkpoint",
+    "fungi.parakeet.drafts.v2:test://checkpoint",
   );
   expect(view.composer().checkpointDraft()).toEqual({ status: "saved" });
   expect(
-    localStorage.getItem("fungi.parakeet.drafts.v1:test://checkpoint"),
+    localStorage.getItem("fungi.parakeet.drafts.v2:test://checkpoint"),
   ).toBe(before);
   expect(view.composer().draft).toBe("Unsubmitted newer text");
   expect(view.sends()).toBe(1);

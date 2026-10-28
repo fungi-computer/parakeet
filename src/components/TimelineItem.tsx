@@ -28,6 +28,7 @@ export const TimelineItem = memo(function TimelineItem({
   onCancelQueued,
   cancellingQueued = false,
   renderToolActions,
+  claimsToolMedia,
   renderAssistantAttachment,
   formatAssistantText,
   toolDisclosure = initialToolDisclosure,
@@ -38,6 +39,7 @@ export const TimelineItem = memo(function TimelineItem({
   onCancelQueued?: ((commandId: string) => void) | undefined;
   cancellingQueued?: boolean | undefined;
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
+  claimsToolMedia?: ((item: ToolItem) => boolean) | undefined;
   renderAssistantAttachment?: ((text: string) => ReactNode) | undefined;
   formatAssistantText?: ((text: string) => string) | undefined;
   /** View-only open state for tool groups and calls. */
@@ -171,11 +173,16 @@ export const TimelineItem = memo(function TimelineItem({
           >
             {formatAssistantText?.(item.text) ?? item.text}
           </ChatMessage>
+          {item.isError && item.repeatCount !== undefined ? (
+            <span className="px-3 text-error">x{item.repeatCount}</span>
+          ) : null}
+          {item.isError && item.errorDetail ? (
+            <p className="px-3 text-dim">{item.errorDetail}</p>
+          ) : null}
           {item.isError && item.providerError !== undefined ? (
             <div className="px-3 text-error" data-provider-error={item.id}>
-              <p className="whitespace-pre-wrap">{item.providerError}</p>
               <details>
-                <summary>Provider details</summary>
+                <summary>Provider details (latest response)</summary>
                 <pre className="whitespace-pre-wrap">{item.providerError}</pre>
               </details>
             </div>
@@ -192,6 +199,7 @@ export const TimelineItem = memo(function TimelineItem({
           group={item}
           onToggle={onToggleTool}
           renderToolActions={renderToolActions}
+          claimsToolMedia={claimsToolMedia}
         />
       );
     case "compaction_divider":

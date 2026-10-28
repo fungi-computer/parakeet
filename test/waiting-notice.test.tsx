@@ -170,12 +170,12 @@ it("stops only the running command while three follow-ups stay queued", async ()
   await vi.waitFor(async () => {
     await settle();
     expect(
-      container.querySelector('[data-testid="composer-stop"]'),
+      container.querySelector('[aria-label="Stop current turn"]'),
     ).not.toBeNull();
   });
   await settle(() =>
     container
-      .querySelector<HTMLButtonElement>('[data-testid="composer-stop"]')
+      .querySelector<HTMLButtonElement>('[aria-label="Stop current turn"]')
       ?.click(),
   );
   expect(commands).toEqual([{ type: "cancel", commandId: "running-command" }]);

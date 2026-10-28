@@ -19,7 +19,10 @@ import {
   useExtensionSlots,
   useParakeetSession,
   useParakeetInteractions,
+  useStatus,
 } from "../conversation.js";
+import { awaitingQueue, type AwaitingQueue } from "../core/awaiting-answer.js";
+import { useAwaitingDriver } from "./awaiting-driver.js";
 import { advertisedCommands } from "./advertised.js";
 import { parakeetBuiltinCommands } from "./builtins.js";
 import { composerHints, type ComposerKeys, type KeyHint } from "./hints.js";
@@ -73,6 +76,15 @@ export type SlashCommandController = Readonly<{
   interactions: ParakeetInteractionState;
   /** The conversation store, for closing and retrying dialogs. */
   store: ParakeetInteractions;
+  /**
+   * The decision the composer is answering, if any. It takes over an empty
+   * composer, or any composer once the person asked for it (`forced`).
+   */
+  awaiting: AwaitingQueue &
+    Readonly<{
+      /** The person asked for the composer even though a draft is in it. */
+      forced: boolean;
+    }>;
   /** Move the highlight; false when no list is open. */
   move: (delta: -1 | 1) => boolean;
   /** Highlight one row (pointer hover). */
@@ -85,6 +97,10 @@ export type SlashCommandController = Readonly<{
   submit: (delivery?: PromptDelivery) => void;
   /** Run one completion row (pointer choice). */
   choose: (index: number) => void;
+  /** Whether a registered command answers this slash alias and can run now. */
+  available: (alias: string) => boolean;
+  /** Run the command behind a slash alias, as typing it would, leaving the draft alone. */
+  runCommand: (alias: string) => void;
 }>;
 
 function failureMessage(
@@ -137,6 +153,10 @@ export function useSlashCommands(
     )
       store.inspect(undefined);
   }, [contributions, interactions.inspection, store]);
+  const awaiting = {
+    ...awaitingQueue(interactions.awaiting.items, interactions.awaiting.later),
+    forced: interactions.awaiting.forced,
+  };
   const snapshot = useSyncExternalStore(
     commands.subscribe,
     commands.snapshot,
@@ -207,6 +227,43 @@ export function useSlashCommands(
       });
   }, [advertised, enabled, slots, contributions, store]);
 
+  const { observation } = useStatus();
+  useAwaitingDriver({
+    enabled,
+    commands,
+    store,
+    contributions,
+    online: observation.status === "live",
+    requests: interactions.awaiting.requests,
+    commandsVersion: snapshot,
+  });
+  const waiting = interactions.awaiting.items.length > 0;
+  useEffect(() => {
+    if (!enabled || !waiting) return;
+    const lease = commands.contribute({
+      sourceId: "parakeet-awaiting",
+      namespace: "parakeet-awaiting",
+      commands: [
+        {
+          id: "answer",
+          title: "Answer a question",
+          category: "Conversation",
+          description: "Answer what the Agent is waiting on",
+          projections: {
+            help: { order: 5 },
+            palette: { order: 5 },
+            slash: { aliases: ["answer"], order: 5, consumesDraft: true },
+          },
+          handler: () => {
+            store.awaiting.focus();
+          },
+        },
+      ],
+    });
+    return () => {
+      lease.dispose();
+    };
+  }, [commands, enabled, store, waiting]);
   const registry = useMemo(() => slashRegistry(snapshot), [snapshot]);
   const [dismissed, setDismissed] = useState<string>();
   const [highlighted, setHighlighted] = useState({ draft: "", index: 0 });
@@ -285,6 +342,7 @@ export function useSlashCommands(
     hints,
     interactions,
     store,
+    awaiting,
     move: (delta) => {
       if (rowCount === 0) return false;
       setHighlighted({
@@ -330,5 +388,25 @@ export function useSlashCommands(
       run(delivery, insert?.trimEnd());
     },
     choose,
+    available: (alias) =>
+      registry.some(
+        (command) =>
+          command.alias === alias &&
+          command.availability.status === "available",
+      ),
+    runCommand: (alias) => {
+      store.report(undefined);
+      void runSlashDraft(`/${alias}`, commands, () => undefined, origin).then(
+        (outcome) => {
+          const message = failureMessage(outcome);
+          if (
+            message !== undefined &&
+            store.snapshot().open === undefined &&
+            store.lastEnd() !== "cancelled"
+          )
+            store.report({ tone: "error", message: `/${alias}: ${message}` });
+        },
+      );
+    },
   };
 }

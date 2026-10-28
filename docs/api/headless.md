@@ -269,10 +269,26 @@ what the person just did is never one: it is an echo and is not announced.
 
 ---
 
+### ParakeetAwaiting
+
+```ts
+type ParakeetAwaiting = Readonly<{
+  items: readonly AwaitingItem[];
+  later: ReadonlySet<string>;
+  forced: boolean;
+  requests: number;
+}>;
+```
+
+The decisions waiting on the person, which the composer takes over for.
+
+---
+
 ### ParakeetInteractionState
 
 ```ts
 type ParakeetInteractionState = Readonly<{
+  awaiting: ParakeetAwaiting;
   open?: ParakeetOpenInteraction;
   inspection?: Readonly<{
     entryId: string;
@@ -299,6 +315,12 @@ type ParakeetInteractions = Readonly<{
   subscribeToasts: (listener) => () => void;
   attach: (present) => () => void;
   lastEnd: () => WhistleInteractionEnd["status"] | undefined;
+  awaiting: Readonly<{
+    add: (item) => () => void;
+    remove: (key) => void;
+    later: (key) => void;
+    focus: () => void;
+  }>;
 }>;
 ```
 
@@ -357,12 +379,18 @@ type SlashCommandController = Readonly<{
   hints: readonly KeyHint[];
   interactions: ParakeetInteractionState;
   store: ParakeetInteractions;
+  awaiting: AwaitingQueue &
+    Readonly<{
+      forced: boolean;
+    }>;
   move: (delta) => boolean;
   highlight: (index) => void;
   complete: () => boolean;
   dismiss: () => boolean;
   submit: (delivery?) => void;
   choose: (index) => void;
+  available: (alias) => boolean;
+  runCommand: (alias) => void;
 }>;
 ```
 
@@ -426,6 +454,432 @@ type ParakeetReconnectOutcome =
 ```
 
 Result of retrying the shared Session observation.
+
+---
+
+### ApprovalFacts
+
+```ts
+type ApprovalFacts = Readonly<{
+  record: Readonly<{
+    recordId: string;
+    revision: number;
+    requester: Readonly<{
+      displayName: string;
+      agentId: string | null;
+      sessionId: string | null;
+      principalId: string;
+    }>;
+    module: string;
+    operation: string;
+    access: string;
+    description: Readonly<{
+      inputBytes: number;
+      inputSha256: string;
+    }>;
+    reversibility: string;
+    expiresAt: number;
+  }>;
+  canAnswer: boolean;
+}>;
+```
+
+The ledger facts an approval card reads; the approvals ledger's own view
+satisfies it.
+
+---
+
+### ApprovalReview
+
+```ts
+type ApprovalReview = Readonly<{
+  command: string;
+  cwd: string;
+  justification: string;
+  form: "direct" | "shell";
+  kind: "exec" | "extension-install";
+  argv?: readonly string[];
+  prefix?: readonly string[];
+  warning?: string;
+  alwaysAllowCoverage?: string;
+  alwaysAllowUnavailableReason?: string;
+  risk?: Readonly<{
+    summary: string;
+    detail: string;
+  }>;
+}>;
+```
+
+What the host knows about a command the Agent asked to run outside the sandbox.
+
+---
+
+### ApprovalEntry
+
+```ts
+type ApprovalEntry = Readonly<{
+  label: string;
+  value: string;
+}>;
+```
+
+One labelled value in a card's facts or details.
+
+---
+
+### ApprovalContent
+
+```ts
+type ApprovalContent = Readonly<{
+  title: string;
+  summary?: string;
+  facts?: readonly ApprovalEntry[];
+  body?: string;
+  bodyLabel?: string;
+  details?: readonly ApprovalEntry[];
+}>;
+```
+
+The words an approval prompt carries above its choices.
+
+---
+
+### ApprovalCard
+
+```ts
+type ApprovalCard = Readonly<{
+  content: ApprovalContent;
+  always?: string;
+  confirmation?: ApprovalContent & object;
+  confirmWarning?: string;
+  confirmYes?: string;
+}>;
+```
+
+Everything one approval shows, and what Always allow would confirm.
+
+---
+
+### ApprovalDecision
+
+```ts
+type ApprovalDecision = "approve" | "deny" | "always-allow";
+```
+
+What the person decided.
+
+---
+
+### ApprovalAnswerInput
+
+```ts
+type ApprovalAnswerInput = Readonly<{
+  recordId: string;
+  decision: ApprovalDecision;
+  expectedRevision: number;
+  denialNote?: string;
+}>;
+```
+
+A decision, pinned to the revision the person saw.
+
+---
+
+### ApprovalAnswerResult
+
+```ts
+type ApprovalAnswerResult = Readonly<{
+  kind: string;
+  reason?: string;
+}>;
+```
+
+How the owner took an answer; a refusal names its reason.
+
+---
+
+### ApprovalSource
+
+```ts
+type ApprovalSource = Readonly<{
+  snapshot: () => ApprovalFacts | undefined;
+  subscribe: (listener) => () => void;
+  review?: ApprovalReview;
+  answer: (input) => Promise<ApprovalAnswerResult>;
+  family?: Readonly<{
+    label: string;
+    enable: () => Promise<boolean>;
+  }>;
+}>;
+```
+
+Where approvals come from and where answers go.
+
+---
+
+### ApprovalAnswered
+
+```ts
+type ApprovalAnswered = Readonly<{
+  kind: "answered";
+}>;
+```
+
+The answer was sent.
+
+---
+
+### ApprovalRefused
+
+```ts
+type ApprovalRefused = Readonly<{
+  kind: "refused";
+  message: string;
+}>;
+```
+
+The answer was refused, or could not be sent.
+
+---
+
+### ApprovalAbandoned
+
+```ts
+type ApprovalAbandoned = Readonly<{
+  kind: "abandoned";
+}>;
+```
+
+The record changed or went away before an answer was sent.
+
+---
+
+### ApprovalOutcome
+
+```ts
+type ApprovalOutcome = ApprovalAnswered | ApprovalRefused | ApprovalAbandoned;
+```
+
+How asking ended.
+
+---
+
+### AwaitingKind
+
+```ts
+type AwaitingKind = "question" | "approval";
+```
+
+What the Agent needs from the person.
+
+---
+
+### AwaitingItem
+
+```ts
+type AwaitingItem = Readonly<{
+  key: string;
+  kind: AwaitingKind;
+  arrivedAt: number;
+  host: WhistleInteractionHost;
+}>;
+```
+
+One decision waiting for the person. Its `host` is the renderer-neutral
+conversation that holds the current `decision` prompt and takes the answer.
+
+---
+
+### AwaitingQueue
+
+```ts
+type AwaitingQueue = Readonly<{
+  items: readonly AwaitingItem[];
+  current?: AwaitingItem;
+  position: number;
+  total: number;
+}>;
+```
+
+Which item the composer shows and where it stands among all of them.
+
+---
+
+### DecisionPrompt
+
+```ts
+type DecisionPrompt = WhistlePromptOf<"decision">;
+```
+
+The decision prompt both renderers draw.
+
+---
+
+### DecisionPhase
+
+```ts
+type DecisionPhase = "choose" | "other" | "confirm" | "sending" | "refused";
+```
+
+Where one decision is in its short life.
+
+---
+
+### DecisionState
+
+```ts
+type DecisionState = Readonly<{
+  highlight: number;
+  toggled: ReadonlySet<string>;
+  other: string;
+  phase: DecisionPhase;
+  refusal?: string;
+  details: boolean;
+}>;
+```
+
+Everything the reducer remembers about one decision prompt.
+
+---
+
+### DecisionIntent
+
+```ts
+type DecisionIntent =
+  | Readonly<{
+      type: "move";
+      delta: -1 | 1;
+    }>
+  | Readonly<{
+      type: "pick";
+      number: number;
+    }>
+  | Readonly<{
+      type: "toggle";
+    }>
+  | Readonly<{
+      type: "type";
+      text: string;
+    }>
+  | Readonly<{
+      type: "append";
+      text: string;
+    }>
+  | Readonly<{
+      type: "enter";
+    }>
+  | Readonly<{
+      type: "escape";
+    }>
+  | Readonly<{
+      type: "details";
+    }>
+  | Readonly<{
+      type: "refused";
+      message: string;
+    }>;
+```
+
+What the person did, independent of which key or click did it.
+
+---
+
+### DecisionEffect
+
+```ts
+type DecisionEffect =
+  | Readonly<{
+      type: "answer";
+      selected: string[];
+      text?: string;
+    }>
+  | Readonly<{
+      type: "later";
+    }>
+  | Readonly<{
+      type: "back";
+    }>;
+```
+
+What the owner of the decision must now do.
+
+---
+
+### DecisionOutcome
+
+```ts
+type DecisionOutcome = Readonly<{
+  state: DecisionState;
+  effect?: DecisionEffect;
+}>;
+```
+
+The next state, and what the decision's owner must do about the intent.
+
+---
+
+### DecisionRowView
+
+```ts
+type DecisionRowView = Readonly<{
+  index: number;
+  kind: "option" | "other";
+  marker: string;
+  label: string;
+  description?: string;
+  recommended: boolean;
+  highlighted: boolean;
+  toggled: boolean;
+  destructive: boolean;
+  caption: string;
+  text: string;
+}>;
+```
+
+One drawn row of a decision.
+
+---
+
+### DecisionView
+
+```ts
+type DecisionView = Readonly<{
+  kind: AwaitingKind;
+  label: string;
+  title: string;
+  counter?: string;
+  summary?: string;
+  facts: readonly Readonly<{
+    label: string;
+    value: string;
+  }>[];
+  body?: string;
+  bodyLabel?: string;
+  details: readonly Readonly<{
+    label: string;
+    value: string;
+  }>[];
+  detailsOpen: boolean;
+  rows: readonly DecisionRowView[];
+  other?: Readonly<{
+    label: string;
+    placeholder?: string;
+    text: string;
+    focused: boolean;
+    maxLength: number;
+  }>;
+  multiple: boolean;
+  phase: DecisionPhase;
+  canSend: boolean;
+  status?: Readonly<{
+    tone: "info" | "error";
+    text: string;
+  }>;
+  hints: readonly KeyHint[];
+}>;
+```
+
+What both renderers must draw for one decision.
 
 ---
 
@@ -620,6 +1074,20 @@ type ParakeetSessionCommandOptions = Readonly<{
 ```
 
 Shared Session actions with optional human presentation callbacks.
+
+---
+
+### DecisionController
+
+```ts
+type DecisionController = Readonly<{
+  view: DecisionView | undefined;
+  dispatch: (intent) => void;
+  later: () => void;
+}>;
+```
+
+One decision being answered, ready for a renderer to draw and drive.
 
 ## Variables
 
@@ -882,11 +1350,11 @@ Ordinary advertised actions over the current admitted rows and observation.
 
 #### Returns
 
-| Name        | Type                                                                                                                                                                   | Description                                                       |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `state`     | `ReadonlyMap`\<\{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; \}, `Readonly`\<\{ `pending`: `boolean`; `error?`: `string`; \}\>\> | Current Session-owned state of admitted action intents.           |
-| `enabled`   | `boolean`                                                                                                                                                              | Observation is live and this Session's action owner is attached.  |
-| `execute()` | (`entryId`, `action`, `waiting`) => `Promise`\<`void`\>                                                                                                                | Execute an admitted intent through its owning advertised command. |
+| Name        | Type                                                                                                                                                                                              | Description                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `state`     | `ReadonlyMap`\<\{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; `awaiting?`: `"question"`; \}, `Readonly`\<\{ `pending`: `boolean`; `error?`: `string`; \}\>\> | Current Session-owned state of admitted action intents.           |
+| `enabled`   | `boolean`                                                                                                                                                                                         | Observation is live and this Session's action owner is attached.  |
+| `execute()` | (`entryId`, `action`, `waiting`) => `Promise`\<`void`\>                                                                                                                                           | Execute an admitted intent through its owning advertised command. |
 
 ---
 
@@ -907,12 +1375,12 @@ command: a new extension's catalog appears as new commands.
 
 #### Parameters
 
-| Parameter       | Type                                                                                                                                                                                                                                                                                                                                                              | Description                                          |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `runtime`       | `Pick`\<`WhistleRuntime`, `"contribute"`\>                                                                                                                                                                                                                                                                                                                        | -                                                    |
-| `session`       | `Pick`\<[`ParakeetSession`](index.md#parakeetsession), `"extension"`\>                                                                                                                                                                                                                                                                                            | -                                                    |
-| `contributions` | () => readonly `Readonly`\<\{ `entryId`: `string`; `value`: \{ `chips`: readonly `object`[]; `panel`: readonly `object`[]; `timeline`: \{ `cells`: readonly `object`[]; `omitted`: `number`; \}; `waiting`: \| \{ `summary`: `string`; `cancel`: \{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; \}; \} \| `null`; \}; \}\>[] | Current admitted panels that own unanswered prompts. |
-| `onInspect?`    | (`entryId`, `commandId`) => `void`                                                                                                                                                                                                                                                                                                                                | -                                                    |
+| Parameter       | Type                                                                                                                                                                                                                                                                                                                                                                                         | Description                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `runtime`       | `Pick`\<`WhistleRuntime`, `"contribute"`\>                                                                                                                                                                                                                                                                                                                                                   | -                                                    |
+| `session`       | `Pick`\<[`ParakeetSession`](index.md#parakeetsession), `"extension"`\>                                                                                                                                                                                                                                                                                                                       | -                                                    |
+| `contributions` | () => readonly `Readonly`\<\{ `entryId`: `string`; `value`: \{ `chips`: readonly `object`[]; `panel`: readonly `object`[]; `timeline`: \{ `cells`: readonly `object`[]; `omitted`: `number`; \}; `waiting`: \| \{ `summary`: `string`; `cancel`: \{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; `awaiting?`: `"question"`; \}; \} \| `null`; \}; \}\>[] | Current admitted panels that own unanswered prompts. |
+| `onInspect?`    | (`entryId`, `commandId`) => `void`                                                                                                                                                                                                                                                                                                                                                           | -                                                    |
 
 #### Returns
 
@@ -1277,6 +1745,20 @@ Read the Session's extension slots, including advertised command catalogs.
 
 ---
 
+### useLastSessionReplyAt()
+
+```ts
+function useLastSessionReplyAt(): number | undefined;
+```
+
+Time of the last delivered watch snapshot or frame, not an SSE comment.
+
+#### Returns
+
+`number` \| `undefined`
+
+---
+
 ### useClientContributions()
 
 ```ts
@@ -1297,6 +1779,7 @@ function useClientContributions(): readonly Readonly<{
         input?: {
           [key: string]: Json;
         };
+        awaiting?: "question";
       };
     } | null;
   };
@@ -1311,7 +1794,7 @@ readonly `Readonly`\<\{ `entryId`: `string`; `value`: \{ `chips`: readonly
 `object`[]; `panel`: readonly `object`[]; `timeline`: \{ `cells`: readonly
 `object`[]; `omitted`: `number`; \}; `waiting`: \| \{ `summary`: `string`;
 `cancel`: \{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`:
-`string`\]: `Json`; \}; \}; \} \| `null`; \}; \}\>[]
+`string`\]: `Json`; \}; `awaiting?`: `"question"`; \}; \} \| `null`; \}; \}\>[]
 
 ---
 
@@ -1326,6 +1809,75 @@ The selected Session's ordinary command interaction owner.
 #### Returns
 
 [`ParakeetInteractions`](#parakeetinteractions)
+
+---
+
+### approvalCardCopy()
+
+```ts
+function approvalCardCopy(view, review, options): ApprovalCard;
+```
+
+The words of one approval. A connected tool gets its effect; a command the Agent
+wants to run outside the sandbox gets its folder, reason and rule. `home`
+shortens paths inside it to `~`; `now` dates the expiry.
+
+#### Parameters
+
+| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `view`    | [`ApprovalFacts`](#approvalfacts)                                                                                                                                                                                                                                                                                                                                                                                          |
+| `review`  | \| `Readonly`\<\{ `command`: `string`; `cwd`: `string`; `justification`: `string`; `form`: `"direct"` \| `"shell"`; `kind`: `"exec"` \| `"extension-install"`; `argv?`: readonly `string`[]; `prefix?`: readonly `string`[]; `warning?`: `string`; `alwaysAllowCoverage?`: `string`; `alwaysAllowUnavailableReason?`: `string`; `risk?`: `Readonly`\<\{ `summary`: `string`; `detail`: `string`; \}\>; \}\> \| `undefined` |
+| `options` | `Readonly`\<\{ `width`: `number`; `home`: `string`; `now`: `number`; \}\>                                                                                                                                                                                                                                                                                                                                                  |
+
+#### Returns
+
+[`ApprovalCard`](#approvalcard)
+
+---
+
+### approvalRefusal()
+
+```ts
+function approvalRefusal(reason, decision): string;
+```
+
+What an answer was refused for, in words for the person.
+
+#### Parameters
+
+| Parameter  | Type                                        |
+| ---------- | ------------------------------------------- |
+| `reason`   | `string`                                    |
+| `decision` | `"approve"` \| `"deny"` \| `"always-allow"` |
+
+#### Returns
+
+`string`
+
+---
+
+### askApproval()
+
+```ts
+function askApproval(interaction, input): Promise<ApprovalOutcome>;
+```
+
+Ask the person about one approval through a conversation's decision prompts,
+then send the answer. Nothing is sent until Enter answers, Always allow and the
+family rule each need a second, separate confirmation whose default is Back, and
+an answer is only sent while the record is still the one that was shown.
+
+#### Parameters
+
+| Parameter     | Type                                                                                                                                                                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `interaction` | `WhistleInteraction`                                                                                                                                                                                                                                          |
+| `input`       | `Readonly`\<\{ `view`: [`ApprovalFacts`](#approvalfacts); `source`: [`ApprovalSource`](#approvalsource); `home`: `string`; `width`: `number`; `now`: `number`; `noteLimit`: `number`; `stillCurrent`: () => `boolean`; `onFailure`: (`cause`) => `void`; \}\> |
+
+#### Returns
+
+`Promise`\<[`ApprovalOutcome`](#approvaloutcome)\>
 
 ---
 
@@ -1349,6 +1901,142 @@ One rule for whether an assistant row has content either renderer shows.
 
 ---
 
+### awaitingQueue()
+
+```ts
+function awaitingQueue(items, later): AwaitingQueue;
+```
+
+Order the items by arrival and pick the one the composer shows. A postponed item
+leaves the composer but stays counted: it is the footer row.
+
+#### Parameters
+
+| Parameter | Type                                                                                                                                              |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `items`   | readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\>[] |
+| `later`   | `ReadonlySet`\<`string`\>                                                                                                                         |
+
+#### Returns
+
+[`AwaitingQueue`](#awaitingqueue)
+
+---
+
+### awaitingTakeover()
+
+```ts
+function awaitingTakeover(
+  awaiting,
+  draft,
+):
+  | Readonly<{
+      key: string;
+      kind: AwaitingKind;
+      arrivedAt: number;
+      host: WhistleInteractionHost;
+    }>
+  | undefined;
+```
+
+The item that owns the composer right now. An empty draft is taken over; a draft
+with text is never, unless the person asked for the decision.
+
+#### Parameters
+
+| Parameter  | Type                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `awaiting` | `Readonly`\<\{ `items`: readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\>[]; `current?`: `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\>; `position`: `number`; `total`: `number`; \}\> & `Readonly`\<\{ `forced`: `boolean`; \}\> |
+| `draft`    | `string`                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+#### Returns
+
+\| `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind);
+`arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\> \| `undefined`
+
+---
+
+### initialDecisionState()
+
+```ts
+function initialDecisionState(): DecisionState;
+```
+
+The state a decision starts in.
+
+#### Returns
+
+[`DecisionState`](#decisionstate)
+
+---
+
+### reduceDecision()
+
+```ts
+function reduceDecision(state, intent, prompt): DecisionOutcome;
+```
+
+The one set of rules both renderers follow. Number keys only move the highlight,
+Enter is the only way to answer, and Esc steps back one level until it reaches
+the option list, where it postpones the decision.
+
+#### Parameters
+
+| Parameter | Type                                |
+| --------- | ----------------------------------- |
+| `state`   | [`DecisionState`](#decisionstate)   |
+| `intent`  | [`DecisionIntent`](#decisionintent) |
+| `prompt`  | `object` & `object`                 |
+
+#### Returns
+
+[`DecisionOutcome`](#decisionoutcome)
+
+---
+
+### decisionView()
+
+```ts
+function decisionView(state, prompt, context): DecisionView;
+```
+
+Project a decision's state into the view every renderer draws.
+
+#### Parameters
+
+| Parameter | Type                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------- |
+| `state`   | [`DecisionState`](#decisionstate)                                                                     |
+| `prompt`  | `object` & `object`                                                                                   |
+| `context` | `Readonly`\<\{ `kind`: [`AwaitingKind`](#awaitingkind); `position`: `number`; `total`: `number`; \}\> |
+
+#### Returns
+
+[`DecisionView`](#decisionview)
+
+---
+
+### decisionViewText()
+
+```ts
+function decisionViewText(view): readonly string[];
+```
+
+The plain strings a renderer must show for a view, in reading order. The
+lockstep tests hold every surface to this list.
+
+#### Parameters
+
+| Parameter | Type                            |
+| --------- | ------------------------------- |
+| `view`    | [`DecisionView`](#decisionview) |
+
+#### Returns
+
+readonly `string`[]
+
+---
+
 ### placeClientTimeline()
 
 ```ts
@@ -1359,11 +2047,11 @@ Fixed positions and command anchors follow loaded history, never event time.
 
 #### Parameters
 
-| Parameter   | Type                                                                                                                                                                                                                                                                                                                                                        |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entries`   | readonly `Readonly`\<\{ `entryId`: `string`; `value`: \{ `chips`: readonly `object`[]; `panel`: readonly `object`[]; `timeline`: \{ `cells`: readonly `object`[]; `omitted`: `number`; \}; `waiting`: \| \{ `summary`: `string`; `cancel`: \{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; \}; \} \| `null`; \}; \}\>[] |
-| `anchors`   | `ReadonlyMap`\<`string`, `string`\>                                                                                                                                                                                                                                                                                                                         |
-| `positions` | `ReadonlyMap`\<`number`, `string` \| `null`\>                                                                                                                                                                                                                                                                                                               |
+| Parameter   | Type                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entries`   | readonly `Readonly`\<\{ `entryId`: `string`; `value`: \{ `chips`: readonly `object`[]; `panel`: readonly `object`[]; `timeline`: \{ `cells`: readonly `object`[]; `omitted`: `number`; \}; `waiting`: \| \{ `summary`: `string`; `cancel`: \{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; `awaiting?`: `"question"`; \}; \} \| `null`; \}; \}\>[] |
+| `anchors`   | `ReadonlyMap`\<`string`, `string`\>                                                                                                                                                                                                                                                                                                                                                    |
+| `positions` | `ReadonlyMap`\<`number`, `string` \| `null`\>                                                                                                                                                                                                                                                                                                                                          |
 
 #### Returns
 
@@ -1373,6 +2061,49 @@ Fixed positions and command anchors follow loaded history, never event time.
 | `after`      | `Map`\<`string`, `Readonly`\<\{ `entryId`: `string`; `cell`: \{ `id`: `string`; `sequence`: `number`; `at`: `number`; `commandId`: `string` \| `null`; `afterSequence?`: `number`; `rows`: readonly `object`[]; \}; \}\>[]\> | Loaded durable row IDs mapped to their following committed events.      |
 | `unanchored` | `Readonly`\<\{ `entryId`: `string`; `cell`: \{ `id`: `string`; `sequence`: `number`; `at`: `number`; `commandId`: `string` \| `null`; `afterSequence?`: `number`; `rows`: readonly `object`[]; \}; \}\>[]                    | Null-anchor events for the separate Extension changes section.          |
 | `omitted`    | `object`[]                                                                                                                                                                                                                   | Factual producer retention counts, independent of loaded message pages. |
+
+---
+
+### formatWhen()
+
+```ts
+function formatWhen(epochMillis, now): string;
+```
+
+When something happened, as a picker column: `14:02` for today, `Yesterday`, or
+`2026-10-24`. Shared by every picker that lists past work.
+
+#### Parameters
+
+| Parameter     | Type     |
+| ------------- | -------- |
+| `epochMillis` | `number` |
+| `now`         | `number` |
+
+#### Returns
+
+`string`
+
+---
+
+### oneLine()
+
+```ts
+function oneLine(text, limit): string;
+```
+
+`text` on one line, whitespace collapsed and cut at a word to `limit`.
+
+#### Parameters
+
+| Parameter | Type     |
+| --------- | -------- |
+| `text`    | `string` |
+| `limit`   | `number` |
+
+#### Returns
+
+`string`
 
 ---
 
@@ -1464,6 +2195,7 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
      }>;
    }>
      | undefined;
+  lastReplyAt: number | undefined;
   latestPrompt:   | Readonly<{
      commandId: string;
      text: string;
@@ -1523,6 +2255,7 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
      }>;
    }>
      | undefined;
+  lastReplyAt: number | undefined;
   latestPrompt:   | Readonly<{
      commandId: string;
      text: string;
@@ -1596,6 +2329,7 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
      }>;
    }>
      | undefined;
+  lastReplyAt: number | undefined;
   latestPrompt:   | Readonly<{
      commandId: string;
      text: string;
@@ -1631,27 +2365,28 @@ readonly `Readonly`\<\{ `toolCallId`: ...; `revision`: ...; `tail`: ...;
 `droppedBytes`: ...; `totalBytes`: ...; \}\>[]; `extensions`:
 `SessionExtensionSlots`; `attention`: readonly `object`[]; `context?`:
 `Readonly`\<\{ `tokens`: ...; `window`: ...; \}\>; \}\> \| `undefined`;
-`latestPrompt`: \| `Readonly`\<\{ `commandId`: `string`; `text`: `string`;
-`images`: readonly `object`[] \| `undefined`; \}\> \| `undefined`; \}\>,
-`Error`, `Readonly`\<\{ `observation`: `"connecting"` \| `"live"`; `snapshot`:
-\| `Readonly`\<\{ `sessionId`: `string`; `cursor`: `string` \| `null`;
-`hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`; `messages`: readonly
-`Readonly`\<\{ `requestId?`: ...; `meta?`: ...; `data?`: ...; `origin?`: ...;
-`id`: ...; `sequence`: ...; `commandId`: ...; `value`: ...; \}\>[]; `terminals`:
-readonly `Readonly`\<\{ `commandId`: ...; `outcome`: ...; `sequence`: ...;
-`diagnostic`: ...; `meta?`: ...; \}\>[]; `compactions?`: readonly
-`Readonly`\<...\>[]; `compactionNotices?`: readonly `Readonly`\<...\>[];
-`sandboxFailures?`: readonly `object`[]; `pending`: `SessionPendingPrompts`;
-`activity`: `SessionActivity`; `progress`: \| `Readonly`\<\{ `messageId`: ...;
-`revision`: ...; `text`: ...; `thinking`: ...; `textTruncated`: ...;
-`thinkingTruncated`: ...; \}\> \| `null`; `toolOutput`: readonly `Readonly`\<\{
-`toolCallId`: ...; `revision`: ...; `tail`: ...; `droppedBytes`: ...;
-`totalBytes`: ...; \}\>[]; `extensions`: `SessionExtensionSlots`; `attention`:
-readonly `object`[]; `context?`: `Readonly`\<\{ `tokens`: ...; `window`: ...;
-\}\>; \}\> \| `undefined`; `latestPrompt`: \| `Readonly`\<\{ `commandId`:
-`string`; `text`: `string`; `images`: readonly `object`[] \| `undefined`; \}\>
-\| `undefined`; \}\>, readonly \[`"shiitake-session"`, `string`\]\>,
-`"queryFn"`\> & `object` & `QueryKeyWithDataTag`\<readonly
+`lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \| `Readonly`\<\{
+`commandId`: `string`; `text`: `string`; `images`: readonly `object`[] \|
+`undefined`; \}\> \| `undefined`; \}\>, `Error`, `Readonly`\<\{ `observation`:
+`"connecting"` \| `"live"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`;
+`cursor`: `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \|
+`null`; `messages`: readonly `Readonly`\<\{ `requestId?`: ...; `meta?`: ...;
+`data?`: ...; `origin?`: ...; `id`: ...; `sequence`: ...; `commandId`: ...;
+`value`: ...; \}\>[]; `terminals`: readonly `Readonly`\<\{ `commandId`: ...;
+`outcome`: ...; `sequence`: ...; `diagnostic`: ...; `meta?`: ...; \}\>[];
+`compactions?`: readonly `Readonly`\<...\>[]; `compactionNotices?`: readonly
+`Readonly`\<...\>[]; `sandboxFailures?`: readonly `object`[]; `pending`:
+`SessionPendingPrompts`; `activity`: `SessionActivity`; `progress`: \|
+`Readonly`\<\{ `messageId`: ...; `revision`: ...; `text`: ...; `thinking`: ...;
+`textTruncated`: ...; `thinkingTruncated`: ...; \}\> \| `null`; `toolOutput`:
+readonly `Readonly`\<\{ `toolCallId`: ...; `revision`: ...; `tail`: ...;
+`droppedBytes`: ...; `totalBytes`: ...; \}\>[]; `extensions`:
+`SessionExtensionSlots`; `attention`: readonly `object`[]; `context?`:
+`Readonly`\<\{ `tokens`: ...; `window`: ...; \}\>; \}\> \| `undefined`;
+`lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \| `Readonly`\<\{
+`commandId`: `string`; `text`: `string`; `images`: readonly `object`[] \|
+`undefined`; \}\> \| `undefined`; \}\>, readonly \[`"shiitake-session"`,
+`string`\]\>, `"queryFn"`\> & `object` & `QueryKeyWithDataTag`\<readonly
 \[`"shiitake-session"`, `string`\], `Readonly`\<\{ `observation`: `"connecting"`
 \| `"live"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
 `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`;
@@ -1672,9 +2407,9 @@ readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: ... \| ... \| ... \|
 `number`; `tail`: `string`; `droppedBytes`: `number`; `totalBytes`: `number`;
 \}\>[]; `extensions`: `SessionExtensionSlots`; `attention`: readonly `object`[];
 `context?`: `Readonly`\<\{ `tokens`: `number`; `window`: ... \| ...; \}\>; \}\>
-\| `undefined`; `latestPrompt`: \| `Readonly`\<\{ `commandId`: `string`; `text`:
-`string`; `images`: readonly `object`[] \| `undefined`; \}\> \| `undefined`;
-\}\>, `Error`\>
+\| `undefined`; `lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \|
+`Readonly`\<\{ `commandId`: `string`; `text`: `string`; `images`: readonly
+`object`[] \| `undefined`; \}\> \| `undefined`; \}\>, `Error`\>
 
 ---
 
@@ -2285,6 +3020,52 @@ Contribute the shared Session command vocabulary to one Whistle host.
 #### Returns
 
 `Readonly`\<\{ `update`: (`commands`) => `void`; `dispose`: () => `void`; \}\>
+
+---
+
+### useApprovalAwaiting()
+
+```ts
+function useApprovalAwaiting(options): void;
+```
+
+Put one source's pending approval in the composer's queue. While the record is
+answerable and the person is present it asks through decision prompts; a changed
+revision replaces the item, so only the record on screen can be answered. Esc
+postpones it: the record stays pending in the ledger.
+
+#### Parameters
+
+| Parameter | Type                                                                                                                                                                                                                                                            |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `options` | `Readonly`\<\{ `source`: [`ApprovalSource`](#approvalsource) \| `undefined`; `store`: [`ParakeetInteractions`](#parakeetinteractions); `enabled`: `boolean`; `home`: `string`; `width`: `number`; `noteLimit`: `number`; `onFailure`: (`cause`) => `void`; \}\> |
+
+#### Returns
+
+`void`
+
+---
+
+### useDecision()
+
+```ts
+function useDecision(item, context): DecisionController;
+```
+
+Own the answering of one waiting decision for any renderer: the reducer's state
+per prompt, the answer sent to the item's host, and the refusal that comes back.
+Renderers draw `view` and forward intents, nothing else.
+
+#### Parameters
+
+| Parameter | Type                                                                                |
+| --------- | ----------------------------------------------------------------------------------- |
+| `item`    | [`AwaitingItem`](#awaitingitem)                                                     |
+| `context` | `Readonly`\<\{ `position`: `number`; `total`: `number`; `later`: () => `void`; \}\> |
+
+#### Returns
+
+[`DecisionController`](#decisioncontroller)
 
 ## References
 

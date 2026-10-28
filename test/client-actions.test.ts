@@ -110,7 +110,7 @@ it("waiting cancellation toasts an advertised info notice and never echoes a suc
   f.interactions.subscribeToasts((toast) => echoed.push(toast));
   await f.actions.execute("probe", f.action, true);
   expect(echoed).toEqual([]);
-  expect(f.interactions.snapshot()).toEqual({ open: undefined });
+  expect(f.interactions.snapshot().open).toBeUndefined();
   expect(f.actions.snapshot().get(f.action)).toEqual({ pending: false });
   f.actions.dispose();
 });

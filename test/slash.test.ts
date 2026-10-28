@@ -77,7 +77,10 @@ describe("the Parakeet command-behavior suite", () => {
         },
       ],
     });
-    await runtime.execute("notice-proof:refresh", { origin: "slash" });
+    await runtime.execute(
+      { namespace: "notice-proof", id: "refresh" },
+      { origin: "slash" },
+    );
     expect(store.snapshot().open).toBeUndefined();
     expect(toasts).toEqual([
       { variant: "info", message: "One source needs a restart." },
@@ -170,7 +173,10 @@ describe("the Parakeet command-behavior suite", () => {
     expect(store.snapshot().notice).toBeUndefined();
     await runSlashDraft("/water all", runtime, () => undefined, "slash");
     // A success only confirms what the person just did: no footer line, no toast.
-    expect(store.snapshot()).toEqual({ open: undefined, notice: undefined });
+    expect(store.snapshot()).toMatchObject({
+      open: undefined,
+      notice: undefined,
+    });
     expect(toasts).toEqual([]);
   });
 
@@ -198,12 +204,14 @@ describe("key hints", () => {
   const bindings = [
     {
       commandId: "tui:details",
+      command: { namespace: "tui", id: "details" },
       keys: "Ctrl+O",
       title: "Toggle details",
       order: 2,
     },
     {
       commandId: "tui:cancel",
+      command: { namespace: "tui", id: "cancel" },
       keys: "Esc",
       title: "Cancel the current run",
       order: 1,
@@ -333,7 +341,10 @@ describe("conversation-first completion", () => {
         },
       ],
     });
-    const running = runtime.execute("test:choose", { origin: "slash" });
+    const running = runtime.execute(
+      { namespace: "test", id: "choose" },
+      { origin: "slash" },
+    );
     await expect.poll(() => store.snapshot().open).toBeDefined();
     const host = store.snapshot().open?.host;
     host?.answer(host.snapshot().prompt?.sequence ?? -1, "first");
@@ -461,13 +472,19 @@ it("opens local inspection only after a bare human command succeeds, never after
   advertised.update(slots);
   await runSlashDraft("/inspect", runtime, () => undefined, "slash");
   expect(inspected).toEqual([["probe", "inspect"]]);
-  await runtime.execute("probe:inspect", { origin: "agent" });
+  await runtime.execute(
+    { namespace: "probe", id: "inspect" },
+    { origin: "agent" },
+  );
   expect(inspected).toHaveLength(1);
   // A row action such as "Clear plan" acts on the row instead of opening it.
-  await runtime.execute("probe:inspect", {
-    origin: "menu",
-    arguments: { action: "clear" },
-  });
+  await runtime.execute(
+    { namespace: "probe", id: "inspect" },
+    {
+      origin: "menu",
+      arguments: { action: "clear" },
+    },
+  );
   expect(inspected).toHaveLength(1);
   cancelled = true;
   await runSlashDraft("/inspect", runtime, () => undefined, "slash");

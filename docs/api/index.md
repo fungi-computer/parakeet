@@ -147,12 +147,13 @@ type ComposerController = Readonly<{
   recall: () => Promise<QueuedRecallOutcome>;
   checkpointDraft: () => ParakeetDraftCheckpoint;
   failure: "admission" | "failed" | "cancelled" | "interrupted" | undefined;
-  admissionError: "queue_full" | undefined;
+  admissionError: "offline_queue_full" | "queue_full" | undefined;
   retry: () => void;
   dismissFailed: (requestId) => void;
   send: (delivery?) => void;
   submitCommand: (run) => Promise<WhistleExecutionOutcome | undefined>;
   setDraft: (value) => void;
+  setImages: (images) => void;
 }>;
 ```
 
@@ -494,6 +495,7 @@ type ParakeetProps = Readonly<{
   clients?: readonly ClientEntryV1[];
   composerActionVariant?: "primary" | "outline";
   renderToolActions?: (item) => ReactNode;
+  claimsToolMedia?: (item) => boolean;
   renderAssistantAttachment?: (text) => ReactNode;
   formatAssistantText?: (text) => string;
   onLink?: (href) => boolean;
@@ -515,6 +517,7 @@ type ParakeetViewProps = Readonly<{
   visitor?: ParakeetVisitor;
   composerActionVariant?: "primary" | "outline";
   renderToolActions?: (item) => ReactNode;
+  claimsToolMedia?: (item) => boolean;
   renderAssistantAttachment?: (text) => ReactNode;
   formatAssistantText?: (text) => string;
   onLink?: (href) => boolean;
@@ -558,6 +561,7 @@ type ParakeetSessionCommand = {
     | Readonly<{
         status: "accepted";
         commandId: string;
+        sessionId?: string;
       }>
     | Readonly<{
         status: "recorded";
@@ -665,6 +669,7 @@ Return the owner-issued address of a forked Session.
   | Readonly<{
   status: "accepted";
   commandId: string;
+  sessionId?: string;
 }>
   | Readonly<{
   status: "recorded";
@@ -693,9 +698,10 @@ Dispatch a typed command without inventing an admission result.
 ##### Returns
 
 `Promise`\< \| `Readonly`\<\{ `status`: `"accepted"`; `commandId`: `string`;
-\}\> \| `Readonly`\<\{ `status`: `"recorded"`; \}\> \| `Readonly`\<\{ `status`:
-`"too_late"`; `commandId`: `string`; \}\> \| `Readonly`\<\{ `status`:
-`"unknown"`; \}\> \| `Readonly`\<\{ `sessionId`: `string`; \}\> \| `undefined`\>
+`sessionId?`: `string`; \}\> \| `Readonly`\<\{ `status`: `"recorded"`; \}\> \|
+`Readonly`\<\{ `status`: `"too_late"`; `commandId`: `string`; \}\> \|
+`Readonly`\<\{ `status`: `"unknown"`; \}\> \| `Readonly`\<\{ `sessionId`:
+`string`; \}\> \| `undefined`\>
 
 ---
 
@@ -748,6 +754,9 @@ type ParakeetAssistantMessageItem = Readonly<{
   pending: boolean;
   at?: number;
   text: string;
+  providerError?: string;
+  errorDetail?: string;
+  repeatCount?: number;
   thinking?: string;
   usage?: Readonly<{
     cost: number;

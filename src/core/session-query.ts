@@ -18,13 +18,15 @@ import { reportFailure } from "../lib/failure.js";
 type SessionObservation =
   | Readonly<{ kind: "opening" }>
   | Readonly<{ kind: "snapshot"; value: SessionSnapshot }>
-  | Readonly<{ kind: "frame"; value: SessionFrame }>;
+  | Readonly<{ kind: "frame"; value: SessionFrame; snapshot: SessionSnapshot }>;
 
 type SessionProjection = Readonly<{
   /** Whether the current watch has supplied a fresh owner baseline. */
   observation: "connecting" | "live";
   /** Last coherent durable Session state, absent before the first snapshot. */
   snapshot: SessionSnapshot | undefined;
+  /** Last successful watch connect or delivered frame, not a cached seed. */
+  lastReplyAt: number | undefined;
   /** One retryable user prompt, including image cargo, survives page refreshes. */
   latestPrompt:
     | Readonly<{
@@ -41,6 +43,7 @@ type SessionProjection = Readonly<{
 const emptyProjection: SessionProjection = Object.freeze({
   observation: "connecting",
   snapshot: undefined,
+  lastReplyAt: undefined,
   latestPrompt: undefined,
 });
 
@@ -104,7 +107,7 @@ async function* observeSession(
         snapshot = await session.read({ limit: LIVE_HISTORY_LIMIT });
         yield { kind: "snapshot", value: snapshot };
       } else {
-        yield { kind: "frame", value: frame };
+        yield { kind: "frame", value: frame, snapshot };
       }
     }
     throw new Error("Session watch ended; current activity is unavailable");
@@ -126,24 +129,27 @@ function reduceObservation(
     return {
       observation: "live",
       snapshot: observation.value,
+      lastReplyAt: Date.now(),
       latestPrompt: latestPrompt(
         observation.value.messages,
         projection.latestPrompt,
       ),
     };
-  if (projection.snapshot === undefined)
-    return observation.value.kind === "reset"
-      ? {
-          observation: "live",
-          snapshot: observation.value.baseline,
-          latestPrompt: latestPrompt(observation.value.baseline.messages),
-        }
-      : projection;
-  const snapshot = applySessionFrame(projection.snapshot, observation.value);
+  // The generator owns frame application and always delivers its baseline
+  // first. The cache only reduces already-projected observations.
+  const snapshot = observation.snapshot;
   return {
     observation: "live",
     snapshot,
-    latestPrompt: latestPrompt(snapshot.messages, projection.latestPrompt),
+    lastReplyAt: Date.now(),
+    latestPrompt:
+      observation.value.kind === "reset" ||
+      (observation.value.kind === "update" &&
+        observation.value.messages.some(
+          (message) => message.value.role === "user",
+        ))
+        ? latestPrompt(snapshot.messages, projection.latestPrompt)
+        : projection.latestPrompt,
   };
 }
 
@@ -177,6 +183,7 @@ export function seedSessionQuery(
   queryClient.setQueryData(sessionQueryOptions(session).queryKey, {
     observation: "connecting",
     snapshot,
+    lastReplyAt: undefined,
     latestPrompt: latestPrompt(snapshot.messages),
   });
 }

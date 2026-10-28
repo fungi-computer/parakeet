@@ -56,7 +56,10 @@ function LoginStory({
       setHost(created);
       return created.begin();
     });
-    void whistle.execute("account:login", { origin: "browser" });
+    void whistle.execute(
+      { namespace: "account", id: "login" },
+      { origin: "browser" },
+    );
     return () => {
       whistle.close();
     };

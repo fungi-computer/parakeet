@@ -50,7 +50,10 @@ it.each(["save", "read"])(
         refreshModels: () => Promise.resolve([]),
       },
     );
-    const running = commands.execute("session:model", { origin: "slash" });
+    const running = commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "slash" },
+    );
     try {
       for (const answer of ["provider", "1", "high"]) {
         await vi.waitFor(() => {
@@ -135,11 +138,17 @@ it("Enter after a provider choice selects its most recently used model", async (
     })),
     refreshModels: () => Promise.resolve([]),
   });
-  await commands.execute("session:model", {
-    origin: "agent",
-    arguments: { providerId: "provider", modelId: "Zeta" },
-  });
-  await commands.execute("session:model", { origin: "agent", arguments: null });
+  await commands.execute(
+    { namespace: "session", id: "model" },
+    {
+      origin: "agent",
+      arguments: { providerId: "provider", modelId: "Zeta" },
+    },
+  );
+  await commands.execute(
+    { namespace: "session", id: "model" },
+    { origin: "agent", arguments: null },
+  );
   let step = 0;
   const interaction: WhistleInteraction = {
     run: (operation) => operation(),
@@ -158,7 +167,10 @@ it("Enter after a provider choice selects its most recently used model", async (
     },
   };
   expect(
-    await commands.execute("session:model", { origin: "slash", interaction }),
+    await commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "slash", interaction },
+    ),
   ).toMatchObject({ status: "handled" });
   expect(preference).toEqual({ providerId: "provider", modelId: "Zeta" });
 });
@@ -206,7 +218,10 @@ it("uses one model owner for human and agent selection, inheritance and failures
     },
   );
   await expect(
-    commands.execute("session:model", { origin: "slash", interaction }),
+    commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "slash", interaction },
+    ),
   ).resolves.toMatchObject({ status: "handled" });
   expect(asked).toEqual([
     "Choose a provider",
@@ -221,29 +236,44 @@ it("uses one model owner for human and agent selection, inheritance and failures
   preference = null;
   set.mockClear();
   await expect(
-    commands.execute("session:model", { origin: "agent" }),
+    commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "agent" },
+    ),
   ).resolves.toEqual({ status: "handled", result: null });
   const next = { providerId: "provider", modelId: "model", reasoning: "low" };
   await expect(
-    commands.execute("session:model", { origin: "browser", arguments: next }),
+    commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "browser", arguments: next },
+    ),
   ).resolves.toEqual({ status: "handled", result: next });
   expect(set).toHaveBeenCalledOnce();
-  const invalid = await commands.execute("session:model", {
-    origin: "agent",
-    arguments: { ...next, reasoning: "high" },
-  });
+  const invalid = await commands.execute(
+    { namespace: "session", id: "model" },
+    {
+      origin: "agent",
+      arguments: { ...next, reasoning: "high" },
+    },
+  );
   expect(invalid).toMatchObject({
     status: "failed",
     error: { code: "reasoning_unavailable" },
   });
   expect(set).toHaveBeenCalledOnce();
   await expect(
-    commands.execute("session:model", { origin: "agent", arguments: null }),
+    commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "agent", arguments: null },
+    ),
   ).resolves.toEqual({ status: "handled", result: null });
   expect(set).toHaveBeenLastCalledWith(null);
   set.mockRejectedValueOnce(new Error("Owner write failed"));
   await expect(
-    commands.execute("session:model", { origin: "agent", arguments: next }),
+    commands.execute(
+      { namespace: "session", id: "model" },
+      { origin: "agent", arguments: next },
+    ),
   ).resolves.toMatchObject({
     status: "failed",
     error: { message: "Owner write failed" },
@@ -422,10 +452,13 @@ async function interactiveProviderFlow({
       },
     },
   );
-  const result = await commands.execute("session:model", {
-    origin: "slash",
-    interaction,
-  });
+  const result = await commands.execute(
+    { namespace: "session", id: "model" },
+    {
+      origin: "slash",
+      interaction,
+    },
+  );
   commands.close();
   return { prompts, login, set, result };
 }
@@ -596,7 +629,10 @@ it("offers Fungi without a catalog, signs in once and uses the newly authenticat
   try {
     expect(refreshModels).not.toHaveBeenCalled();
     await expect(
-      commands.execute("session:model", { origin: "slash", interaction }),
+      commands.execute(
+        { namespace: "session", id: "model" },
+        { origin: "slash", interaction },
+      ),
     ).resolves.toMatchObject({ status: "handled" });
     expect(prompts[0]).toMatchObject({
       options: [
@@ -681,7 +717,10 @@ it("marks the current provider, model and thinking level as current in each pick
       refreshModels: () => Promise.resolve([]),
     },
   );
-  await commands.execute("session:model", { origin: "slash", interaction });
+  await commands.execute(
+    { namespace: "session", id: "model" },
+    { origin: "slash", interaction },
+  );
   const [providers, models, thinking] = choices;
   expect(providers).toMatchObject({
     message: "Choose a provider",

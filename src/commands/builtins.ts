@@ -1,4 +1,5 @@
 import type {
+  WhistleCommandKey,
   WhistleContribution,
   WhistleExecutionInput,
   WhistleRuntime,
@@ -17,11 +18,12 @@ export type ParakeetBuiltinOptions = Readonly<{
 /** Run a chosen command after the choosing command has settled. */
 function runAfter(
   runtime: Pick<WhistleRuntime, "execute">,
-  commandId: string,
+  command: WhistleCommandKey | undefined,
   origin: WhistleExecutionInput["origin"],
 ) {
+  if (command === undefined) return;
   setTimeout(() => {
-    void runtime.execute(commandId, { origin });
+    void runtime.execute(command, { origin });
   }, 0);
 }
 
@@ -65,7 +67,11 @@ export function parakeetBuiltinCommands(
                 : `${command.title} · ${command.keys.join(", ")}`,
           })),
         });
-        runAfter(runtime, chosen, input.origin);
+        runAfter(
+          runtime,
+          commands.find((command) => command.commandId === chosen)?.command,
+          input.origin,
+        );
         return undefined;
       },
     },
@@ -97,7 +103,11 @@ export function parakeetBuiltinCommands(
             description: row.keys,
           })),
         });
-        runAfter(runtime, chosen, input.origin);
+        runAfter(
+          runtime,
+          keys.find((row) => row.commandId === chosen)?.command,
+          input.origin,
+        );
         return undefined;
       },
     },

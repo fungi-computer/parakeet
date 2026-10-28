@@ -95,7 +95,17 @@ try {
   await page.goto(`http://127.0.0.1:${address.port}/`, {
     waitUntil: "load",
   });
-  await page.getByRole("button", { name: "Queue follow-up" }).waitFor();
+  // While the Agent works over an empty draft, the one send key is Stop.
+  await page
+    .locator("#root > main")
+    .getByRole("button", { name: "Stop current turn" })
+    .waitFor();
+  assert.equal(
+    await page.locator("#root > main .caps-send-action").count(),
+    1,
+    "the busy composer shows one key, not Stop beside Queue",
+  );
+  await page.getByRole("button", { name: "Send message" }).waitFor();
   await page.evaluate(() => globalThis.document.fonts.ready);
 
   assert.ok(
@@ -111,7 +121,7 @@ try {
   assert.ok(
     (
       await page.locator("#root > main .composer-footer").textContent()
-    )?.includes("openai/gpt-6-astra12K/200K"),
+    )?.includes("12K/200K"),
   );
   const screenshotDirectory = process.env.PARAKEET_SCREENSHOT_DIR;
   const screenshotPrefix = process.env.PARAKEET_SCREENSHOT_PREFIX;
@@ -122,14 +132,14 @@ try {
       host.dataset.theme = name;
 
       const queue = globalThis.document.querySelector(
-        '[aria-label="Queue follow-up"]',
+        '[aria-label="Send message"]',
       );
       const textarea = globalThis.document.querySelector("textarea");
       const message = globalThis.document.querySelector(".message-body");
       const machineValue = globalThis.document.querySelector(
         "main code.font-mono",
       );
-      const row = globalThis.document.querySelector(".caps-composer > .join");
+      const row = globalThis.document.querySelector(".caps-composer");
       if (!queue || !textarea || !message || !machineValue || !row)
         throw new Error("composer material fixture is incomplete");
 
@@ -170,11 +180,6 @@ try {
         sansFont: sansFont.trim(),
         machineFont: globalThis.getComputedStyle(machineValue).fontFamily,
         rowClasses: row.className,
-        rowShadow: globalThis.getComputedStyle(row).boxShadow,
-        shellShadow: globalThis.getComputedStyle(
-          globalThis.document.querySelector(".caps-composer > .join")
-            ?.parentElement,
-        ).boxShadow,
         theme: host.dataset.theme,
       };
     }, theme);
@@ -190,13 +195,13 @@ try {
     }
 
     assert.equal(result.theme, theme);
-    assert.equal(result.disabled, true, `${theme}: Queue is disabled`);
-    const queue = page.getByRole("button", { name: "Queue follow-up" });
+    assert.equal(result.disabled, true, `${theme}: empty Send is disabled`);
+    const queue = page.getByRole("button", { name: "Send message" });
     const face = async (opacity) => {
       await page.waitForFunction(
         (expected) =>
           globalThis.getComputedStyle(
-            globalThis.document.querySelector('[aria-label="Queue follow-up"]'),
+            globalThis.document.querySelector('[aria-label="Send message"]'),
           ).opacity === expected,
         opacity,
       );
@@ -207,7 +212,6 @@ try {
         const style = globalThis.getComputedStyle(element);
         return {
           opacity: style.opacity,
-          pointerEvents: style.pointerEvents,
           face: {
             background: style.backgroundColor,
             image: style.backgroundImage,
@@ -227,15 +231,11 @@ try {
       });
     };
     const disabled = await face("0.45");
+    assert.equal(disabled.opacity, "0.45", `${theme}: disabled Send is dimmed`);
     assert.equal(
-      disabled.opacity,
-      "0.45",
-      `${theme}: disabled Queue is dimmed`,
-    );
-    assert.equal(
-      disabled.pointerEvents,
-      "none",
-      `${theme}: Queue blocks pointers`,
+      await queue.evaluate((element) => element.disabled),
+      true,
+      `${theme}: disabled Send is natively disabled, so it cannot fire`,
     );
     await queue.evaluate((element) => {
       element.disabled = false;
@@ -248,18 +248,18 @@ try {
     assert.deepEqual(
       disabled.face,
       enabled.face,
-      `${theme}: disabled Queue retains its enabled filled face`,
+      `${theme}: disabled Send retains its enabled key face`,
     );
     assert.ok(
       result.queueContrast >= 4.5,
-      `${theme}: disabled Queue contrast is ${result.queueContrast}`,
+      `${theme}: disabled Send contrast is ${result.queueContrast}`,
     );
     assert.equal(result.screenFont, result.messageFont);
     assert.match(result.screenFont, /Nunito/u);
     assert.match(result.machineFont, /Maple Mono/u);
     assert.doesNotMatch(result.rowClasses, /aura|rainbow/u);
     process.stdout.write(
-      `${theme}: disabled Queue contrast ${result.queueContrast.toFixed(2)}:1; sans interface and monospace data passed.\n`,
+      `${theme}: disabled Send contrast ${result.queueContrast.toFixed(2)}:1; sans interface and monospace data passed.\n`,
     );
   }
 

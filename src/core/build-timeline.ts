@@ -211,11 +211,59 @@ function assistantMessageItem(
   };
   const withProviderError =
     value.stopReason === "error" && value.providerError !== undefined
-      ? { ...item, providerError: value.providerError }
+      ? {
+          ...item,
+          text: value.errorMessage ?? "This run couldn’t finish.",
+          providerError: value.providerError,
+        }
       : item;
+  const withDetail =
+    value.stopReason === "error" &&
+    value.providerError !== undefined &&
+    blocks.text.length > 0
+      ? {
+          ...withProviderError,
+          errorDetail: blocks.text.join("").slice(0, 160),
+        }
+      : withProviderError;
   return blocks.thinking.length === 0
-    ? withProviderError
-    : { ...withProviderError, thinking: blocks.thinking.join("\n") };
+    ? withDetail
+    : { ...withDetail, thinking: blocks.thinking.join("\n") };
+}
+
+/** Presentation-only folding; durable messages and their raw evidence remain intact. */
+function collapseProviderErrors(
+  rows: readonly TimelineItem[],
+  breakBefore: ReadonlySet<string>,
+) {
+  const items: TimelineItem[] = [];
+  const aliases = new Map<string, string>();
+  for (const row of rows) {
+    const prior = items.at(-1);
+    if (
+      !breakBefore.has(row.id) &&
+      row.kind === "assistant_message" &&
+      row.isError &&
+      prior?.kind === "assistant_message" &&
+      prior.isError &&
+      row.providerError !== undefined &&
+      prior.providerError !== undefined &&
+      row.text === prior.text &&
+      row.errorDetail === prior.errorDetail &&
+      row.thinking === prior.thinking &&
+      row.author?.id === prior.author?.id &&
+      row.author?.name === prior.author?.name
+    ) {
+      items[items.length - 1] = {
+        ...prior,
+        repeatCount: (prior.repeatCount ?? 1) + 1,
+        // Details show the latest response, including its request id.
+        providerError: row.providerError,
+      };
+      aliases.set(row.id, prior.id);
+    } else items.push(row);
+  }
+  return { items, aliases };
 }
 
 function projectAssistant(
@@ -432,11 +480,17 @@ export function buildDurableTimeline(
     }
     positionAnchors.set(position, anchor);
   }
+  const collapsed = collapseProviderErrors(grouped, breakBefore);
+  for (const [command, anchor] of commandAnchors)
+    commandAnchors.set(command, collapsed.aliases.get(anchor) ?? anchor);
+  for (const [position, anchor] of positionAnchors)
+    if (anchor !== null)
+      positionAnchors.set(position, collapsed.aliases.get(anchor) ?? anchor);
   const base = {
     commandAnchors,
     positionAnchors,
     completedMessageIds: completedMessageIds(messages),
-    items: grouped,
+    items: collapsed.items,
     commandIds,
     requestIds: new Set(
       messages.flatMap((message) =>
@@ -507,7 +561,9 @@ export function buildTimelineTail(
           ? "failed"
           : admission.status === "accepted"
             ? "accepted"
-            : "pending",
+            : admission.status === "queued-local"
+              ? "queued"
+              : "pending",
       delivery: admission.delivery,
       text: admission.content,
     } satisfies Omit<UserMessageItem, "commandId" | "error">;
