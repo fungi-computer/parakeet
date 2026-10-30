@@ -154,22 +154,48 @@ export function sameRunningWork(
   if (left === null || right === null) return left === right;
   if (left.kind === "session" && right.kind === "session")
     return (
-      left.sessionId === right.sessionId && left.commandId === right.commandId
+      left.sessionId === right.sessionId &&
+      left.commandId === right.commandId &&
+      left.title === right.title
     );
   if (left.kind === "host" && right.kind === "host")
     return left.lane === right.lane && left.jobId === right.jobId;
   return false;
 }
 
-/** Explain a queued Session using its owner's executor fact. */
-export function queuedSessionLabel(
-  state: Extract<SessionViewState, { kind: "queued" }>,
-): string {
-  const work = state.runningWork;
-  if (work === null) return "Queued for host";
-  return work.kind === "session"
-    ? `Waiting for Session ${collapsed(work.sessionId, 256)}`
-    : `Waiting for host job ${collapsed(work.lane, 256)} · ${collapsed(work.jobId, 256)}`;
+/** Activity only: queued messages belong in the transcript, never in this label. */
+export function sessionStateLabel(
+  state: SessionViewState,
+  waitingOnYou = false,
+):
+  | "thinking"
+  | "streaming"
+  | "running a tool"
+  | "idle"
+  | "waiting on you"
+  | "failed" {
+  switch (state.kind) {
+    case "queued":
+      // Executor occupancy is the only Agent activity fact in a queued view.
+      // Its identity/title is not a state and must never become a status label.
+      return state.runningWork === null ? "idle" : "thinking";
+    case "thinking":
+    case "cancelling":
+    case "compacting":
+    case "retrying":
+      return "thinking";
+    case "responding":
+      return "streaming";
+    case "running_tool":
+      return "running a tool";
+    case "error":
+      return "failed";
+    case "idle":
+    case "waiting_for_you":
+      // A completed turn is idle; an actual attention/approval request is
+      // what makes the caller show "waiting on you".
+      return waitingOnYou ? "waiting on you" : "idle";
+  }
 }
 
 /** Whether two view states say the same thing, so a readout can stay stable. */

@@ -21,6 +21,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>html,body,#root{height
 
 let server;
 let browser;
+let page;
 const pageErrors = [];
 
 try {
@@ -70,7 +71,7 @@ try {
     .parse(server.address());
 
   browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({
+  page = await browser.newPage({
     viewport: { height: 1_000, width: 1_134 },
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -185,21 +186,51 @@ try {
   await textarea.waitFor();
   const composerGeometry = await textarea.evaluate((node) => {
     const wrapper = node.closest(".caps-composer");
+    const input = node.closest(".caps-composer-input");
+    const bar = wrapper?.querySelector(".caps-composer-bar");
+    const action = bar?.querySelector(".caps-send-action");
+    if (!wrapper || !input || !bar || !action)
+      throw new Error("native composer field and action are missing");
     const textareaStyle = globalThis.getComputedStyle(node);
-    const wrapperStyle =
-      wrapper === null ? null : globalThis.getComputedStyle(wrapper);
+    const wrapperStyle = globalThis.getComputedStyle(wrapper);
+    const inputBounds = input.getBoundingClientRect();
+    const wrapperBounds = wrapper.getBoundingClientRect();
+    const nativeRow = action.closest(".caps-status-tray-row");
+    const rowBounds = (nativeRow ?? bar).getBoundingClientRect();
+    const actionBounds = action.getBoundingClientRect();
     return {
       minHeight: textareaStyle.minHeight,
-      wrapperAlignItems: wrapperStyle?.alignItems,
-      wrapperDisplay: wrapperStyle?.display,
-      wrapperMinWidth: wrapperStyle?.minWidth,
+      wrapperDirection: wrapperStyle.flexDirection,
+      wrapperDisplay: wrapperStyle.display,
+      wrapperMinWidth: wrapperStyle.minWidth,
+      fieldWidthDelta: Math.abs(inputBounds.width - wrapperBounds.width),
+      rowRightInset: wrapperBounds.right - rowBounds.right,
+      expectedRowInset: nativeRow === null ? 0 : 4,
+      actionRightGap: rowBounds.right - actionBounds.right,
+      actionCentreDelta: Math.abs(
+        rowBounds.y +
+          rowBounds.height / 2 -
+          actionBounds.y -
+          actionBounds.height / 2,
+      ),
+      actionBelowField: actionBounds.top >= inputBounds.bottom,
     };
   });
+  // Caps owns a column of slots, not the retired inline field/action flex row.
+  // Prove the caller-visible alignment: full-width field, then the centred
+  // action at the bottom row's content edge (the shared tray has 4px padding).
   if (
     composerGeometry.minHeight !== "48px" ||
-    composerGeometry.wrapperAlignItems !== "flex-end" ||
+    composerGeometry.wrapperDirection !== "column" ||
     composerGeometry.wrapperDisplay !== "flex" ||
-    composerGeometry.wrapperMinWidth !== "0px"
+    composerGeometry.wrapperMinWidth !== "0px" ||
+    composerGeometry.fieldWidthDelta > 1 ||
+    Math.abs(
+      composerGeometry.rowRightInset - composerGeometry.expectedRowInset,
+    ) > 1 ||
+    Math.abs(composerGeometry.actionRightGap) > 1 ||
+    composerGeometry.actionCentreDelta > 1 ||
+    !composerGeometry.actionBelowField
   )
     throw new Error(
       `composer geometry changed: ${JSON.stringify(composerGeometry)}`,
@@ -478,9 +509,217 @@ try {
   await mkdir(dirname(screenshot), { recursive: true });
   await page.screenshot({ path: screenshot });
 
+  // Live output uses the actual browser rows, CSS geometry and sticky scroller.
+  await page.reload();
+  await page.getByRole("combobox", { name: "Message", exact: true }).waitFor();
+  const scroller = page.locator("[data-chat-scroller]");
+  async function followLiveOutput() {
+    // Use the reader's actual follow action: assigning scrollTop does not
+    // release a pinned history window when the reset changes its geometry.
+    await scroller.hover();
+    await page.mouse.wheel(0, -300);
+    await page.getByRole("button", { name: "Jump to bottom" }).click();
+    await page.waitForFunction(() => {
+      const node = globalThis.document.querySelector("[data-chat-scroller]");
+      return (
+        node && node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+      );
+    });
+  }
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.beginLiveOutput(),
+  );
+  // The reset is asynchronous. Scroll the committed new history, not the
+  // previous viewport's height; the fixture already exposes this projection.
+  await page
+    .locator('output[aria-label="Observed tool output revision"]')
+    .getByText("1", { exact: true })
+    .waitFor({ state: "attached" });
+  const tail = page.locator('pre[aria-label="Live tool output"]');
+  await followLiveOutput();
+  await tail.getByText(/^build step 1:/u).waitFor();
+  const smallHeight = (await tail.boundingBox()).height;
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.updateLiveOutput(8),
+  );
+  await tail.getByText(/^build step 8:/u).waitFor();
+  assert.equal(await tail.getByText(/^build step 1:/u).count(), 0);
+  const fullHeight = (await tail.boundingBox()).height;
+  assert.ok(
+    fullHeight > smallHeight,
+    "a short tail grows naturally until full",
+  );
+  const beforeLive = await scroller.evaluate((node) => ({
+    height: node.scrollHeight,
+    top: node.scrollTop,
+  }));
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.updateLiveOutput(30, 2048),
+  );
+  await tail.getByText(/^build step 30:/u).waitFor();
+  assert.equal(
+    await tail.getByText("… 2 KiB earlier", { exact: true }).count(),
+    0,
+  );
+  assert.equal(
+    (await tail.boundingBox()).height,
+    fullHeight,
+    "full folded height stays fixed when bytes drop",
+  );
+  assert.equal(
+    await scroller.evaluate((node) => node.scrollHeight),
+    beforeLive.height,
+  );
+  const liveToggle = page
+    .locator("[data-parakeet-call] button[aria-expanded]")
+    .first();
+  await liveToggle.click();
+  await tail.getByText(/^build step 1:/u).waitFor();
+  await tail.getByText("… 2 KiB earlier", { exact: true }).waitFor();
+  assert.equal(
+    await tail.locator("span").count(),
+    31,
+    "opened tail shows all lines and its marker",
+  );
+  await liveToggle.click();
+  await tail.getByText(/^build step 25:/u).waitFor();
+
+  // Exercise ordinary wheel intent from a fresh folded reader, independent
+  // of the disclosure resizing and jump animation tested above.
+  await page.reload();
+  await page.getByRole("combobox", { name: "Message", exact: true }).waitFor();
+  await page.evaluate(() => {
+    globalThis.__parakeetBrowserProof.beginLiveOutput();
+    globalThis.__parakeetBrowserProof.updateLiveOutput(30, 2048);
+  });
+  await page
+    .locator('output[aria-label="Observed tool output revision"]')
+    .getByText("2", { exact: true })
+    .waitFor({ state: "attached" });
+  await followLiveOutput();
+  await tail.getByText(/^build step 30:/u).waitFor();
+  const jump = page.getByRole("button", { name: "Jump to bottom" });
+  const remaining = await scroller.evaluate(
+    (node) => node.scrollHeight - node.clientHeight - node.scrollTop,
+  );
+  if (remaining > 1) await jump.click();
+  await page.waitForFunction(() => {
+    const node = globalThis.document.querySelector("[data-chat-scroller]");
+    return (
+      node !== null &&
+      node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+    );
+  });
+  await scroller.hover();
+  await jump.waitFor({ state: "hidden" });
+  const wheelSettled = scroller.evaluate(
+    (node) =>
+      new Promise((resolve) => {
+        node.addEventListener("scrollend", () => resolve(), { once: true });
+      }),
+  );
+  await page.mouse.wheel(0, -700);
+  await wheelSettled;
+  await page.getByRole("button", { name: "Jump to bottom" }).waitFor();
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        globalThis.requestAnimationFrame(() =>
+          globalThis.requestAnimationFrame(resolve),
+        ),
+      ),
+  );
+  const viewport = () =>
+    scroller.evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const first = [...node.querySelectorAll("[data-parakeet-id]")].find(
+        (row) => {
+          const box = row.getBoundingClientRect();
+          return box.bottom > bounds.top && box.top < bounds.bottom;
+        },
+      );
+      return {
+        top: node.scrollTop,
+        first: first?.getAttribute("data-parakeet-id"),
+        offset:
+          first === undefined
+            ? null
+            : first.getBoundingClientRect().top - bounds.top,
+      };
+    });
+  const away = await viewport();
+  const revision = await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.updateLiveOutput(60, 4096),
+  );
+  // Await the public headless projection even though the away row itself is
+  // deliberately unmounted by the browser virtualizer.
+  await page
+    .locator('output[aria-label="Observed tool output revision"]')
+    .getByText(String(revision), { exact: true })
+    .waitFor({ state: "attached" });
+  assert.deepEqual(
+    await viewport(),
+    away,
+    "updates leave a wheel-scrolled reader and their history anchor in place",
+  );
+  await jump.click();
+  await page.waitForFunction(() => {
+    const node = globalThis.document.querySelector("[data-chat-scroller]");
+    return (
+      node !== null &&
+      node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+    );
+  });
+  await tail.getByText(/^build step 60:/u).waitFor();
+  await jump.waitFor({ state: "hidden" });
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.finishLiveOutput(false),
+  );
+  await tail.waitFor({ state: "detached" });
+  assert.equal(await liveToggle.getAttribute("aria-expanded"), "false");
+  assert.equal(
+    await page.getByText("Final build output", { exact: true }).count(),
+    0,
+  );
+  // A fresh reader has no explicit fold choice for this fixture's reused call
+  // identity, so a failed result can exercise the existing error-open default.
+  await page.reload();
+  await page.getByRole("combobox", { name: "Message", exact: true }).waitFor();
+  const observed = page.locator(
+    'output[aria-label="Observed tool output revision"]',
+  );
+  await observed.getByText("0", { exact: true }).waitFor({ state: "attached" });
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.beginLiveOutput(),
+  );
+  await observed.getByText("1", { exact: true }).waitFor({ state: "attached" });
+  await followLiveOutput();
+  await tail.waitFor();
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.finishLiveOutput(true),
+  );
+  await observed.getByText("0", { exact: true }).waitFor({ state: "attached" });
+  await tail.waitFor({ state: "detached" });
+  await page
+    .getByRole("alert")
+    .getByText("Compiler failed", { exact: true })
+    .waitFor();
+  assert.equal(await liveToggle.getAttribute("aria-expanded"), "true");
+  assert.deepEqual(pageErrors, []);
+
   process.stdout.write(
     `${JSON.stringify({ proof: "parakeet-browser", attempts: retried.attempts, screenshot, stylesheet: "compiled", verdict: "pass" })}\n`,
   );
+} catch (cause) {
+  if (page !== undefined) {
+    await page.screenshot({ path: screenshot.replace(".png", "-failure.png") });
+    await writeFile(
+      screenshot.replace(".png", "-failure.html"),
+      await page.content(),
+    );
+    process.stderr.write(`${await page.locator("body").innerText()}\n`);
+  }
+  throw cause;
 } finally {
   if (browser) await browser.close();
   if (server?.listening)

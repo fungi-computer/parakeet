@@ -294,7 +294,7 @@ it.each([
 ] satisfies readonly (readonly [
   import("../src/conversation.js").ParakeetSessionViewState,
   string,
-])[])("keeps only attention readouts visible for %j", (viewState, label) => {
+])[])("keeps attention status accessible for %j", (viewState, label) => {
   const container = document.createElement("div");
   const root = createRoot(container);
   roots.add(root);
@@ -314,35 +314,97 @@ it.each([
       />,
     );
   });
-  expect(container.querySelector(".composer-footer")?.textContent).toBe(label);
-});
-
-it("shows provider/model ids in the footer", () => {
-  const { container } = renderComposer("idle", "Keep this draft", {
-    provider: "openai",
-    model: "gpt-6-astra",
+  expect(container.querySelector(".parakeet-composer-row")?.textContent).toBe(
+    label,
+  );
+  if (label !== "") {
+    const caption = container.querySelector(".composer-attention-label");
+    expect(caption?.textContent).toBe(label);
+    // Actual narrow visibility belongs to the four-width browser contract.
+    expect(caption?.closest(".parakeet-composer-status")).not.toBeNull();
+    expect(
+      caption?.closest(".parakeet-composer-trailing"),
+      "the status dot belongs beside usage and Send, never between keys",
+    ).not.toBeNull();
+  }
+  act(() => {
+    root.render(
+      <ChatComposer
+        queuedRecall={undefined}
+        viewState={viewState}
+        status="sending"
+        draft=""
+        failure={undefined}
+        onAbort={vi.fn()}
+        onChange={vi.fn()}
+        onRetry={vi.fn()}
+        onSend={vi.fn()}
+        showFooter={false}
+        textareaRef={createRef<HTMLTextAreaElement>()}
+      />,
+    );
   });
-  const footer = container.querySelector(".composer-footer");
-  expect(footer?.textContent).toContain("openai/gpt-6-astra");
-  expect(footer?.textContent).not.toContain("@openai");
-});
-
-it("shows context used over the model's window after the model, and the tokens alone when the window is unknown", () => {
-  const model = { provider: "openai", model: "gpt-6-astra" };
-  const known = renderComposer("idle", "", model, undefined, {
-    tokens: 12_345,
-    window: 200_000,
-  });
+  expect(container.querySelector(".parakeet-composer-row")).toBeNull();
+  expect(container.querySelector(".composer-attention-label")).toBeNull();
+  expect(container.querySelectorAll(".caps-send-action")).toHaveLength(1);
   expect(
-    known.container.querySelector(".composer-footer")?.textContent,
-  ).toContain("openai/gpt-6-astraSettings12K/200K");
-  const unknown = renderComposer("idle", "", model, undefined, {
-    tokens: 12_345,
-    window: null,
-  });
-  const footer = unknown.container.querySelector(".composer-footer");
-  expect(footer?.textContent).toMatch(/openai\/gpt-6-astraSettings12K$/u);
+    container.querySelector(".caps-composer-bar > .caps-send-action"),
+  ).not.toBeNull();
 });
+
+it("shows the catalog's friendly model name, never its transport address", () => {
+  const { container } = renderComposer("idle", "Keep this draft", {
+    provider: "cloudflare-workers-ai",
+    model: "@cf/moonshotai/kimi-k2.6",
+  });
+  const key = container.querySelector<HTMLButtonElement>(
+    "button.parakeet-composer-model-key",
+  );
+  expect(key?.textContent).toBe("Kimi K2.6");
+  expect(key?.classList.contains("caps-keycap-button")).toBe(true);
+  expect(key?.querySelector(".lucide-chevron-down")).not.toBeNull();
+  expect(key?.title).toBe("Kimi K2.6 · Settings");
+  expect(key?.disabled).toBe(false);
+  expect(
+    container.querySelector(".parakeet-composer-row")?.textContent,
+  ).not.toContain("@cf/");
+});
+
+it("shows usage once, keeping the context count out of the row readout", () => {
+  const { container } = renderComposer(
+    "idle",
+    "",
+    undefined,
+    { tokens: 686, cost: 0.00018 },
+    { tokens: 686, window: null },
+  );
+  expect(
+    container.querySelector(".parakeet-composer-readout")?.textContent,
+  ).toBe("686 tok · <$0.01");
+});
+
+it.each([
+  { window: 200_000, expected: "12K/200K" },
+  { window: null, expected: "12K" },
+])(
+  "keeps context $expected in Settings, not in the usage readout",
+  ({ window, expected }) => {
+    const { container } = renderComposer("idle", "", undefined, undefined, {
+      tokens: 12_345,
+      window,
+    });
+    expect(container.querySelector(".parakeet-composer-readout")).toBeNull();
+    const settings = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Session settings"]',
+    );
+    expect(settings).not.toBeNull();
+    act(() => settings?.click());
+    expect(
+      container.querySelector('[title="Context used / model context"]')
+        ?.textContent,
+    ).toContain(expected);
+  },
+);
 
 it("keeps one key in the same place as a run starts and ends", () => {
   const container = document.createElement("div");
@@ -422,9 +484,9 @@ it.each([
     tokens,
     cost: 0,
   });
-  expect(container.querySelector(".composer-footer")?.textContent).toContain(
-    expected,
-  );
+  expect(
+    container.querySelector(".parakeet-composer-row")?.textContent,
+  ).toContain(expected);
 });
 
 it("offers Attach only when the host takes images, and removes one in place", () => {
@@ -462,12 +524,14 @@ it("offers Attach only when the host takes images, and removes one in place", ()
   expect(
     container.querySelector<HTMLInputElement>('input[type="file"]')?.accept,
   ).toBe("image/png,image/jpeg,image/gif,image/webp");
+  const remove = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Remove attached image 1"]',
+  );
+  expect(remove?.classList.contains("caps-icon-button")).toBe(true);
+  expect(remove?.classList.contains("btn-outline")).toBe(true);
+  expect(remove?.classList.contains("btn-xs")).toBe(true);
   act(() => {
-    container
-      .querySelector<HTMLButtonElement>(
-        '[aria-label="Remove attached image 1"]',
-      )
-      ?.click();
+    remove?.click();
   });
   expect(onImagesChange).toHaveBeenCalledExactlyOnceWith([images[1]]);
 
@@ -477,7 +541,7 @@ it("offers Attach only when the host takes images, and removes one in place", ()
   ).toBeNull();
 });
 
-it("opens the Session's own /model command from the model key", () => {
+it("opens and closes Settings from the model key when no model command exists", () => {
   const store = createParakeetInteractions();
   const runCommand = vi.fn();
   const slash: SlashCommandController = {
@@ -494,7 +558,7 @@ it("opens the Session's own /model command from the model key", () => {
     dismiss: () => false,
     submit: () => undefined,
     choose: () => undefined,
-    available: (alias) => alias === "model",
+    available: () => false,
     runCommand,
   };
   const container = document.createElement("div");
@@ -519,12 +583,21 @@ it("opens the Session's own /model command from the model key", () => {
     );
   });
   const key = container.querySelector<HTMLButtonElement>(
-    '[aria-label="Model: openai/gpt-6-astra. Change model"]',
+    '[aria-label="Model: GPT-6 Astra. Open settings"]',
   );
   expect(key?.classList.contains("caps-keycap-button")).toBe(true);
   act(() => {
     key?.click();
   });
-  expect(runCommand).toHaveBeenCalledExactlyOnceWith("model");
+  expect(runCommand).not.toHaveBeenCalled();
+  expect(key?.getAttribute("aria-expanded")).toBe("true");
+  expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+    "GPT-6 Astra",
+  );
+  expect(container.querySelector("textarea")?.value).toBe("Keep this draft");
+  act(() => {
+    key?.click();
+  });
+  expect(key?.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("textarea")?.value).toBe("Keep this draft");
 });

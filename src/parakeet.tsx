@@ -42,7 +42,6 @@ import { useClientActions } from "./client-contributions.js";
 import { placeClientTimeline } from "./core/client-timeline.js";
 import type { RowV1 } from "@fungi.computer/gills";
 import { InteractionPanel } from "./components/InteractionPanel.js";
-import { WaitingNotice } from "./components/WaitingNotice.js";
 import {
   useSlashCommands,
   type ParakeetCommandRuntime,
@@ -445,13 +444,14 @@ function ConversationTimeline({
           role="status"
         >
           <span>{sessionStatus.observation.reason}</span>
-          <button
-            className="underline"
+          <Button
+            variant="outline"
+            size="xs"
             onClick={() => void sessionStatus.reconnect()}
             type="button"
           >
             Reconnect
-          </button>
+          </Button>
         </div>
       ) : null}
       <div
@@ -591,7 +591,7 @@ function ConversationTimeline({
   );
 }
 
-/** The owner's queued state and independently contributed waiting controls. */
+/** Independently contributed waiting controls; queued messages stay in the transcript. */
 function ConversationWaiting({
   clientActions,
 }: Readonly<{ clientActions: ReturnType<typeof useClientActions> }>) {
@@ -601,7 +601,6 @@ function ConversationWaiting({
     viewState.kind === "idle"
       ? contributions.find(({ value }) => value.waiting !== null)
       : undefined;
-  const waiting = viewState.kind === "queued" ? viewState : null;
   return (
     <>
       {extensionWaiting?.value.waiting === undefined ||
@@ -629,7 +628,6 @@ function ConversationWaiting({
           </Button>
         </div>
       )}
-      <WaitingNotice waiting={waiting} />
     </>
   );
 }

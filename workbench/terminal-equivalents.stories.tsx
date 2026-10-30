@@ -4,7 +4,6 @@ import {
   ChatComposer,
   type ChatComposerProps,
 } from "../src/components/ChatComposer.js";
-import { WaitingNotice } from "../src/components/WaitingNotice.js";
 import { ClientRows } from "../src/components/ClientRows.js";
 import type { ClientContributionV1 } from "@fungi.computer/shiitake/client-entry";
 import type { FixtureGoal } from "../test/fixtures/session.fixture.js";
@@ -88,17 +87,6 @@ export const QueueFull = composer("thinking", {
   admissionError: "queue_full",
   draft: "Please check the final result at phone width.",
 });
-export const Waiting: Story = () => (
-  <div className="mx-auto max-w-[48rem] p-md">
-    <WaitingNotice
-      waiting={{
-        kind: "queued",
-        queuedCommandId: "garden-follow-up",
-        runningWork: null,
-      }}
-    />
-  </div>
-);
 function goal(initial: FixtureGoal["state"], offline = false): Story {
   return () => {
     const [state, setState] = useState(initial);

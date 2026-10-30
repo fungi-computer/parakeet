@@ -5,7 +5,8 @@
  * same width and inset, flush on its top edge, and the surface's own top
  * border is the one line between them. --parakeet-completion-inset is the
  * distance from the menu's containing block to the surface's outer edge: an
- * anchor's padding (Grove) or minus a positioned card's border (Prints).
+ * anchor's padding or a field's own containing box. ComposerShell supplies
+ * zero inset; there is no Prints-specific negative card-border offset.
  * --parakeet-completion-face and --parakeet-completion-edge carry the
  * surface's own background and border colour, so the two read as one.
  */

@@ -85,9 +85,13 @@ describe("the actual Parakeet visitor conversation", () => {
       expect(host.querySelector('[data-parakeet="standalone"]')).not.toBeNull();
       const textarea = host.querySelector("textarea");
       if (textarea === null) throw new Error("Parakeet composer missing");
-      expect(textarea.className).toContain("resize-none");
+      expect(textarea.closest(".parakeet-composer-shell")).not.toBeNull();
       expect(textarea.placeholder).toBe("Ask Front Desk…");
-      expect(host.querySelector(".composer-footer")).toBeNull();
+      expect(
+        host.querySelector(
+          ".parakeet-composer-model-key, .parakeet-composer-readout, [data-status-tray-chip]",
+        ),
+      ).toBeNull();
       expect(host.querySelector(".parakeet-key-hints")).toBeNull();
       expect(commands.snapshot().slash).toEqual([]);
       const descriptor = Object.getOwnPropertyDescriptor(

@@ -106,6 +106,8 @@ const decision: Json = {
   },
 };
 
+let sessionNumber = 0;
+
 async function mount(asking: boolean) {
   const pending: SessionFrame[] = [];
   let deliver: ((value: IteratorResult<SessionFrame>) => void) | undefined;
@@ -154,7 +156,7 @@ async function mount(asking: boolean) {
   const session: ParakeetSession = {
     latestPending: () => Promise.resolve(null),
     withdraw: () => Promise.resolve({ status: "unknown" }),
-    address: "test://composer-question",
+    address: `test://composer-question/${String(sessionNumber++)}`,
     command: commandHandler(commandResult),
     extension: () => ({ call }),
     read: () => Promise.resolve(snapshot),
@@ -296,6 +298,29 @@ it("a question does not take over a non-empty draft", async () => {
       expect(page.group()).not.toBeNull();
     });
     expect(page.textarea().value).toBe("half a thought");
+  } finally {
+    await page.close();
+  }
+});
+
+it("Later is a neutral key that postpones without answering", async () => {
+  const page = await mount(true);
+  try {
+    await vi.waitFor(async () => {
+      await page.settle();
+      expect(page.group()).not.toBeNull();
+    });
+    const later = page.button("Later");
+    expect(later.tagName).toBe("BUTTON");
+    expect(later.type).toBe("button");
+    expect(later.getAttribute("data-tone")).toBe("neutral");
+    await page.settle(() => {
+      later.click();
+    });
+    expect(page.group()).toBeNull();
+    expect(page.textarea().closest("[hidden]")).toBeNull();
+    expect(page.call.mock.calls.some(([, args]) => answers(args))).toBe(false);
+    expect(page.container.textContent).toContain("Which color should we use?");
   } finally {
     await page.close();
   }

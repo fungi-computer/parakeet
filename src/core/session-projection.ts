@@ -9,6 +9,7 @@ import type {
   SessionSnapshot,
   SessionTerminal,
 } from "@fungi.computer/shiitake/client";
+import { appendSessionProgress } from "@fungi.computer/shiitake/client";
 
 import { sameRunningWork } from "./session-view-state.js";
 
@@ -172,7 +173,6 @@ function sameActivity(
   );
 }
 
-/** Apply one already-decoded Shiitake frame to its authoritative projection. */
 /** Extension slots are small JSON values; compare them by content. */
 function sameExtensionSlots(
   next: SessionSnapshot["extensions"],
@@ -181,6 +181,7 @@ function sameExtensionSlots(
   return next === current || JSON.stringify(next) === JSON.stringify(current);
 }
 
+/** Apply one already-decoded Shiitake frame to its authoritative projection. */
 export function applySessionFrame(
   current: SessionSnapshot,
   frame: SessionFrame,
@@ -241,7 +242,7 @@ export function applySessionFrame(
 
     return {
       ...current,
-      progress: frame.progress,
+      progress: appendSessionProgress(current.progress, frame.progress),
       activity,
     };
   }

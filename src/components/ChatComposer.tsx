@@ -1,27 +1,21 @@
 import { formatTokens } from "../core/format-tokens.js";
-import { formatModelIdentity } from "../core/model-identity.js";
+import { composerModelName } from "../core/composer-model-name.js";
 import { formatContextUsage } from "../core/format-context.js";
-import { Composer } from "@fungi.computer/caps/blocks/composer";
 import { isImeComposing } from "@fungi.computer/caps/lib/ime";
 import { RunFailureNotice } from "./RunFailureNotice.js";
-import {
-  SendAction,
-  type SendActionState,
-} from "@fungi.computer/caps/components/send-action";
+import { SendAction } from "@fungi.computer/caps/components/send-action";
 import { formatMoney } from "@fungi.computer/caps/lib/format-money";
-import { PopoverAnchor } from "@fungi.computer/caps/components/popover";
 import { Status } from "@fungi.computer/caps/components/status";
 import { Button } from "@fungi.computer/caps/components/button";
-import { Card } from "@fungi.computer/caps/components/card";
 import { IconButton } from "@fungi.computer/caps/components/icon-button";
 import { KeycapButton } from "@fungi.computer/caps/components/keycap";
+import { ComposerModelKey } from "./ComposerModelKey.js";
 import {
-  StatusTray,
   StatusTrayList,
   StatusTrayRow,
   type StatusTrayItem,
 } from "@fungi.computer/caps/blocks/status-tray";
-import { ChevronDown, Plus, SlidersHorizontal, X } from "lucide-react";
+import { Plus, SlidersHorizontal, X } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -51,6 +45,12 @@ import { awaitingTakeover } from "../core/awaiting-answer.js";
 import { completionFieldProps, completionKeyAction } from "./CompletionMenu.js";
 import { DecisionComposer } from "./DecisionComposer.js";
 import { SlashMenu } from "./SlashMenu.js";
+import {
+  ComposerShell,
+  composerSendState,
+  useComposerTextareaSize,
+  type ComposerShellRow,
+} from "./ComposerShell.js";
 
 type StatusPresentation = Readonly<{
   /** Whether work is active, so the send key offers Stop, or Queue over a draft. */
@@ -184,12 +184,7 @@ function HostComposerTextarea({
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }, [recallState, textareaRef]);
 
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${String(Math.min(textarea.scrollHeight, 320))}px`;
-  }, [textareaRef, value]);
+  useComposerTextareaSize(textareaRef, value);
 
   const saveAndSend = useCallback(() => {
     const draft = latestValue.current.trim();
@@ -340,7 +335,7 @@ function HostComposerTextarea({
               listId: slashListId,
               selected: slash.selected,
             }))}
-        className="min-h-12 max-h-[320px] resize-none overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words py-xs font-sans text-base leading-relaxed text-base-content"
+        className="font-sans text-base-content"
         id={textareaId}
         onChange={(event) => {
           onChange(event.target.value);
@@ -420,11 +415,10 @@ const settingsCommands = [
 ] as const;
 
 /**
- * The composer's bottom row: attach, the model key, attention, the Settings
- * chip that sums up the Session's readouts, and the one send key at the end.
- * Built from the same Caps StatusTray row Prints seats its controls in.
+ * Session controls and Settings content; ComposerShell owns their row.
  */
-function ComposerToolbar({
+function useComposerRow({
+  showFooter,
   statusChips,
   model,
   status,
@@ -436,32 +430,35 @@ function ComposerToolbar({
   send,
 }: ComposerFooterProps &
   Readonly<{
+    showFooter: boolean;
     slash: SlashCommandController | undefined;
     attach: ReactNode;
     send: ReactNode;
-  }>) {
+  }>): ComposerShellRow | undefined {
   const [openId, setOpenId] = useState<string | null>(null);
+  // Footer visibility belongs here, before deriving any internal readouts.
+  if (!showFooter) return undefined;
   const tone =
     viewState.kind === "error" ? "error" : presentations[status].tone;
   // Admission must not replace an outstanding owner attention readout.
   const label = sessionReadout("idle", viewState);
   const needsAttention =
     viewState.kind === "waiting_for_you" || viewState.kind === "error";
-  const modelName =
-    model === undefined ? undefined : formatModelIdentity(model);
-  const canPickModel = slash?.available("model") === true;
+  const modelName = model === undefined ? undefined : composerModelName(model);
   const contextText =
     context === undefined ? undefined : formatContextUsage(context);
-  const summary = [
-    contextText,
-    usage === undefined ? undefined : formatTokens(usage.tokens),
-    usage === undefined ? undefined : formatMoney(usage.cost),
-  ].filter((part) => part !== undefined);
+  const usageText =
+    usage === undefined
+      ? undefined
+      : `${formatTokens(usage.tokens)} · ${formatMoney(usage.cost)}`;
   const commands = settingsCommands.filter(
     ({ alias }) => slash?.available(alias) === true,
   );
   const items: StatusTrayItem[] =
-    summary.length === 0 && commands.length === 0 && modelName === undefined
+    usageText === undefined &&
+    contextText === undefined &&
+    commands.length === 0 &&
+    modelName === undefined
       ? []
       : [
           {
@@ -486,11 +483,8 @@ function ComposerToolbar({
                     title="Context used / model context"
                   />
                 )}
-                {usage === undefined ? null : (
-                  <StatusTrayRow
-                    primary="Usage"
-                    secondary={`${formatTokens(usage.tokens)} · ${formatMoney(usage.cost)}`}
-                  />
+                {usageText === undefined ? null : (
+                  <StatusTrayRow primary="Usage" secondary={usageText} />
                 )}
                 {commands.map(({ alias, label: commandLabel }) => (
                   <StatusTrayRow
@@ -514,64 +508,50 @@ function ComposerToolbar({
             ),
           },
         ];
-  return (
-    <StatusTray
-      className="composer-footer"
-      items={items}
-      align="start"
-      openId={openId}
-      onOpenChange={setOpenId}
-      leading={
-        <>
-          {attach}
-          {modelName === undefined ? null : canPickModel ? (
-            <KeycapButton
-              aria-label={`Model: ${modelName}. Change model`}
-              className="composer-model-key"
-              label={modelName}
-              readout={
-                <ChevronDown
-                  aria-hidden="true"
-                  className="size-[var(--stipe-icon-size-sm)] shrink-0"
-                />
-              }
-              onClick={() => {
-                slash.runCommand("model");
-              }}
-              title="Change model"
-            />
-          ) : (
-            <span className="composer-model-readout">{modelName}</span>
-          )}
-          {needsAttention ? (
-            <Status label={label} title={label} tone={tone} />
-          ) : null}
-          {statusChips?.map((chip, index) => (
-            <span
-              key={index}
-              className="composer-status-chip min-w-0 truncate"
-              title={chip}
-            >
-              {chip}
-            </span>
-          ))}
-        </>
-      }
-      trailing={
-        <>
-          {summary.length === 0 ? null : (
-            <span
-              className="composer-readout"
-              title="Context used / model context · tokens · cost"
-            >
-              {summary.join(" · ")}
-            </span>
-          )}
-          {send}
-        </>
-      }
-    />
-  );
+  return {
+    items,
+    openId,
+    onOpenChange: setOpenId,
+    action: send,
+    controls: (
+      <>
+        {attach}
+        {modelName === undefined ? null : (
+          <ComposerModelKey
+            aria-label={`Model: ${modelName}. Open settings`}
+            aria-haspopup="dialog"
+            expanded={openId === "settings"}
+            label={modelName}
+            onClick={() => {
+              setOpenId((id) => (id === "settings" ? null : "settings"));
+            }}
+            title={`${modelName} · Settings`}
+          />
+        )}
+        {statusChips?.map((chip, index) => (
+          <span
+            key={index}
+            className="composer-status-chip min-w-0 truncate"
+            title={chip}
+          >
+            {chip}
+          </span>
+        ))}
+      </>
+    ),
+    status: needsAttention ? (
+      <Status
+        className="parakeet-composer-status"
+        label={<span className="composer-attention-label">{label}</span>}
+        title={label}
+        tone={tone}
+      />
+    ) : null,
+    readout:
+      usageText === undefined ? undefined : (
+        <span title="Tokens · cost">{usageText}</span>
+      ),
+  };
 }
 
 /** Images riding with the draft, drawn as small tiles above the text. */
@@ -599,6 +579,8 @@ function ComposerAttachments({
               onClick={() => {
                 onRemove(index);
               }}
+              size="xs"
+              variant="outline"
             />
           )}
         </li>
@@ -652,17 +634,17 @@ export const ChatComposer = memo(function ChatComposer({
   }, [takeoverKey, restoreFocus, textareaRef]);
   const images = queuedRecall?.images ?? [];
   const recallBusy = queuedRecall?.recallState.kind === "recalling";
-  const cannotSend =
-    recallBusy || (draft.trim().length === 0 && images.length === 0);
   // One key in one place: Send when idle, Stop while the Agent works.
   // Enter still queues a typed follow-up during a run.
   // One key says what Enter does: Send when idle; while the Agent works,
   // Stop over an empty draft and Queue once there is a draft to queue.
-  const sendState: SendActionState = cannotSend
-    ? busy
-      ? "busy"
-      : "empty"
-    : "ready";
+  const sendState = composerSendState({
+    draft,
+    hasAttachments: images.length > 0,
+    busy,
+    queueWhileBusy: true,
+    blocked: recallBusy,
+  });
   const sendLabel = busy ? "Queue follow-up" : "Send message";
   const sendAction = (
     <SendAction
@@ -716,12 +698,17 @@ export const ChatComposer = memo(function ChatComposer({
     );
   // Visitors see only the field and the send key, never internal readouts.
   const footerProps: ComposerFooterProps = { status, viewState };
-  if (showFooter) {
-    footerProps.statusChips = statusChips;
-    if (model) footerProps.model = model;
-    if (usage) footerProps.usage = usage;
-    if (context) footerProps.context = context;
-  }
+  footerProps.statusChips = statusChips;
+  if (model) footerProps.model = model;
+  if (usage) footerProps.usage = usage;
+  if (context) footerProps.context = context;
+  const row = useComposerRow({
+    ...footerProps,
+    showFooter,
+    slash,
+    attach,
+    send: sendAction,
+  });
 
   return (
     <div className="chat-composer not-prose flex-shrink-0">
@@ -753,79 +740,70 @@ export const ChatComposer = memo(function ChatComposer({
           ? ""
           : `Agent ${takeover.kind} ${String(slash.awaiting.position)} of ${String(slash.awaiting.total)} needs your answer`}
       </div>
-      <PopoverAnchor className="composer-body">
-        {slash === undefined ? null : (
-          <SlashMenu slash={slash} listId={slashListId} />
-        )}
-        <Card aria-label="Message composer" className="composer-card">
-          <Composer
-            attachments={
-              takeover === undefined && images.length > 0 ? (
-                <ComposerAttachments
-                  images={images}
-                  onRemove={
-                    onImagesChange === undefined
-                      ? undefined
-                      : (index) => {
-                          onImagesChange(
-                            images.filter((_image, at) => at !== index),
-                          );
-                        }
-                  }
-                />
-              ) : undefined
-            }
-            input={
-              <>
-                {takeover === undefined || slash === undefined ? null : (
-                  <DecisionComposer
-                    item={takeover}
-                    key={takeover.key}
-                    position={slash.awaiting.position}
-                    total={slash.awaiting.total}
-                    onLater={() => {
-                      slash.store.awaiting.later(takeover.key);
-                    }}
-                    takeFocus={hadFocus.current}
-                  />
-                )}
-                {/* The draft stays mounted, so it and its history return untouched. */}
-                <div hidden={takeover !== undefined}>
-                  <HostComposerTextarea
-                    queuedRecall={queuedRecall}
-                    placeholder={placeholder}
-                    onChange={onChange}
-                    onAbort={onAbort}
-                    onSend={() => {
-                      onSend(busy ? "followUp" : "steer");
-                    }}
-                    slash={slash}
-                    slashListId={slashListId}
-                    textareaId={textareaId}
-                    textareaRef={textareaRef}
-                    value={draft}
-                  />
-                </div>
-              </>
-            }
-            action={
-              // Visitors get the field and the send key, no toolbar.
-              takeover === undefined && !showFooter ? sendAction : undefined
-            }
-            toolbar={
-              // A decision brings its own Later and Send row to the bottom edge.
-              takeover !== undefined || !showFooter ? undefined : (
-                <ComposerToolbar
-                  {...footerProps}
-                  slash={slash}
-                  attach={attach}
-                  send={sendAction}
-                />
-              )
-            }
-          />
-        </Card>
-      </PopoverAnchor>
+      <ComposerShell
+        aria-label="Message composer"
+        action={
+          takeover === undefined && row === undefined ? sendAction : undefined
+        }
+        menu={
+          slash === undefined ? undefined : (
+            <SlashMenu slash={slash} listId={slashListId} />
+          )
+        }
+        attachments={
+          takeover === undefined && images.length > 0 ? (
+            <ComposerAttachments
+              images={images}
+              onRemove={
+                onImagesChange === undefined
+                  ? undefined
+                  : (index) => {
+                      onImagesChange(
+                        images.filter((_image, at) => at !== index),
+                      );
+                    }
+              }
+            />
+          ) : undefined
+        }
+        input={
+          <>
+            {takeover === undefined || slash === undefined ? null : (
+              <DecisionComposer
+                item={takeover}
+                key={takeover.key}
+                position={slash.awaiting.position}
+                total={slash.awaiting.total}
+                onLater={() => {
+                  slash.store.awaiting.later(takeover.key);
+                }}
+                takeFocus={hadFocus.current}
+              />
+            )}
+            {/* The draft stays mounted, so it and its history return untouched. */}
+            <div hidden={takeover !== undefined}>
+              <HostComposerTextarea
+                queuedRecall={queuedRecall}
+                placeholder={placeholder}
+                onChange={onChange}
+                onAbort={onAbort}
+                onSend={() => {
+                  onSend(busy ? "followUp" : "steer");
+                }}
+                slash={slash}
+                slashListId={slashListId}
+                textareaId={textareaId}
+                textareaRef={textareaRef}
+                value={draft}
+              />
+            </div>
+          </>
+        }
+        row={
+          // A decision brings its own Later and Send row to the bottom edge.
+          takeover !== undefined ? undefined : row
+        }
+      />
       {slash === undefined ? null : (
         <p className="sr-only" id={`${textareaId}-guidance`}>
           {formatHints(slash.hints)}

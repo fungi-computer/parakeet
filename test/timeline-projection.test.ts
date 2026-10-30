@@ -276,10 +276,8 @@ it("keeps progress replaceable and exact messages structurally stable", () => {
     progress: {
       messageId: "assistant-1",
       revision: 1,
-      text: "I found",
-      thinking: "Checking",
-      textTruncated: false,
-      thinkingTruncated: false,
+      text: { offset: 0, append: "I found" },
+      thinking: { offset: 0, append: "Checking" },
     },
   });
   expect(withProgress.messages).toBe(baseline.messages);
@@ -302,10 +300,8 @@ it("keeps progress replaceable and exact messages structurally stable", () => {
         progress: {
           messageId: "assistant-1",
           revision: 2,
-          text: "I found more",
-          thinking: "Checking",
-          textTruncated: false,
-          thinkingTruncated: false,
+          text: { offset: 0, append: "I found more" },
+          thinking: { offset: 0, append: "Checking" },
         },
       }),
     ),
@@ -453,6 +449,8 @@ it("clears retrying when a progress observation keeps the same text revision", (
     thinking: "",
     textTruncated: false,
     thinkingTruncated: false,
+    textOffset: 0,
+    thinkingOffset: 0,
   };
   const retrying = sessionSnapshot({
     progress,
@@ -470,7 +468,12 @@ it("clears retrying when a progress observation keeps the same text revision", (
 
   const resumed = applySessionFrame(retrying, {
     kind: "progress",
-    progress,
+    progress: {
+      messageId: progress.messageId,
+      revision: progress.revision,
+      text: { offset: 7, append: "" },
+      thinking: { offset: 0, append: "" },
+    },
     activity: runningFacts(),
   });
   expect(resumed.progress).toBe(retrying.progress);
@@ -478,7 +481,12 @@ it("clears retrying when a progress observation keeps the same text revision", (
   expect(
     applySessionFrame(resumed, {
       kind: "progress",
-      progress: { ...progress, revision: 0 },
+      progress: {
+        messageId: progress.messageId,
+        revision: 0,
+        text: { offset: 0, append: "" },
+        thinking: { offset: 0, append: "" },
+      },
       activity: retrying.activity,
     }),
   ).toBe(resumed);
@@ -591,6 +599,8 @@ it("replaces same-cursor admission views and renders waiting prompts after live 
     thinking: "",
     textTruncated: false,
     thinkingTruncated: false,
+    textOffset: 0,
+    thinkingOffset: 0,
   };
   const items = buildTimeline(
     buildDurableTimeline([]),
@@ -1148,6 +1158,7 @@ it("updates a queued blocker even when the command and cursor stay unchanged", (
           kind: "session",
           sessionId: "running-session",
           commandId: "running-command",
+          title: "Blocking conversation",
         },
       },
     },

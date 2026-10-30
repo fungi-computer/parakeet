@@ -18,6 +18,17 @@ export {
   visibleToolCalls,
 } from "./headless.js";
 export { Parakeet, ParakeetView } from "./parakeet.js";
+export {
+  ComposerModelKey,
+  type ComposerModelKeyProps,
+} from "./components/ComposerModelKey.js";
+export { composerSendState } from "./components/ComposerShell.js";
+export {
+  ComposerShell,
+  useComposerTextareaSize,
+  type ComposerShellProps,
+  type ComposerShellRow,
+} from "./components/ComposerShell.js";
 export type { ParakeetVisitor } from "./parakeet.js";
 export {
   InteractionPanel,

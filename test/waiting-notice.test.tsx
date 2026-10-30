@@ -106,12 +106,67 @@ const waitingCopy = "Queued for host";
 const cancelWaiting = (container: HTMLElement) =>
   container.querySelector<HTMLButtonElement>("[data-parakeet-waiting] button");
 
-it("shows waiting work without offering to cancel its queue", async () => {
+it.each([
+  {
+    name: "known title",
+    work: {
+      kind: "session",
+      sessionId: "session_raw-blocker",
+      commandId: "running-1",
+      title: "Lanes tick",
+    },
+  },
+  {
+    name: "unknown title",
+    work: {
+      kind: "session",
+      sessionId: "session_raw-blocker",
+      commandId: "running-1",
+      title: "",
+    },
+  },
+  {
+    name: "host work",
+    work: {
+      kind: "host",
+      lane: "lane_private",
+      jobId: "job_private",
+    },
+  },
+] as const)(
+  "never renders a queued-behind notice ($name)",
+  async ({ work }) => {
+    const snapshot = sessionSnapshot({
+      activity: {
+        ...queuedFacts("queued-1"),
+        queue: {
+          state: "queued",
+          commandId: "queued-1",
+          runningWork: work,
+        },
+      },
+    });
+    const container = render(snapshot, []);
+    await vi.waitFor(async () => {
+      await settle();
+      const notice = container.querySelector("[data-parakeet-waiting]");
+      expect(notice).toBeNull();
+      expect(container.textContent).not.toContain("Queued behind");
+      expect(container.textContent).not.toContain("Lanes tick");
+      expect(container.textContent).not.toContain("session_raw-blocker");
+      expect(container.textContent).not.toContain("lane_private");
+      expect(container.textContent).not.toContain("job_private");
+    });
+  },
+);
+
+it("leaves queued messages in the transcript without a separate waiting notice", async () => {
   const commands: SessionCommand[] = [];
   const container = render(waitingSnapshot(), commands);
   await vi.waitFor(async () => {
     await settle();
-    expect(container.textContent).toContain(waitingCopy);
+    expect(container.querySelector("textarea")).not.toBeNull();
+    expect(container.textContent).not.toContain(waitingCopy);
   });
 
   expect(cancelWaiting(container)).toBeNull();
@@ -123,7 +178,8 @@ it("leaves queued work alone when the composer receives Esc", async () => {
   const container = render(waitingSnapshot(), commands);
   await vi.waitFor(async () => {
     await settle();
-    expect(container.textContent).toContain(waitingCopy);
+    expect(container.querySelector("textarea")).not.toBeNull();
+    expect(container.textContent).not.toContain(waitingCopy);
   });
 
   await settle(() =>

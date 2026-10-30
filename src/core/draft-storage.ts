@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reportFailure } from "../lib/failure.js";
 
 const images = z
   .array(
@@ -31,6 +32,8 @@ export type ParakeetDraftStorage = Readonly<{
   getItem: (key: string) => string | null;
   /** Atomically replace the journal; throw if it cannot be committed. */
   setItem: (key: string, value: string) => void;
+  /** Remove a journal, doing nothing when the key is absent. */
+  removeItem: (key: string) => void;
 }>;
 
 const pendingDraft = z.object({
@@ -57,16 +60,27 @@ export function draftJournal(
   storage: ParakeetDraftStorage | undefined,
 ) {
   const key = `fungi.parakeet.drafts.v2:${scope}`;
+  let discardObsolete = true;
   return {
     read(): DraftJournal {
       if (storage === undefined) return { draft: "", pending: [] };
+      if (discardObsolete) {
+        discardObsolete = false;
+        try {
+          // Delete preview data without interpreting its superseded grammar.
+          storage.removeItem(`fungi.parakeet.drafts.v1:${scope}`);
+        } catch (cause) {
+          reportFailure("discard obsolete draft journal", cause);
+        }
+      }
       try {
         const saved = storage.getItem(key);
         return saved === null
           ? { draft: "", pending: [] }
           : journal.parse(JSON.parse(saved));
-      } catch {
+      } catch (cause) {
         // Preview journals are disposable; a broken load must not break chat.
+        reportFailure("read saved draft", cause);
         return { draft: "", pending: [] };
       }
     },

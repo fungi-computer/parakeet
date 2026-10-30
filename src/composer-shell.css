@@ -1,0 +1,125 @@
+/* Chat and generation share one surface, field inset and control-row grid.
+   Apps supply controls and content, never a second composer layout. */
+.parakeet-composer-anchor {
+  --parakeet-completion-inset: 0px;
+  --parakeet-completion-face: var(--color-base-200);
+  --parakeet-completion-edge: var(--stipe-hairline);
+  display: block;
+  min-width: 0;
+}
+
+.parakeet-composer-anchor:has([data-parakeet-slash])
+  > .parakeet-composer-shell {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+
+.parakeet-composer-shell {
+  padding: var(--spacing-sm);
+  container-type: inline-size;
+}
+
+.parakeet-composer-shell .caps-composer-input {
+  padding: var(--spacing-xs) var(--spacing-sm) 0;
+}
+
+.parakeet-composer-shell .caps-composer-input textarea {
+  min-height: 3rem;
+  max-height: 160px;
+  padding: var(--spacing-xs) 0;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.6;
+}
+
+.parakeet-composer-shell .parakeet-composer-row {
+  --caps-status-tray-row-wrap: nowrap;
+  padding: var(--spacing-xs);
+}
+
+.parakeet-composer-row .caps-status-tray-row {
+  white-space: nowrap;
+}
+
+/* A menu trigger can carry Button's touch minimum as well as its Keycap face.
+   The shared row, not either App or the generic Button, owns key geometry. */
+.parakeet-composer-row .caps-keycap-button {
+  height: var(--caps-status-tray-key-height);
+  min-height: var(--caps-status-tray-key-height);
+}
+
+/* Composer keys already disclose through their face and chevron. Keep native
+   expanded/pressed semantics without redundant decorative corner lamps. */
+.parakeet-composer-row .caps-keycap-led {
+  display: none;
+}
+
+.parakeet-composer-row [data-status-tray-chip] {
+  min-width: 0;
+}
+
+.parakeet-composer-row .caps-status-tray-label,
+.parakeet-composer-row .caps-keycap-button-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parakeet-composer-row .parakeet-composer-model-key {
+  --caps-keycap-justify: space-between;
+  flex: 0 1 auto;
+  min-width: 4.5rem;
+  max-width: 220px;
+  font-size: var(--text-xs);
+}
+
+.parakeet-composer-trailing {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--spacing-xs);
+  margin-inline-start: auto;
+}
+
+.parakeet-composer-action {
+  display: flex;
+  flex: none;
+}
+
+.parakeet-composer-readout {
+  color: var(--stipe-fg-muted);
+  font-size: var(--text-xs);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.parakeet-composer-row .composer-attention-label {
+  @apply sr-only;
+}
+
+.parakeet-composer-row .parakeet-composer-status {
+  gap: 0;
+}
+
+/* The status dot stays beside Send when usage yields to Settings; the model
+   label then yields to ellipsis.
+   Edge keys never shrink or change rows. The budget is the shell's width:
+   Grove's split pane can be narrower at 900px than at 640px. */
+@container (max-width: 34rem) {
+  .parakeet-composer-readout {
+    display: none;
+  }
+}
+
+@container (max-width: 26rem) {
+  .parakeet-composer-row .parakeet-composer-model-key {
+    max-width: 7rem;
+  }
+}

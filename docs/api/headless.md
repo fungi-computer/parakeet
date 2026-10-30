@@ -2064,6 +2064,27 @@ Fixed positions and command anchors follow loaded history, never event time.
 
 ---
 
+### sanitizeDisplayText()
+
+```ts
+function sanitizeDisplayText(value): string;
+```
+
+Display text keeps shaping characters, never terminal programs or bidi
+overrides.
+
+#### Parameters
+
+| Parameter | Type     |
+| --------- | -------- |
+| `value`   | `string` |
+
+#### Returns
+
+`string`
+
+---
+
 ### formatWhen()
 
 ```ts
@@ -2139,11 +2160,32 @@ readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"failed"` \|
 
 ---
 
+### applySessionFrame()
+
+```ts
+function applySessionFrame(current, frame): SessionSnapshot;
+```
+
+Apply one already-decoded Shiitake frame to its authoritative projection.
+
+#### Parameters
+
+| Parameter | Type              |
+| --------- | ----------------- |
+| `current` | `SessionSnapshot` |
+| `frame`   | `SessionFrame`    |
+
+#### Returns
+
+`SessionSnapshot`
+
+---
+
 ### sessionQueryOptions()
 
 ```ts
 function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
-  observation: "connecting" | "live";
+  observation: "live" | "connecting";
   snapshot:   | Readonly<{
      sessionId: string;
      cursor: string | null;
@@ -2176,6 +2218,8 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
         revision: ...;
         text: ...;
         thinking: ...;
+        textOffset: ...;
+        thinkingOffset: ...;
         textTruncated: ...;
         thinkingTruncated: ...;
       }>
@@ -2203,7 +2247,7 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
    }>
      | undefined;
 }>, Error, Readonly<{
-  observation: "connecting" | "live";
+  observation: "live" | "connecting";
   snapshot:   | Readonly<{
      sessionId: string;
      cursor: string | null;
@@ -2236,6 +2280,8 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
         revision: ...;
         text: ...;
         thinking: ...;
+        textOffset: ...;
+        thinkingOffset: ...;
         textTruncated: ...;
         thinkingTruncated: ...;
       }>
@@ -2263,7 +2309,7 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
    }>
      | undefined;
 }>, readonly ["shiitake-session", string]>, "queryFn"> & object & QueryKeyWithDataTag<readonly ["shiitake-session", string], Readonly<{
-  observation: "connecting" | "live";
+  observation: "live" | "connecting";
   snapshot:   | Readonly<{
      sessionId: string;
      cursor: string | null;
@@ -2310,6 +2356,8 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
         revision: number;
         text: string;
         thinking: string;
+        textOffset: number;
+        thinkingOffset: number;
         textTruncated: boolean;
         thinkingTruncated: boolean;
       }>
@@ -2349,8 +2397,8 @@ One shared TanStack observation keyed by Shiitake's logical Session address.
 
 #### Returns
 
-`OmitKeyof`\<`UseQueryOptions`\<`Readonly`\<\{ `observation`: `"connecting"` \|
-`"live"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
+`OmitKeyof`\<`UseQueryOptions`\<`Readonly`\<\{ `observation`: `"live"` \|
+`"connecting"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
 `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`;
 `messages`: readonly `Readonly`\<\{ `requestId?`: ...; `meta?`: ...; `data?`:
 ...; `origin?`: ...; `id`: ...; `sequence`: ...; `commandId`: ...; `value`: ...;
@@ -2360,35 +2408,36 @@ readonly `Readonly`\<...\>[]; `compactionNotices?`: readonly
 `Readonly`\<...\>[]; `sandboxFailures?`: readonly `object`[]; `pending`:
 `SessionPendingPrompts`; `activity`: `SessionActivity`; `progress`: \|
 `Readonly`\<\{ `messageId`: ...; `revision`: ...; `text`: ...; `thinking`: ...;
-`textTruncated`: ...; `thinkingTruncated`: ...; \}\> \| `null`; `toolOutput`:
-readonly `Readonly`\<\{ `toolCallId`: ...; `revision`: ...; `tail`: ...;
-`droppedBytes`: ...; `totalBytes`: ...; \}\>[]; `extensions`:
-`SessionExtensionSlots`; `attention`: readonly `object`[]; `context?`:
-`Readonly`\<\{ `tokens`: ...; `window`: ...; \}\>; \}\> \| `undefined`;
-`lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \| `Readonly`\<\{
-`commandId`: `string`; `text`: `string`; `images`: readonly `object`[] \|
-`undefined`; \}\> \| `undefined`; \}\>, `Error`, `Readonly`\<\{ `observation`:
-`"connecting"` \| `"live"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`;
-`cursor`: `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \|
-`null`; `messages`: readonly `Readonly`\<\{ `requestId?`: ...; `meta?`: ...;
-`data?`: ...; `origin?`: ...; `id`: ...; `sequence`: ...; `commandId`: ...;
-`value`: ...; \}\>[]; `terminals`: readonly `Readonly`\<\{ `commandId`: ...;
-`outcome`: ...; `sequence`: ...; `diagnostic`: ...; `meta?`: ...; \}\>[];
-`compactions?`: readonly `Readonly`\<...\>[]; `compactionNotices?`: readonly
-`Readonly`\<...\>[]; `sandboxFailures?`: readonly `object`[]; `pending`:
-`SessionPendingPrompts`; `activity`: `SessionActivity`; `progress`: \|
-`Readonly`\<\{ `messageId`: ...; `revision`: ...; `text`: ...; `thinking`: ...;
-`textTruncated`: ...; `thinkingTruncated`: ...; \}\> \| `null`; `toolOutput`:
-readonly `Readonly`\<\{ `toolCallId`: ...; `revision`: ...; `tail`: ...;
-`droppedBytes`: ...; `totalBytes`: ...; \}\>[]; `extensions`:
+`textOffset`: ...; `thinkingOffset`: ...; `textTruncated`: ...;
+`thinkingTruncated`: ...; \}\> \| `null`; `toolOutput`: readonly `Readonly`\<\{
+`toolCallId`: ...; `revision`: ...; `tail`: ...; `droppedBytes`: ...;
+`totalBytes`: ...; \}\>[]; `extensions`: `SessionExtensionSlots`; `attention`:
+readonly `object`[]; `context?`: `Readonly`\<\{ `tokens`: ...; `window`: ...;
+\}\>; \}\> \| `undefined`; `lastReplyAt`: `number` \| `undefined`;
+`latestPrompt`: \| `Readonly`\<\{ `commandId`: `string`; `text`: `string`;
+`images`: readonly `object`[] \| `undefined`; \}\> \| `undefined`; \}\>,
+`Error`, `Readonly`\<\{ `observation`: `"live"` \| `"connecting"`; `snapshot`:
+\| `Readonly`\<\{ `sessionId`: `string`; `cursor`: `string` \| `null`;
+`hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`; `messages`: readonly
+`Readonly`\<\{ `requestId?`: ...; `meta?`: ...; `data?`: ...; `origin?`: ...;
+`id`: ...; `sequence`: ...; `commandId`: ...; `value`: ...; \}\>[]; `terminals`:
+readonly `Readonly`\<\{ `commandId`: ...; `outcome`: ...; `sequence`: ...;
+`diagnostic`: ...; `meta?`: ...; \}\>[]; `compactions?`: readonly
+`Readonly`\<...\>[]; `compactionNotices?`: readonly `Readonly`\<...\>[];
+`sandboxFailures?`: readonly `object`[]; `pending`: `SessionPendingPrompts`;
+`activity`: `SessionActivity`; `progress`: \| `Readonly`\<\{ `messageId`: ...;
+`revision`: ...; `text`: ...; `thinking`: ...; `textOffset`: ...;
+`thinkingOffset`: ...; `textTruncated`: ...; `thinkingTruncated`: ...; \}\> \|
+`null`; `toolOutput`: readonly `Readonly`\<\{ `toolCallId`: ...; `revision`:
+...; `tail`: ...; `droppedBytes`: ...; `totalBytes`: ...; \}\>[]; `extensions`:
 `SessionExtensionSlots`; `attention`: readonly `object`[]; `context?`:
 `Readonly`\<\{ `tokens`: ...; `window`: ...; \}\>; \}\> \| `undefined`;
 `lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \| `Readonly`\<\{
 `commandId`: `string`; `text`: `string`; `images`: readonly `object`[] \|
 `undefined`; \}\> \| `undefined`; \}\>, readonly \[`"shiitake-session"`,
 `string`\]\>, `"queryFn"`\> & `object` & `QueryKeyWithDataTag`\<readonly
-\[`"shiitake-session"`, `string`\], `Readonly`\<\{ `observation`: `"connecting"`
-\| `"live"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
+\[`"shiitake-session"`, `string`\], `Readonly`\<\{ `observation`: `"live"` \|
+`"connecting"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
 `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`;
 `messages`: readonly `Readonly`\<\{ `requestId?`: ... \| ...; `meta?`: ... \|
 ...; `data?`: ... \| ...; `origin?`: ... \| ...; `id`: `string`; `sequence`:
@@ -2402,12 +2451,13 @@ readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: ... \| ... \| ... \|
 `sandboxFailures?`: readonly `object`[]; `pending`: `SessionPendingPrompts`;
 `activity`: `SessionActivity`; `progress`: \| `Readonly`\<\{ `messageId`:
 `string`; `revision`: `number`; `text`: `string`; `thinking`: `string`;
-`textTruncated`: `boolean`; `thinkingTruncated`: `boolean`; \}\> \| `null`;
-`toolOutput`: readonly `Readonly`\<\{ `toolCallId`: `string`; `revision`:
-`number`; `tail`: `string`; `droppedBytes`: `number`; `totalBytes`: `number`;
-\}\>[]; `extensions`: `SessionExtensionSlots`; `attention`: readonly `object`[];
-`context?`: `Readonly`\<\{ `tokens`: `number`; `window`: ... \| ...; \}\>; \}\>
-\| `undefined`; `lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \|
+`textOffset`: `number`; `thinkingOffset`: `number`; `textTruncated`: `boolean`;
+`thinkingTruncated`: `boolean`; \}\> \| `null`; `toolOutput`: readonly
+`Readonly`\<\{ `toolCallId`: `string`; `revision`: `number`; `tail`: `string`;
+`droppedBytes`: `number`; `totalBytes`: `number`; \}\>[]; `extensions`:
+`SessionExtensionSlots`; `attention`: readonly `object`[]; `context?`:
+`Readonly`\<\{ `tokens`: `number`; `window`: ... \| ...; \}\>; \}\> \|
+`undefined`; `lastReplyAt`: `number` \| `undefined`; `latestPrompt`: \|
 `Readonly`\<\{ `commandId`: `string`; `text`: `string`; `images`: readonly
 `object`[] \| `undefined`; \}\> \| `undefined`; \}\>, `Error`\>
 
@@ -2485,23 +2535,34 @@ Decide a Session's view state from its activity, terminals and progress.
 
 ---
 
-### queuedSessionLabel()
+### sessionStateLabel()
 
 ```ts
-function queuedSessionLabel(state): string;
+function sessionStateLabel(
+  state,
+  waitingOnYou?,
+):
+  | "idle"
+  | "thinking"
+  | "failed"
+  | "streaming"
+  | "running a tool"
+  | "waiting on you";
 ```
 
-Explain a queued Session using its owner's executor fact.
+Activity only: queued messages belong in the transcript, never in this label.
 
 #### Parameters
 
-| Parameter | Type                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------- |
-| `state`   | `Extract`\<[`ParakeetOwnerViewState`](#parakeetownerviewstate), \{ `kind`: `"queued"`; \}\> |
+| Parameter      | Type                                                | Default value |
+| -------------- | --------------------------------------------------- | ------------- |
+| `state`        | [`ParakeetOwnerViewState`](#parakeetownerviewstate) | `undefined`   |
+| `waitingOnYou` | `boolean`                                           | `false`       |
 
 #### Returns
 
-`string`
+\| `"idle"` \| `"thinking"` \| `"failed"` \| `"streaming"` \| `"running a tool"`
+\| `"waiting on you"`
 
 ---
 
@@ -2542,6 +2603,27 @@ Shared tool status meaning, used by the browser and native presentations.
 #### Returns
 
 `"error"` \| `"success"` \| `"info"` \| `"neutral"`
+
+---
+
+### toolLiveLines()
+
+```ts
+function toolLiveLines(call, open): readonly string[];
+```
+
+Live output stays visible when folded, independent of result disclosure.
+
+#### Parameters
+
+| Parameter | Type                                                    |
+| --------- | ------------------------------------------------------- |
+| `call`    | [`ParakeetToolCallView`](index.md#parakeettoolcallview) |
+| `open`    | `boolean`                                               |
+
+#### Returns
+
+readonly `string`[]
 
 ---
 

@@ -5,6 +5,7 @@
  */
 @import "@fungi.computer/caps/tailwind.css";
 @import "./completion-menu.css";
+@import "./composer-shell.css";
 
 /* In the workspace Tailwind scans the component source; published, this
  * entry ships without it, and the compiled components in dist carry the same
@@ -38,35 +39,10 @@
   overflow-wrap: break-word;
 }
 
-/* The composer is one surface, seated like the Prints composer: a Caps Card
-   docked at the bottom. Text is typed straight onto it, and its bottom row is
-   the same Caps StatusTray row Prints uses: attach, model, Settings, Send. */
+/* Conversation placement around the shared ComposerShell. */
 .chat-composer {
   flex-shrink: 0;
   padding: 0 var(--spacing-xs) var(--spacing-xs);
-}
-
-.chat-composer .composer-body {
-  /* The completion menu rises from the card's top edge, in the card's own
-     face and edge, so menu and card read as one surface. */
-  --parakeet-completion-inset: 0px;
-  --parakeet-completion-face: var(--color-base-200);
-  --parakeet-completion-edge: var(--stipe-hairline);
-  display: block;
-}
-
-/* An open completion menu sits on the card's top edge, so the card squares off to join it. */
-.chat-composer .composer-body:has(> [data-parakeet-slash]) .composer-card {
-  border-start-start-radius: 0;
-  border-start-end-radius: 0;
-}
-
-.chat-composer .composer-card {
-  padding: var(--spacing-sm);
-}
-
-.chat-composer .composer-card .caps-composer-input {
-  padding: var(--spacing-xs) var(--spacing-sm) 0;
 }
 
 .chat-composer .composer-attachments {
@@ -94,7 +70,6 @@
   position: absolute;
   inset-block-start: 0;
   inset-inline-end: 0;
-  background: var(--color-base-100);
   opacity: 0;
 }
 .chat-composer .composer-attachments li:hover .composer-attachment-remove,
@@ -110,25 +85,9 @@
   }
 }
 
-.chat-composer .composer-footer {
-  padding: var(--spacing-xs);
-}
-
-/* Model key and Settings chip read like Prints' model select and chip. */
-.chat-composer .composer-model-key {
-  flex: 0 1 220px;
-  min-width: 0;
-  font-size: var(--text-xs);
-}
-
-.chat-composer .composer-model-readout,
 .chat-composer .composer-status-chip {
   color: var(--stipe-fg-muted);
   font-size: var(--text-xs);
-}
-
-.chat-composer .composer-model-readout {
-  font-family: var(--font-mono);
 }
 
 .chat-composer .composer-settings-chip {
@@ -142,48 +101,11 @@
   height: var(--stipe-icon-size-sm);
 }
 
-.chat-composer .composer-model-key .caps-keycap-button-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Narrow composers keep one row (attach, model, Settings, Send) like Prints:
-   the model key gives up width first, and Send stays one key at the end. */
-.chat-composer .composer-card {
-  container-type: inline-size;
-}
-@container (max-width: 34rem) {
-  .chat-composer .composer-model-key {
-    flex: 1 1 4rem;
-  }
-  .chat-composer [data-status-tray-chip="settings"] {
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-  /* Narrow, the readout steps aside; the Settings tray still holds it. */
-  .chat-composer .composer-readout {
+/* Quiet Session readouts yield on a phone; the shared shell owns key sizing. */
+@container (max-width: 42rem) {
+  .chat-composer .composer-status-chip {
     display: none;
   }
-}
-
-/* Context, tokens and cost read as quiet text beside Send, not a chip. */
-.chat-composer .composer-readout {
-  margin-inline-start: auto;
-  color: var(--stipe-fg-muted);
-  font-size: var(--text-xs);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* Send sits at the row's end, like Generate in Prints. */
-.chat-composer .composer-send-key {
-  margin-inline-start: auto;
-}
-.chat-composer .composer-readout + .composer-send-key {
-  margin-inline-start: var(--spacing-sm);
 }
 
 /* A decision that took the composer over sits on the same surface: its
@@ -207,10 +129,6 @@
   margin-inline: calc(-1 * var(--spacing-xs));
   padding-inline: var(--spacing-xs);
 }
-.chat-composer .composer-model-key {
-  --caps-keycap-justify: space-between;
-}
-
 /* A decision's highlight is the reducer's, not the list's own active row. */
 .parakeet-decision .parakeet-decision-list [role="option"] {
   padding-inline: var(--spacing-xs);

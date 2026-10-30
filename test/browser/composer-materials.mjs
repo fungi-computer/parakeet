@@ -110,19 +110,29 @@ try {
 
   assert.ok(
     (
-      await page.locator("#root > main .composer-footer").textContent()
-    )?.includes("openai/gpt-6-astra"),
+      await page.locator("#root > main .parakeet-composer-row").textContent()
+    )?.includes("Mistral Small 3.1 24B Instruct"),
   );
   assert.ok(
     !(
-      await page.locator("#root > main .composer-footer").textContent()
-    )?.includes("@openai"),
+      await page.locator("#root > main .parakeet-composer-row").textContent()
+    )?.includes("@cf/"),
   );
+  assert.equal(
+    await page.locator("#root > main .parakeet-composer-readout").textContent(),
+    "300 tok · $0.00",
+  );
+  const settings = page.getByRole("button", {
+    name: "Session settings",
+    exact: true,
+  });
+  await settings.click();
   assert.ok(
-    (
-      await page.locator("#root > main .composer-footer").textContent()
-    )?.includes("12K/200K"),
+    (await page.locator(".composer-settings").textContent())?.includes(
+      "12K/200K",
+    ),
   );
+  await page.getByRole("button", { name: "Close tray", exact: true }).click();
   const screenshotDirectory = process.env.PARAKEET_SCREENSHOT_DIR;
   const screenshotPrefix = process.env.PARAKEET_SCREENSHOT_PREFIX;
   for (const theme of ["latte", "mocha"]) {
@@ -301,8 +311,154 @@ try {
     await phoneComposer.getByTestId("send-count").textContent(),
     "1",
   );
+  const imageFile = {
+    name: "reference.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1kAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  };
+  await desktopComposer.locator('input[type="file"]').setInputFiles(imageFile);
+  await desktopComposer
+    .getByAltText("Attached image 1", { exact: true })
+    .waitFor();
+  const remove = desktopComposer.getByRole("button", {
+    name: "Remove attached image 1",
+    exact: true,
+  });
+  const waitForRemoveOpacity = (target, value) =>
+    target.waitForFunction((expected) => {
+      const button = globalThis.document.querySelector(
+        '[data-testid="keyboard-composer"] .composer-attachment-remove',
+      );
+      return (
+        button !== null &&
+        globalThis.getComputedStyle(button).opacity === expected
+      );
+    }, value);
+  for (const theme of ["latte", "mocha"]) {
+    await desktopComposer.evaluate((node, name) => {
+      node.dataset.theme = name;
+    }, theme);
+    await desktopTextarea.focus();
+    await page.mouse.move(0, 0);
+    await waitForRemoveOpacity(page, "0");
+    await desktopComposer.locator(".composer-attachments li").hover();
+    await waitForRemoveOpacity(page, "1");
+    await remove.focus();
+    await page.mouse.move(0, 0);
+    await waitForRemoveOpacity(page, "1");
+    const appearance = await remove.evaluate((node) => ({
+      outline: node.classList.contains("btn-outline"),
+      xs: node.classList.contains("btn-xs"),
+      position: globalThis.getComputedStyle(node).position,
+    }));
+    assert.deepEqual(appearance, {
+      outline: true,
+      xs: true,
+      position: "absolute",
+    });
+    if (screenshotDirectory)
+      await desktopComposer.screenshot({
+        path: resolve(
+          screenshotDirectory,
+          `${screenshotPrefix ?? "composer"}-attachment-${theme}.png`,
+        ),
+      });
+  }
+  await remove.click();
+  assert.equal(
+    await desktopComposer
+      .getByAltText("Attached image 1", { exact: true })
+      .count(),
+    0,
+  );
+  await phoneComposer.locator('input[type="file"]').setInputFiles(imageFile);
+  const touchRemove = phoneComposer.getByRole("button", {
+    name: "Remove attached image 1",
+    exact: true,
+  });
+  await touchRemove.waitFor();
+  await waitForRemoveOpacity(phonePage, "1");
+  await touchRemove.tap();
+  assert.equal(
+    await phoneComposer
+      .getByAltText("Attached image 1", { exact: true })
+      .count(),
+    0,
+  );
+  // The native shared model key yields its label before moving edge actions.
+  for (const width of [390, 1400]) {
+    await page.setViewportSize({ width, height: 900 });
+    const layout = await page
+      .locator("#root > main .parakeet-composer-row")
+      .evaluate((footer) => {
+        const row = footer.querySelector(".caps-status-tray-row");
+        const attach = footer.querySelector(".composer-attach-key");
+        const send = footer.querySelector(".composer-send-key");
+        const model = footer.querySelector(".parakeet-composer-model-key");
+        const readout = footer.querySelector(".parakeet-composer-readout");
+        const status = footer.querySelector(".composer-status-chip");
+        const attention = footer.querySelector(".composer-attention-label");
+        const modelLabel = model?.querySelector(".caps-keycap-button-label");
+        if (
+          !row ||
+          !attach ||
+          !send ||
+          !model ||
+          !readout ||
+          !status ||
+          !attention ||
+          !modelLabel
+        )
+          throw new Error("composer layout fixture is incomplete");
+        const first = attach.getBoundingClientRect();
+        const last = send.getBoundingClientRect();
+        const bounds = row.getBoundingClientRect();
+        const style = globalThis.getComputedStyle(modelLabel);
+        return {
+          centreDelta: Math.abs(
+            first.y + first.height / 2 - last.y - last.height / 2,
+          ),
+          rightGap: bounds.right - last.right,
+          overflows: row.scrollWidth > row.clientWidth,
+          modelClipped: modelLabel.scrollWidth > modelLabel.clientWidth,
+          ellipsis: style.textOverflow,
+          whiteSpace: style.whiteSpace,
+          readoutDisplay: globalThis.getComputedStyle(readout).display,
+          statusDisplay: globalThis.getComputedStyle(status).display,
+          attentionWidth: attention.getBoundingClientRect().width,
+          attentionText: attention.textContent,
+        };
+      });
+    assert.ok(
+      layout.centreDelta < 1,
+      `${width}px: attach and Send stay on one row: ${JSON.stringify(layout)}`,
+    );
+    assert.ok(
+      Math.abs(layout.rightGap) < 1,
+      `${width}px: Send stays at the right edge: ${JSON.stringify(layout)}`,
+    );
+    assert.equal(layout.overflows, false, `${width}px: footer fits its row`);
+    assert.equal(layout.ellipsis, "ellipsis");
+    assert.equal(layout.whiteSpace, "nowrap");
+    assert.equal(layout.attentionText, "waiting for you");
+    assert.ok(
+      layout.attentionWidth <= 1,
+      "the status dot retains its caption accessibly without visible row text",
+    );
+    if (width === 390) {
+      assert.equal(layout.modelClipped, true, "the long model gives up width");
+      assert.equal(layout.readoutDisplay, "none");
+      assert.equal(layout.statusDisplay, "none");
+    } else {
+      assert.notEqual(layout.readoutDisplay, "none");
+      assert.notEqual(layout.statusDisplay, "none");
+    }
+  }
   process.stdout.write(
-    "desktop Enter sends; touch-primary Enter inserts a newline and Send submits.\n",
+    "desktop Enter sends; touch-primary Enter inserts a newline and Send submits; 390/1400px composer controls stay on one row.\n",
   );
 } finally {
   if (browser) await browser.close();

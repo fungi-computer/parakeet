@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
+import * as Redacted from "effect/Redacted";
 import {
   ParakeetProvider,
   createParakeetInteractions,
@@ -131,6 +132,7 @@ function mount(
 }
 
 it("drops disposable journals from the superseded storage key", async () => {
+  const remove = vi.spyOn(Storage.prototype, "removeItem");
   localStorage.setItem(
     "fungi.parakeet.drafts.v1:test://checkpoint",
     JSON.stringify({ draft: "Disposable old draft", pending: [] }),
@@ -138,12 +140,18 @@ it("drops disposable journals from the superseded storage key", async () => {
   const view = mount();
   await view.ready();
   expect(view.composer().draft).toBe("");
+  expect(
+    localStorage.getItem("fungi.parakeet.drafts.v1:test://checkpoint"),
+  ).toBeNull();
   act(() => {
     view.composer().setDraft("Current draft");
   });
   expect(
     localStorage.getItem("fungi.parakeet.drafts.v2:test://checkpoint"),
   ).toContain("Current draft");
+  expect(remove.mock.calls).toEqual([
+    ["fungi.parakeet.drafts.v1:test://checkpoint"],
+  ]);
 });
 
 it.each([
@@ -152,12 +160,19 @@ it.each([
 ])(
   "keeps the conversation usable with a malformed saved journal: %s",
   async (saved) => {
+    const diagnostic = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
     const key = "fungi.parakeet.drafts.v2:test://checkpoint";
     localStorage.setItem(key, saved);
     const view = mount();
     await view.ready();
     expect(view.composer().draft).toBe("");
     expect(view.sends()).toBe(0);
+    expect(diagnostic).toHaveBeenCalledWith(
+      expect.stringContaining('"operation":"read saved draft"'),
+      expect.anything(),
+    );
     act(() => {
       view.composer().setDraft("A fresh usable draft");
     });
@@ -166,9 +181,15 @@ it.each([
 );
 
 it("keeps the conversation usable when reading its draft storage throws", async () => {
+  const diagnostic = vi
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
   const storage: ParakeetDraftStorage = {
     getItem() {
       throw new DOMException("Storage denied for this origin", "SecurityError");
+    },
+    removeItem(key) {
+      localStorage.removeItem(key);
     },
     setItem(key, value) {
       localStorage.setItem(key, value);
@@ -178,6 +199,10 @@ it("keeps the conversation usable when reading its draft storage throws", async 
   await view.ready();
   expect(view.composer().draft).toBe("");
   expect(view.sends()).toBe(0);
+  expect(diagnostic).toHaveBeenCalledWith(
+    expect.stringContaining('"operation":"read saved draft"'),
+    expect.anything(),
+  );
   act(() => {
     view.composer().setDraft("A fresh usable draft");
   });
@@ -186,17 +211,27 @@ it("keeps the conversation usable when reading its draft storage throws", async 
   ).toContain("A fresh usable draft");
 });
 
-it("keeps a sandboxed conversation usable when acquiring browser storage throws SecurityError", async () => {
+it("keeps sandboxed drafts in memory and reports unavailable storage without a user notice", async () => {
+  const cause = new DOMException(
+    "Storage denied for this origin",
+    "SecurityError",
+  );
+  const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.spyOn(globalThis, "localStorage", "get").mockImplementation(() => {
-    throw new DOMException("Storage denied for this origin", "SecurityError");
+    throw cause;
   });
   const first = mount();
   await first.ready();
-  expect(first.interactions.snapshot().notice).toEqual({
-    tone: "info",
-    message:
-      "Drafts are session-only because browser storage is unavailable. They will be lost when this conversation closes.",
+  expect(first.interactions.snapshot().notice).toBeUndefined();
+  expect(JSON.parse(String(report.mock.calls[0]?.[0]))).toMatchObject({
+    event: "parakeet_operation_failed",
+    operation: "acquire draft storage",
   });
+  const retained: unknown = report.mock.calls[0]?.[1];
+  expect(Redacted.isRedacted(retained)).toBe(true);
+  if (!Redacted.isRedacted(retained))
+    throw new Error("Missing draft storage cause");
+  expect(Redacted.value(retained)).toBe(cause);
   act(() => {
     first.composer().setDraft("A session-only draft");
   });
@@ -218,6 +253,38 @@ it("keeps a sandboxed conversation usable when acquiring browser storage throws 
   );
   first.close();
   expect(mount().composer().draft).toBe("");
+});
+
+it("reports obsolete-journal cleanup failure without dropping a current draft", async () => {
+  const diagnostic = vi
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+  const key = "fungi.parakeet.drafts.v2:test://checkpoint";
+  localStorage.setItem(
+    key,
+    JSON.stringify({ draft: "Keep the current draft", pending: [] }),
+  );
+  const storage: ParakeetDraftStorage = {
+    getItem: (name) => localStorage.getItem(name),
+    setItem: (name, value) => {
+      localStorage.setItem(name, value);
+    },
+    removeItem() {
+      throw new DOMException("Storage is read-only", "SecurityError");
+    },
+  };
+  const view = mount(storage);
+  await view.ready();
+  expect(view.composer().draft).toBe("Keep the current draft");
+  expect(view.sends()).toBe(0);
+  expect(diagnostic).toHaveBeenCalledWith(
+    expect.stringContaining('"operation":"discard obsolete draft journal"'),
+    expect.anything(),
+  );
+  act(() => {
+    view.composer().setDraft("A fresh current draft");
+  });
+  expect(localStorage.getItem(key)).toContain("A fresh current draft");
 });
 
 it("uses a supplied durable adapter without reading the sandboxed browser storage getter", () => {
@@ -341,6 +408,9 @@ it("refuses command consumption if the existing journal cannot commit, preservin
   let refuseWrites = false;
   const storage: ParakeetDraftStorage = {
     getItem: (key) => localStorage.getItem(key),
+    removeItem(key) {
+      localStorage.removeItem(key);
+    },
     setItem: (key, value) => {
       if (refuseWrites) throw new Error("Disk is full");
       localStorage.setItem(key, value);
@@ -483,6 +553,9 @@ it("failed checkpoint leaves the live draft and existing durable journal untouch
   let refuseWrites = false;
   const storage: ParakeetDraftStorage = {
     getItem: (key) => localStorage.getItem(key),
+    removeItem(key) {
+      localStorage.removeItem(key);
+    },
     setItem: (key, value) => {
       if (refuseWrites) throw new Error("Disk is full");
       localStorage.setItem(key, value);

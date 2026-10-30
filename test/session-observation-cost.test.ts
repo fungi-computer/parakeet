@@ -89,10 +89,8 @@ it("applies each delivered frame once and retains the retry prompt through non-u
         progress: {
           messageId: "reply",
           revision: 1,
-          text: "Partial",
-          thinking: "",
-          textTruncated: false,
-          thinkingTruncated: false,
+          text: { offset: 0, append: "Partial" },
+          thinking: { offset: 0, append: "" },
         },
       },
       { kind: "tool_output", activity: runningFacts(), toolOutput: [] },

@@ -145,11 +145,14 @@ function progressItem(progress: SessionProgress): AssistantMessageItem {
     id: progress.messageId,
     kind: "assistant_message",
     pending: true,
-    text: progress.text,
+    text: `${progress.textTruncated ? "…" : ""}${progress.text}`,
   };
   return progress.thinking === ""
     ? base
-    : { ...base, thinking: progress.thinking };
+    : {
+        ...base,
+        thinking: `${progress.thinkingTruncated ? "…" : ""}${progress.thinking}`,
+      };
 }
 
 type AssistantProjection = Readonly<{

@@ -1,4 +1,3 @@
-import { Button } from "@fungi.computer/caps/components/button";
 import { Checkbox } from "@fungi.computer/caps/components/checkbox";
 import { KeycapButton } from "@fungi.computer/caps/components/keycap";
 import { Input } from "@fungi.computer/caps/components/input";
@@ -279,9 +278,7 @@ export function DecisionPanel({
         </p>
       )}
       <div className="parakeet-decision-actions">
-        <Button variant="ghost" onClick={onLater}>
-          Later
-        </Button>
+        <KeycapButton label="Later" tone="neutral" onClick={onLater} />
         <KeycapButton
           disabled={!view.canSend}
           label="Send"

@@ -15,6 +15,7 @@ import stripAnsi from "strip-ansi";
 
 import type { ToolItem } from "../store/types.js";
 import { reportFailure } from "../lib/failure.js";
+import { sanitizeDisplayText } from "./display-text.js";
 
 /** Shared tool status meaning, used by the browser and native presentations. */
 export function toolStatusTone(status: ToolItem["status"]) {
@@ -214,7 +215,44 @@ export type ToolCallView = Readonly<{
   error?: string | undefined;
   /** Expanded body sections, in display order. */
   sections: readonly ToolCallSection[];
+  /** Replaceable output while the call runs. */
+  live?: ToolItem["live"];
 }>;
+
+/** Neutral lines from a bounded live tail. */
+export function liveOutputLines(tail: string): readonly string[] {
+  if (tail === "") return [];
+  // Replacement dominance counts decoded code points, not rendered graphemes.
+  const characters = Array.from(tail);
+  if (
+    characters.filter((character) => character === "\ufffd").length >
+    characters.length / 2
+  )
+    return [
+      `[binary output, ${String(new TextEncoder().encode(tail).byteLength)} bytes]`,
+    ];
+  return stripAnsi(tail)
+    .replace(/\r\n/gu, "\n")
+    .replace(/\n$/u, "")
+    .split("\n")
+    .map((line) => sanitizeDisplayText(line.slice(line.lastIndexOf("\r") + 1)));
+}
+
+/** Live output stays visible when folded, independent of result disclosure. */
+export function toolLiveLines(
+  call: ToolCallView,
+  open: boolean,
+): readonly string[] {
+  const live = call.live;
+  if (live === undefined) return [];
+  if (!open) return live.lines.slice(-6);
+  return [
+    ...(live.droppedBytes === 0
+      ? []
+      : [`… ${String(Math.ceil(live.droppedBytes / 1024))} KiB earlier`]),
+    ...live.lines,
+  ];
+}
 
 /** Items shown before "more" for excerpts, matches, and output. */
 export const toolPreviewLineLimit = 12;
@@ -878,6 +916,7 @@ export function toolCallView(item: ToolItem): ToolCallView {
     kind,
     label: target.label,
     name: item.name,
+    live: item.status === "running" ? item.live : undefined,
     paths: target.paths,
     get sections() {
       return getDetails().sections;

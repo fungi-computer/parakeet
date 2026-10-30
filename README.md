@@ -60,7 +60,7 @@ export function Conversation({ session }: { session: ParakeetSession }) {
 Parakeet never reads a message's host metadata itself. To show who wrote a line,
 pass `authorOf`: your reading of that metadata into a `ParakeetAuthor`
 (`{ id, name }`). A Fungi app passes `messageAuthor` from
-`@fungi.computer/hub-client/message-meta`; without it, lines show no author.
+`@fungi.computer/agar/agents`; without it, lines show no author.
 
 The view presents the Session's observed history, live work, composer and
 errors. Screen readers receive the same Session status as the composer footer
@@ -77,6 +77,22 @@ The [standalone composer tests](test/standalone-composer.test.tsx) exercise the
 provider, query cache, observations and prompt admission with typed fixtures.
 The browser contract uses the real component with a fixture Session. A fake
 Session checks the component, not hosted authentication or a model provider.
+
+## Shared composer
+
+`ComposerShell` is the shared chat and generation composer surface. It owns the
+Card, field inset, height limits and one non-wrapping control row; callers
+supply their field, controls, tray contents and action, not another toolbar
+layout. `useComposerTextareaSize(ref, value)` grows either field within those
+shared limits. The full stylesheet includes this layout; hosts compiling their
+own Caps sheet import `@fungi.computer/parakeet/composer-shell.css` alongside
+the completion-menu stylesheet.
+
+The real Grove/Prints workbench proof is
+`pnpm --filter @fungi.computer/grove test:composer-parity`. It requires both
+workbenches (`GROVE_WORKBENCH_URL` / `PRINTS_WORKBENCH_URL`) and checks equal
+geometry, a right-edge Send key and no wrapped controls at 390px in both themes.
+`COMPOSER_PARITY_SHOTS` optionally saves the six matching side-by-side images.
 
 ## Core concepts
 

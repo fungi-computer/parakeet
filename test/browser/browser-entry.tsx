@@ -3,12 +3,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   PromptCommand,
   SessionFrame,
+  SessionSnapshot,
   SessionWatch,
 } from "@fungi.computer/shiitake/client";
 import { z } from "zod";
 import type { ParakeetSession } from "../../src/session.js";
 
-import { Parakeet } from "../../src/index.js";
+import {
+  ParakeetProvider,
+  ParakeetView,
+  useStatus,
+  useTimeline,
+} from "../../src/index.js";
 import {
   commandHandler,
   commandResult,
@@ -19,6 +25,8 @@ import {
   probeClients,
   sessionFrame,
   sessionSnapshot,
+  runningFacts,
+  idleFacts,
   type FixtureGoal,
 } from "../fixtures/session.fixture.js";
 
@@ -51,6 +59,7 @@ function frameQueue(): FrameQueue {
 }
 
 const changes = frameQueue();
+let liveBaseline: SessionSnapshot | undefined;
 const commands: PromptCommand[] = [];
 let attempts = 0;
 let aborts = 0;
@@ -260,10 +269,8 @@ const session: ParakeetSession = {
           progress: {
             messageId: "browser-assistant",
             revision: 1,
-            text: "I will inspect that.",
-            thinking: "checking",
-            textTruncated: false,
-            thinkingTruncated: false,
+            text: { offset: 0, append: "I will inspect that." },
+            thinking: { offset: 0, append: "checking" },
           },
         }),
       );
@@ -297,19 +304,22 @@ const session: ParakeetSession = {
   }),
   read: () =>
     Promise.resolve(
-      sessionSnapshot({
-        sessionId: "browser-session",
-        messages: initialHistory,
-        extensions: goalSlots(goal),
-      }),
+      liveBaseline ??
+        sessionSnapshot({
+          sessionId: "browser-session",
+          messages: initialHistory,
+          extensions: goalSlots(goal),
+        }),
     ),
   watch: (): Promise<SessionWatch> =>
     Promise.resolve({
-      snapshot: sessionSnapshot({
-        sessionId: "browser-session",
-        messages: initialHistory,
-        extensions: goalSlots(goal),
-      }),
+      snapshot:
+        liveBaseline ??
+        sessionSnapshot({
+          sessionId: "browser-session",
+          messages: initialHistory,
+          extensions: goalSlots(goal),
+        }),
       changes,
       close: () => Promise.resolve(),
     }),
@@ -317,8 +327,143 @@ const session: ParakeetSession = {
 
 const queryClient = new QueryClient();
 
+let liveRevision = 0;
+const liveActivity = runningFacts({ activeTool: "execute" });
+function updateLiveOutput(count: number, droppedBytes = 0): number {
+  liveRevision += 1;
+  const frame: Extract<SessionFrame, { kind: "tool_output" }> = {
+    kind: "tool_output",
+    activity: liveActivity,
+    toolOutput: [
+      {
+        toolCallId: "live-build",
+        revision: liveRevision,
+        tail: Array.from(
+          { length: count },
+          (_, index) =>
+            `build step ${String(index + 1)}: ${"compiling ".repeat(10)}`,
+        ).join("\n"),
+        droppedBytes,
+        totalBytes: droppedBytes + 8192,
+      },
+    ],
+  };
+  if (liveBaseline === undefined) throw new Error("Begin live output first");
+  liveBaseline = {
+    ...liveBaseline,
+    activity: frame.activity,
+    toolOutput: frame.toolOutput,
+  };
+  changes.push(frame);
+  return liveRevision;
+}
+
+function beginLiveOutput(): void {
+  liveRevision = 0;
+  liveBaseline = sessionSnapshot({
+    sessionId: "browser-session",
+    activity: liveActivity,
+    messages: [
+      ...Array.from({ length: 30 }, (_, index) => ({
+        id: `live-history-${String(index)}`,
+        sequence: index + 1,
+        commandId: null,
+        value: {
+          role: "user" as const,
+          content: `Earlier conversation ${String(index)}`,
+          timestamp: index,
+        },
+      })),
+      {
+        id: "live-prompt",
+        sequence: 31,
+        commandId: "running-command",
+        value: { role: "user", content: "Run the build.", timestamp: 31 },
+      },
+      {
+        id: "live-assistant",
+        sequence: 32,
+        commandId: "running-command",
+        value: {
+          role: "assistant",
+          api: "pi",
+          provider: "faux",
+          model: "faux",
+          usage,
+          stopReason: "toolUse",
+          timestamp: 32,
+          content: [
+            {
+              type: "toolCall",
+              id: "live-build",
+              name: "execute",
+              arguments: {
+                code: "return await env.computers.local.exec({command:'build'});",
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  changes.push({
+    kind: "reset",
+    reason: "history_unavailable",
+    cursor: null,
+    baseline: liveBaseline,
+  });
+  updateLiveOutput(1);
+}
+
+function finishLiveOutput(isError: boolean): void {
+  const frame = sessionFrame({
+    kind: "update",
+    delivery: "live",
+    cursor: "live-result",
+    status: "idle",
+    messages: [
+      {
+        id: "live-result",
+        sequence: 33,
+        commandId: "running-command",
+        value: {
+          role: "toolResult",
+          toolCallId: "live-build",
+          toolName: "execute",
+          isError,
+          timestamp: 33,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                stdout: "Final build output",
+                stderr: isError ? "Compiler failed" : "",
+                exitCode: isError ? 1 : 0,
+              }),
+            },
+          ],
+        },
+      },
+    ],
+    terminals: [],
+    pending: { total: 0, prompts: [], hasMore: false },
+  });
+  if (frame.kind !== "update" || liveBaseline === undefined)
+    throw new Error("Begin live output first");
+  liveBaseline = sessionSnapshot({
+    ...liveBaseline,
+    activity: idleFacts,
+    messages: [...liveBaseline.messages, ...frame.messages],
+    toolOutput: [],
+  });
+  changes.push(frame);
+}
+
 Object.assign(window, {
   __parakeetBrowserProof: {
+    beginLiveOutput,
+    updateLiveOutput,
+    finishLiveOutput,
     complete,
     terminateLatestRun,
     receiveRemotePrompt,
@@ -340,8 +485,28 @@ Object.assign(window, {
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("browser contract root is missing");
+function LiveRevision() {
+  const { settled } = useTimeline();
+  const { observation } = useStatus();
+  const revision =
+    settled.flatMap((item) =>
+      item.kind === "tool_group"
+        ? item.calls.flatMap((call) =>
+            call.live === undefined ? [] : [call.live.revision],
+          )
+        : [],
+    )[0] ?? 0;
+  return (
+    <output className="sr-only" aria-label="Observed tool output revision">
+      {observation.status === "live" ? revision : observation.status}
+    </output>
+  );
+}
 createRoot(root).render(
   <QueryClientProvider client={queryClient}>
-    <Parakeet session={session} clients={probeClients} />
+    <ParakeetProvider session={session} clients={probeClients}>
+      <ParakeetView />
+      <LiveRevision />
+    </ParakeetProvider>
   </QueryClientProvider>,
 );

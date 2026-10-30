@@ -8,6 +8,7 @@ import { expect, it } from "vitest";
 import {
   sameSessionViewState,
   sessionActivityStatus,
+  sessionStateLabel,
   sessionViewState,
   type SessionViewFacts,
   type SessionViewState,
@@ -25,6 +26,8 @@ const progress = (text: string): SessionProgress => ({
   thinking: "",
   textTruncated: false,
   thinkingTruncated: false,
+  textOffset: 0,
+  thinkingOffset: 0,
 });
 
 const terminal = (
@@ -51,6 +54,37 @@ const retry = {
   errorMessage: "503 Service Unavailable",
   scheduledAt: 10_000,
 };
+
+it("labels activity without turning executor identity into a queued-behind label", () => {
+  expect(sessionStateLabel({ kind: "thinking" })).toBe("thinking");
+  expect(sessionStateLabel({ kind: "responding" })).toBe("streaming");
+  expect(sessionStateLabel({ kind: "running_tool", tool: "execute" })).toBe(
+    "running a tool",
+  );
+  expect(sessionStateLabel({ kind: "idle" })).toBe("idle");
+  expect(sessionStateLabel({ kind: "waiting_for_you" })).toBe("idle");
+  expect(sessionStateLabel({ kind: "idle" }, true)).toBe("waiting on you");
+  expect(sessionStateLabel({ kind: "error", cause: "failed" })).toBe("failed");
+  expect(
+    sessionStateLabel({
+      kind: "queued",
+      queuedCommandId: "pending",
+      runningWork: null,
+    }),
+  ).toBe("idle");
+  expect(
+    sessionStateLabel({
+      kind: "queued",
+      queuedCommandId: "pending",
+      runningWork: {
+        kind: "session",
+        sessionId: "other",
+        commandId: "active",
+        title: "Lanes tick",
+      },
+    }),
+  ).toBe("thinking");
+});
 
 // Each row reproduces a label the TUI shows today, from raw facts alone.
 const table: readonly (readonly [
@@ -272,7 +306,12 @@ it("changes the queued readout when the executor changes", () => {
       queue: {
         state: "queued",
         commandId: "next",
-        runningWork: { kind: "session", sessionId: "a", commandId: "running" },
+        runningWork: {
+          kind: "session",
+          sessionId: "a",
+          commandId: "running",
+          title: "First",
+        },
       },
     }),
   );
@@ -281,16 +320,38 @@ it("changes the queued readout when the executor changes", () => {
     sameSessionViewState(behindSession, {
       kind: "queued",
       queuedCommandId: "next",
-      runningWork: { kind: "session", sessionId: "b", commandId: "running" },
+      runningWork: {
+        kind: "session",
+        sessionId: "b",
+        commandId: "running",
+        title: "Second",
+      },
     }),
   ).toBe(false);
   expect(
     sameSessionViewState(behindSession, {
       kind: "queued",
       queuedCommandId: "next",
-      runningWork: { kind: "session", sessionId: "a", commandId: "running" },
+      runningWork: {
+        kind: "session",
+        sessionId: "a",
+        commandId: "running",
+        title: "First",
+      },
     }),
   ).toBe(true);
+  expect(
+    sameSessionViewState(behindSession, {
+      kind: "queued",
+      queuedCommandId: "next",
+      runningWork: {
+        kind: "session",
+        sessionId: "a",
+        commandId: "running",
+        title: "Renamed",
+      },
+    }),
+  ).toBe(false);
 });
 
 it("compares host blocker facts without confusing them with a Session", () => {
@@ -323,7 +384,12 @@ it("compares host blocker facts without confusing them with a Session", () => {
   expect(
     sameSessionViewState(queued, {
       ...queued,
-      runningWork: { kind: "session", sessionId: "delivery", commandId: "one" },
+      runningWork: {
+        kind: "session",
+        sessionId: "delivery",
+        commandId: "one",
+        title: "",
+      },
     }),
   ).toBe(false);
 });

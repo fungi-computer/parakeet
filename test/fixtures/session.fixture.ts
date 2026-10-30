@@ -102,6 +102,8 @@ const streamingProgress: SessionProgress = {
   thinking: "",
   textTruncated: false,
   thinkingTruncated: false,
+  textOffset: 0,
+  thinkingOffset: 0,
 };
 
 function withTerminalDefaults(

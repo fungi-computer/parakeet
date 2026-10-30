@@ -161,7 +161,6 @@ export function createConversationOpeningOwner<
     agentId: string,
     sessionId: string,
     fromOpenRequest = false,
-    waitForBaseline = true,
   ) => {
     if (disposed) return;
     const selection = { agentId, sessionId };
@@ -206,7 +205,7 @@ export function createConversationOpeningOwner<
           void Promise.allSettled([client.close(), transport.close()]);
         };
         await observation.ready;
-        if (waitForBaseline && options.reportsSelection !== false) {
+        if (options.reportsSelection !== false) {
           await connection.ui.reportAgentSessionSelection({
             agentId,
             sessionId,

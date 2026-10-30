@@ -18,6 +18,7 @@ import {
   type ToolCallView,
   type ToolCallSection,
   toolKindSigils,
+  toolLiveLines,
 } from "../core/tool-view.js";
 import type { ToolGroupItem, ToolItem } from "../store/types.js";
 import { CodeBlock } from "./CodeBlock.js";
@@ -295,6 +296,15 @@ function CallRow({
           tool={tool}
         />
       </Disclosure>
+      {call.live === undefined ? null : (
+        <pre className={monoBlock} aria-label="Live tool output">
+          {toolLiveLines(call, open).map((line, index) => (
+            <span className="block whitespace-pre" key={String(index)}>
+              {line || "\u00a0"}
+            </span>
+          ))}
+        </pre>
+      )}
       {call.status === "completed" && tool?.result !== undefined
         ? renderToolActions?.(tool)
         : null}

@@ -78,6 +78,8 @@ function fixture() {
       thinking: "",
       textTruncated: false,
       thinkingTruncated: false,
+      textOffset: 0,
+      thinkingOffset: 0,
     },
   });
   const session: ParakeetSession = {
@@ -323,6 +325,8 @@ it("never hides a turn that starts while its queued cancellation is unresolved",
           thinking: "",
           textTruncated: false,
           thinkingTruncated: false,
+          textOffset: 0,
+          thinkingOffset: 0,
         },
       }),
     );

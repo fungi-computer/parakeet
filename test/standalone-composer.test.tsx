@@ -678,6 +678,9 @@ it("never clears or dispatches when the pending text cannot be committed", async
   };
   const storage: ParakeetDraftStorage = {
     getItem: () => null,
+    removeItem(key) {
+      localStorage.removeItem(key);
+    },
     setItem: (_key, value) => {
       if (value.includes('"requestId"'))
         throw new DOMException("Storage quota exceeded", "QuotaExceededError");
@@ -1668,10 +1671,8 @@ it("preserves bounded durable item identities across progress revisions", async 
             progress: {
               messageId: "live-assistant",
               revision,
-              text: `Progress ${String(revision)}`,
-              thinking: "",
-              textTruncated: false,
-              thinkingTruncated: false,
+              text: { offset: 0, append: `Progress ${String(revision)}` },
+              thinking: { offset: 0, append: "" },
             },
           }),
         );
@@ -1751,10 +1752,8 @@ it.each([200, 300])(
           progress: {
             messageId: "live-assistant",
             revision: 1,
-            text: "A live tail",
-            thinking: "",
-            textTruncated: false,
-            thinkingTruncated: false,
+            text: { offset: 0, append: "A live tail" },
+            thinking: { offset: 0, append: "" },
           },
         }),
       );

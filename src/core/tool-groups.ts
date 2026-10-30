@@ -6,7 +6,49 @@ import type {
   ToolItem,
 } from "../store/types.js";
 import { assistantMessageVisible } from "./assistant-visibility.js";
-import { toolCallView, type ToolCallView, type ToolKind } from "./tool-view.js";
+import {
+  liveOutputLines,
+  toolCallView,
+  type ToolCallView,
+  type ToolKind,
+} from "./tool-view.js";
+import type { SessionToolOutput } from "@fungi.computer/shiitake/client";
+
+/** Overlay only running calls; settled rows and their lazy result views stay shared. */
+export function overlayToolOutput(
+  items: readonly TimelineItem[],
+  output: readonly SessionToolOutput[],
+): readonly TimelineItem[] {
+  if (output.length === 0) return items;
+  return items.map((item) => {
+    if (item.kind !== "tool_group") return item;
+    const tools = item.tools.map((tool) => {
+      const slot = output.find((candidate) => candidate.toolCallId === tool.id);
+      if (tool.status !== "running" || slot === undefined) return tool;
+      return {
+        ...tool,
+        live: {
+          lines: liveOutputLines(slot.tail),
+          droppedBytes: slot.droppedBytes,
+          revision: slot.revision,
+        },
+      };
+    });
+    if (tools.every((tool, index) => tool === item.tools[index])) return item;
+    const calls = item.calls.map((call, index) => {
+      const tool = tools[index];
+      return tool === undefined || tool === item.tools[index]
+        ? call
+        : toolCallView(tool);
+    });
+    return {
+      ...item,
+      tools,
+      calls,
+      active: calls.find((call) => call.id === item.active?.id),
+    };
+  });
+}
 
 const nouns = {
   code: ["ran", "script", "scripts"],

@@ -1,3 +1,4 @@
+import { IconButton } from "@fungi.computer/caps/components/icon-button";
 import { Check, Copy } from "lucide-react";
 import { type CSSProperties, type ReactNode, useState } from "react";
 
@@ -63,16 +64,15 @@ export function CodeBlock({
         </div>
       ) : null}
       {!hideCopy ? (
-        <button
+        <IconButton
           aria-label="Copy to clipboard"
-          className="btn btn-circle btn-ghost btn-xs text-dim absolute top-1 right-1 z-10 hover:text-base-content"
+          className="absolute top-1 right-1 z-10"
+          icon={copyState === "copied" ? <Check /> : <Copy />}
           onClick={() => {
             void handleCopy();
           }}
           type="button"
-        >
-          {copyState === "copied" ? <Check size={10} /> : <Copy size={10} />}
-        </button>
+        />
       ) : null}
       {!hideCopy ? (
         <span aria-live="polite" className="sr-only" role="status">

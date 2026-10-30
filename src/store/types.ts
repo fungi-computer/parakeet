@@ -117,6 +117,15 @@ export type ToolItem = Readonly<{
   startedAt?: number;
   /** Owner-confirmed activity or result; unknown when neither is available. */
   status: "completed" | "error" | "running" | "unknown";
+  /** Replaceable display-only output, never part of the durable result. */
+  live?: Readonly<{
+    /** Neutral output lines. */
+    lines: readonly string[];
+    /** Raw producer bytes omitted before this tail. */
+    droppedBytes: number;
+    /** Owner-issued output revision. */
+    revision: number;
+  }>;
 }>;
 
 /**

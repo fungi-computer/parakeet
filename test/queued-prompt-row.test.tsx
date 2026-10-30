@@ -137,7 +137,9 @@ it("announces owner state changes outside the transcript while the footer stays 
         );
       });
       expect(announcement()).toBe(region);
-      expect(container.querySelector(".composer-footer")?.textContent).toBe("");
+      expect(
+        container.querySelector(".parakeet-composer-row")?.textContent,
+      ).toBe("");
     }
   } finally {
     act(() => {

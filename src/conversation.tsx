@@ -57,6 +57,7 @@ import {
   buildTimelineTail,
   type PromptRequestIdOf,
 } from "./core/build-timeline.js";
+import { overlayToolOutput } from "./core/tool-groups.js";
 import {
   mergeCompactionNotices,
   mergeCompactions,
@@ -390,7 +391,7 @@ function sameImageCargo(
 
 type DraftStorageAcquisition =
   | Readonly<{ status: "available"; storage: ParakeetDraftStorage }>
-  | Readonly<{ status: "unavailable" }>;
+  | Readonly<{ status: "unavailable"; cause: unknown }>;
 
 function acquireDraftStorage(
   supplied: ParakeetDraftStorage | undefined,
@@ -401,11 +402,14 @@ function acquireDraftStorage(
       globalThis;
     const storage = browser.localStorage;
     return storage === undefined
-      ? { status: "unavailable" }
+      ? {
+          status: "unavailable",
+          cause: new Error("Browser draft storage is unavailable"),
+        }
       : { status: "available", storage };
-  } catch {
+  } catch (cause) {
     // An opaque-origin sandbox denies even reading the browser's getter.
-    return { status: "unavailable" };
+    return { status: "unavailable", cause };
   }
 }
 
@@ -984,7 +988,12 @@ function createConversationAtoms(
       hasMoreHistory: get(hasMoreHistoryAtom),
       hasNewerHistory: get(hasNewerHistoryAtom),
       loadingOlderHistory: get(loadingOlderHistoryAtom),
-      settled: durable.items,
+      settled: overlayToolOutput(
+        durable.items,
+        get(toolActivityAtom) === undefined
+          ? []
+          : (get(snapshotAtom)?.toolOutput ?? []),
+      ),
       tail: get(tailAtom),
     };
     return durable.model === undefined || durable.usage === undefined
@@ -1751,12 +1760,8 @@ export function ParakeetProvider({
   }, [scope, onToast]);
   useEffect(() => {
     if (acquiredDraftStorage.status === "unavailable")
-      scope.interactions.report({
-        tone: "info",
-        message:
-          "Drafts are session-only because browser storage is unavailable. They will be lost when this conversation closes.",
-      });
-  }, [scope, acquiredDraftStorage]);
+      reportFailure("acquire draft storage", acquiredDraftStorage.cause);
+  }, [acquiredDraftStorage]);
   useEffect(() => {
     const reconcile = () => {
       scope.store.set(scope.atoms.reconcileQueuedCancellationAtom);

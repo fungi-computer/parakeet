@@ -72,16 +72,17 @@ export const TimelineItem = memo(function TimelineItem({
         ) : null;
       const dismissAction =
         requestId === undefined || onDismissFailed === undefined ? null : (
-          <button
+          <Button
             aria-label="Dismiss failed prompt"
-            className="btn btn-ghost btn-xs"
+            variant="outline"
+            size="xs"
             onClick={() => {
               onDismissFailed(requestId);
             }}
             type="button"
           >
             Dismiss
-          </button>
+          </Button>
         );
       const failed =
         item.status === "failed" ? (

@@ -50,8 +50,6 @@
     "package/dist/components/TimelineItem.js",
     "package/dist/components/ToolGroup.d.ts",
     "package/dist/components/ToolGroup.js",
-    "package/dist/components/WaitingNotice.d.ts",
-    "package/dist/components/WaitingNotice.js",
     "package/dist/components/avatar-presentation.d.ts",
     "package/dist/components/avatar-presentation.js",
     "package/dist/components/sprite-service.d.ts",

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 
 import { Display } from "@fungi.computer/caps/components/surface";
 import { ChatComposer } from "../../src/components/ChatComposer.js";
+import type { ComposerController } from "../../src/conversation.js";
 
 const root = document.querySelector<HTMLElement>("#root");
 if (root === null) throw new Error("composer material fixture root is missing");
@@ -10,10 +11,16 @@ if (root === null) throw new Error("composer material fixture root is missing");
 function KeyboardComposerFixture() {
   const [draft, setDraft] = useState("");
   const [sends, setSends] = useState(0);
+  const [images, setImages] = useState<ComposerController["images"]>([]);
   return (
     <section data-testid="keyboard-composer">
       <ChatComposer
-        queuedRecall={undefined}
+        queuedRecall={{
+          images,
+          recallState: { kind: "idle" },
+          recall: () => Promise.resolve("empty"),
+        }}
+        onImagesChange={setImages}
         draft={draft}
         failure={undefined}
         onAbort={() => undefined}
@@ -46,12 +53,17 @@ createRoot(root).render(
         queuedRecall={undefined}
         draft=""
         failure={undefined}
-        model={{ model: "gpt-6-astra", provider: "openai" }}
+        model={{
+          model: "@cf/mistralai/mistral-small-3.1-24b-instruct",
+          provider: "cloudflare-workers-ai",
+        }}
+        statusChips={["Connected to this Agent"]}
+        onImagesChange={() => undefined}
         onAbort={() => undefined}
         onChange={() => undefined}
         onRetry={() => undefined}
         onSend={() => undefined}
-        viewState={{ kind: "thinking" }}
+        viewState={{ kind: "waiting_for_you" }}
         status="thinking"
         textareaRef={createRef<HTMLTextAreaElement>()}
         usage={{ cost: 0, tokens: 300 }}

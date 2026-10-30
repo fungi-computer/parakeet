@@ -20,6 +20,64 @@ What the head is doing: at rest, working something out, or talking.
 
 ---
 
+### ComposerModelKeyProps
+
+```ts
+type ComposerModelKeyProps = Omit<
+  KeycapButtonProps,
+  "icon" | "readout" | "label"
+> &
+  object;
+```
+
+A model label on the shared native key; callers own selection and menus.
+
+#### Type Declaration
+
+| Name    | Type     | Description                                                              |
+| ------- | -------- | ------------------------------------------------------------------------ |
+| `label` | `string` | Friendly catalog name, or the real model identity when no name is known. |
+
+---
+
+### ComposerShellRow
+
+```ts
+type ComposerShellRow = Readonly<{
+  controls: ReactNode;
+  action: ReactNode;
+  status?: ReactNode;
+  readout?: ReactNode;
+  items: readonly StatusTrayItem[];
+  openId: string | null;
+  onOpenChange: (id) => void;
+}>;
+```
+
+App-owned controls and tray contents; Parakeet owns their single row.
+
+---
+
+### ComposerShellProps
+
+```ts
+type ComposerShellProps = HTMLAttributes<HTMLDivElement> & object;
+```
+
+Content slots for the shared chat and generation composer surface.
+
+#### Type Declaration
+
+| Name           | Type                                    | Description                                                       |
+| -------------- | --------------------------------------- | ----------------------------------------------------------------- |
+| `input`        | `ReactNode`                             | Draft field or decision surface, using the shared input geometry. |
+| `attachments?` | `ReactNode`                             | Optional draft attachments rendered by the Composer primitive.    |
+| `action?`      | `ReactNode`                             | Retained field-and-Send mode without an internal control row.     |
+| `menu?`        | `ReactNode`                             | Optional completion menu anchored to this shell.                  |
+| `row?`         | [`ComposerShellRow`](#composershellrow) | Omit while a decision owns the input and its own actions.         |
+
+---
+
 ### InteractionPanelProps
 
 ```ts
@@ -232,6 +290,7 @@ Durable owner identity, independent of the current service endpoint.
 type ParakeetDraftStorage = Readonly<{
   getItem: (key) => string | null;
   setItem: (key, value) => void;
+  removeItem: (key) => void;
 }>;
 ```
 
@@ -464,6 +523,7 @@ type ParakeetToolCallView = Readonly<{
   exitCode?: number;
   error?: string;
   sections: readonly ParakeetToolCallSection[];
+  live?: ParakeetToolItem["live"];
 }>;
 ```
 
@@ -781,6 +841,11 @@ type ParakeetToolItem = Readonly<{
   data?: SessionMessage["data"];
   startedAt?: number;
   status: "completed" | "error" | "running" | "unknown";
+  live?: Readonly<{
+    lines: readonly string[];
+    droppedBytes: number;
+    revision: number;
+  }>;
 }>;
 ```
 
@@ -932,6 +997,20 @@ ready. The live canvas stays mounted and is paused unless `thinking` or
 
 ---
 
+### ComposerModelKey
+
+```ts
+const ComposerModelKey: ForwardRefExoticComponent<
+  Omit<KeycapButtonProps, "label" | "icon" | "readout"> &
+    object &
+    RefAttributes<HTMLButtonElement>
+>;
+```
+
+The same model face and chevron in chat and generation composers.
+
+---
+
 ### ShiitakeAvatar
 
 ```ts
@@ -976,6 +1055,72 @@ const initialToolDisclosure: ToolDisclosureState;
 Defaults only, with no reader choices.
 
 ## Functions
+
+### composerSendState()
+
+```ts
+function composerSendState(__namedParameters): SendActionState;
+```
+
+One input-to-action rule for both Apps; Caps owns the resulting key's look.
+
+#### Parameters
+
+| Parameter                           | Type                                                                                                                           | Description                                                             |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `__namedParameters`                 | \{ `draft`: `string`; `hasAttachments?`: `boolean`; `busy`: `boolean`; `queueWhileBusy?`: `boolean`; `blocked?`: `boolean`; \} | -                                                                       |
+| `__namedParameters.draft`           | `string`                                                                                                                       | -                                                                       |
+| `__namedParameters.hasAttachments?` | `boolean`                                                                                                                      | -                                                                       |
+| `__namedParameters.busy`            | `boolean`                                                                                                                      | -                                                                       |
+| `__namedParameters.queueWhileBusy?` | `boolean`                                                                                                                      | Chat can queue a follow-up; generation stays busy until it settles.     |
+| `__namedParameters.blocked?`        | `boolean`                                                                                                                      | An input owner can temporarily block submission, such as during recall. |
+
+#### Returns
+
+`SendActionState`
+
+---
+
+### ComposerShell()
+
+```ts
+function ComposerShell(__namedParameters): Element;
+```
+
+One field surface and one non-wrapping control row, with Send at its end.
+
+#### Parameters
+
+| Parameter           | Type                                        |
+| ------------------- | ------------------------------------------- |
+| `__namedParameters` | [`ComposerShellProps`](#composershellprops) |
+
+#### Returns
+
+`Element`
+
+---
+
+### useComposerTextareaSize()
+
+```ts
+function useComposerTextareaSize(ref, value): void;
+```
+
+Grow either App's field with its draft; shell CSS owns the height limits.
+
+#### Parameters
+
+| Parameter | Type                                 |
+| --------- | ------------------------------------ |
+| `ref`     | `RefObject`\<`HTMLTextAreaElement`\> |
+| `value`   | `string`                             |
+
+#### Returns
+
+`void`
+
+---
 
 ### InteractionPanel()
 
@@ -1183,6 +1328,11 @@ function visibleToolCalls(
   exitCode?: number;
   error?: string;
   sections: readonly ParakeetToolCallSection[];
+  live?: Readonly<{
+    lines: readonly string[];
+    droppedBytes: number;
+    revision: number;
+  }>;
 }>[];
 ```
 
@@ -1202,7 +1352,9 @@ readonly `Readonly`\<\{ `id`: `string`; `kind`:
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
 `status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
 `durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`; `sections`:
-readonly [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; \}\>[]
+readonly [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`:
+`Readonly`\<\{ `lines`: readonly `string`[]; `droppedBytes`: `number`;
+`revision`: `number`; \}\>; \}\>[]
 
 ---
 

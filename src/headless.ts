@@ -10,6 +10,7 @@ export type {
   ParakeetDraftIdentity,
   ParakeetDraftStorage,
 } from "./core/draft-storage.js";
+export { sanitizeDisplayText } from "./core/display-text.js";
 export { formatContextUsage, formatTokenCount } from "./core/format-context.js";
 export { formatWhen, oneLine } from "./core/picker-text.js";
 export { providerChoices } from "./provider-choices.js";
@@ -36,13 +37,16 @@ export {
 } from "./conversation.js";
 export {
   sessionViewState,
-  queuedSessionLabel,
+  sessionStateLabel,
   sessionActivityStatus,
   type SessionActivityStatus,
   type SessionViewFacts,
   type SessionViewState as ParakeetOwnerViewState,
 } from "./core/session-view-state.js";
-export { mergeTerminals } from "./core/session-projection.js";
+export {
+  applySessionFrame,
+  mergeTerminals,
+} from "./core/session-projection.js";
 export {
   type SessionActivity,
   seedSessionQuery,
@@ -155,6 +159,7 @@ export {
   formatToolDuration,
   toolCallView,
   toolKindSigils,
+  toolLiveLines,
   toolStatusTone,
   type ToolCallSection as ParakeetToolCallSection,
   type ToolCallView as ParakeetToolCallView,

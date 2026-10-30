@@ -4,7 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
 
 import { useTimelineItemKey } from "../src/core/use-timeline-item-key.js";
-import type { UserMessageItem } from "../src/store/types.js";
+import type { TimelineItem, UserMessageItem } from "../src/store/types.js";
+import { toolGroup } from "../src/core/tool-groups.js";
 
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   configurable: true,
@@ -46,8 +47,8 @@ function mountKeyHook() {
     settled,
     tail,
   }: {
-    settled: readonly UserMessageItem[];
-    tail: readonly UserMessageItem[];
+    settled: readonly TimelineItem[];
+    tail: readonly TimelineItem[];
   }) {
     const getItemKey = useTimelineItemKey(settled, tail);
     callbacks.add(getItemKey);
@@ -61,8 +62,8 @@ function mountKeyHook() {
       return latest(index);
     },
     render: async (
-      settled: readonly UserMessageItem[],
-      tail: readonly UserMessageItem[],
+      settled: readonly TimelineItem[],
+      tail: readonly TimelineItem[],
     ) => {
       await act(async () => {
         root.render(<Probe settled={settled} tail={tail} />);
@@ -82,6 +83,34 @@ it("keeps one key callback across text-only revisions of the tail", async () => 
 
   expect(hook.callbacks.size).toBe(1);
   expect([0, 1, 2, 3].map(hook.key)).toEqual(["h0", "h1", "h2", "live"]);
+});
+
+it("keeps measured row identity across live output overlays on durable calls", async () => {
+  const hook = mountKeyHook();
+  for (const revision of [1, 2, 3]) {
+    await hook.render(
+      [
+        ...history,
+        toolGroup([
+          {
+            id: "build",
+            kind: "tool",
+            name: "execute",
+            args: { code: "return 1;" },
+            status: "running",
+            live: {
+              lines: [`step ${String(revision)}`],
+              droppedBytes: 0,
+              revision,
+            },
+          },
+        ]),
+      ],
+      [],
+    );
+  }
+  expect(hook.callbacks.size).toBe(1);
+  expect([0, 3].map(hook.key)).toEqual(["h0", "tools:build"]);
 });
 
 it("issues a new key callback when the tail gains a row", async () => {

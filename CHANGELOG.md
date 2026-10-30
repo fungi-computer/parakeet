@@ -1,5 +1,46 @@
 # @fungi.computer/parakeet
 
+## 0.6.0
+
+### Minor Changes
+
+- Changes since 0.5.0:
+
+  - fix(tui): show Agent activity instead of queued-message blockers
+  - fix(composer): align native keys, empty Send and usage readouts
+  - fix(parakeet): use the Caps attachment remove face
+  - feat(composer): finish native row controls and responsive parity
+  - fix(parakeet): use Caps for released controls
+  - fix(parakeet): retain audited S7 follow-ups on current Integration
+  - fix(oyster): report new Sessions and release cancelled RPC streams
+  - feat(parakeet): share Grove and Prints composer geometry
+  - fix(parakeet): hide narrow attention captions accessibly
+  - fix(grove): keep phone controls and Inbox status aligned
+  - fix(parakeet): report unavailable draft storage without a notice
+  - fix(grove): checkpoint status dots and draft regression
+  - fix(parakeet): share live and final display character policy
+  - fix(shiitake): name work blocking queued conversations
+  - fix(parakeet): keep folded live tails and row keys stable
+  - fix(shiitake): bound progress flush latency and strengthen delta proofs
+  - feat(parakeet): show live tool tails in existing call rows
+  - fix(shiitake): stream bounded offset append progress across all clients
+  - fix: restack live tail on qualified Local streams
+  - fix: restack Computer streams on corrected live text policy
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.6.0
+  - @fungi.computer/bird-dog@0.3.1
+  - @fungi.computer/caps@0.5.0
+  - @fungi.computer/shiitake@0.7.0
+  - @fungi.computer/sprite-zdog@0.3.0
+  - @fungi.computer/knapsack@0.4.1
+
 ## 0.5.0
 
 ### Minor Changes

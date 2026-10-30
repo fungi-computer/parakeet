@@ -239,7 +239,12 @@ it("updates the live tail without rehighlighting settled messages or rescanning 
   highlight.mockClear();
   historyIterations.mockClear();
 
+  let textOffset = 0;
   for (const revision of [1, 2, 3]) {
+    const append =
+      revision === 1
+        ? "**Live revision 1**\n\n```js\nconst live = 1;"
+        : `\n// Live revision ${String(revision)}\nconst live = ${String(revision)};${revision === 3 ? "\n```" : ""}`;
     await settle(() => {
       if (receive === undefined) throw new Error("Session watch is not ready");
       receive({
@@ -250,14 +255,16 @@ it("updates the live tail without rehighlighting settled messages or rescanning 
           progress: {
             messageId: "live",
             revision,
-            text: `**Live revision ${String(revision)}**\n\n\`\`\`js\nconst live = ${String(revision)};${revision === 3 ? "\n```" : ""}`,
-            thinking: "",
-            textTruncated: false,
-            thinkingTruncated: false,
+            text: {
+              offset: textOffset,
+              append,
+            },
+            thinking: { offset: 0, append: "" },
           },
         }),
       });
     });
+    textOffset += append.length;
     await vi.waitFor(async () => {
       await settle();
       expect(container.textContent).toContain(
@@ -279,7 +286,11 @@ it("updates the live tail without rehighlighting settled messages or rescanning 
     highlight.mock.calls
       .filter(([code]) => code.includes("const live ="))
       .map(([code]) => code.trim()),
-  ).toEqual(["const live = 1;", "const live = 2;", "const live = 3;"]);
+  ).toEqual([
+    "const live = 1;",
+    "const live = 1;\n// Live revision 2\nconst live = 2;",
+    "const live = 1;\n// Live revision 2\nconst live = 2;\n// Live revision 3\nconst live = 3;",
+  ]);
 
   await settle(() => {
     if (receive === undefined) throw new Error("Session watch is not ready");
@@ -310,9 +321,9 @@ it("updates the live tail without rehighlighting settled messages or rescanning 
   await vi.waitFor(async () => {
     await settle();
     expect(container.textContent).toContain("const changed = true;");
-    expect(container.querySelector(".composer-footer")?.textContent).toContain(
-      "failed",
-    );
+    expect(
+      container.querySelector(".parakeet-composer-row")?.textContent,
+    ).toContain("failed");
   });
   expect(container.textContent).not.toContain("Live revision 3");
   expect(liveRegion?.textContent).toBe("failed");
