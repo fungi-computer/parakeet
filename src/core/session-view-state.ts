@@ -152,16 +152,16 @@ export function sameRunningWork(
   right: AgentRunningWork | null,
 ): boolean {
   if (left === null || right === null) return left === right;
-  if (left.kind === "session" && right.kind === "session")
-    return (
-      left.sessionId === right.sessionId &&
-      left.commandId === right.commandId &&
-      left.title === right.title
-    );
-  if (left.kind === "host" && right.kind === "host")
-    return left.lane === right.lane && left.jobId === right.jobId;
-  return false;
+  return left.phase === right.phase;
 }
+
+const occupancyLabels = {
+  thinking: "thinking",
+  streaming: "streaming",
+  running_tool: "running a tool",
+  waiting_on_you: "waiting on you",
+  cancelling: "cancelling",
+} as const satisfies Record<AgentRunningWork["phase"], string>;
 
 /** Activity only: queued messages belong in the transcript, never in this label. */
 export function sessionStateLabel(
@@ -173,17 +173,19 @@ export function sessionStateLabel(
   | "running a tool"
   | "idle"
   | "waiting on you"
+  | "cancelling"
   | "failed" {
   switch (state.kind) {
     case "queued":
-      // Executor occupancy is the only Agent activity fact in a queued view.
-      // Its identity/title is not a state and must never become a status label.
-      return state.runningWork === null ? "idle" : "thinking";
+      return state.runningWork === null
+        ? "idle"
+        : occupancyLabels[state.runningWork.phase];
     case "thinking":
-    case "cancelling":
     case "compacting":
     case "retrying":
       return "thinking";
+    case "cancelling":
+      return "cancelling";
     case "responding":
       return "streaming";
     case "running_tool":

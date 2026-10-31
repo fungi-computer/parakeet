@@ -1,5 +1,22 @@
 # @fungi.computer/parakeet
 
+## 0.6.1
+
+### Patch Changes
+
+- Changes since 0.6.0:
+
+  - fix(tui): carry real occupancy phases and show cancelling
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/caps@0.6.0
+  - @fungi.computer/shiitake@0.8.0
+  - @fungi.computer/sigils@0.2.1
+  - @fungi.computer/agar@0.6.1
+  - @fungi.computer/knapsack@0.4.2
+
 ## 0.6.0
 
 ### Minor Changes

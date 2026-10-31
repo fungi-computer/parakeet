@@ -1154,12 +1154,7 @@ it("updates a queued blocker even when the command and cursor stay unchanged", (
       queue: {
         state: "queued",
         commandId: "queued-command",
-        runningWork: {
-          kind: "session",
-          sessionId: "running-session",
-          commandId: "running-command",
-          title: "Blocking conversation",
-        },
+        runningWork: { phase: "streaming" },
       },
     },
   });

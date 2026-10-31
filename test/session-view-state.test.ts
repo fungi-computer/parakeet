@@ -57,6 +57,7 @@ const retry = {
 
 it("labels activity without turning executor identity into a queued-behind label", () => {
   expect(sessionStateLabel({ kind: "thinking" })).toBe("thinking");
+  expect(sessionStateLabel({ kind: "cancelling" })).toBe("cancelling");
   expect(sessionStateLabel({ kind: "responding" })).toBe("streaming");
   expect(sessionStateLabel({ kind: "running_tool", tool: "execute" })).toBe(
     "running a tool",
@@ -76,12 +77,7 @@ it("labels activity without turning executor identity into a queued-behind label
     sessionStateLabel({
       kind: "queued",
       queuedCommandId: "pending",
-      runningWork: {
-        kind: "session",
-        sessionId: "other",
-        commandId: "active",
-        title: "Lanes tick",
-      },
+      runningWork: { phase: "thinking" },
     }),
   ).toBe("thinking");
 });
@@ -298,7 +294,7 @@ it("compares view states by what they say", () => {
   ).toBe(false);
 });
 
-it("changes the queued readout when the executor changes", () => {
+it("changes the queued readout when the occupying phase changes", () => {
   const queued = sessionViewState(facts(queuedFacts("next")));
   const behindSession = sessionViewState(
     facts({
@@ -306,12 +302,7 @@ it("changes the queued readout when the executor changes", () => {
       queue: {
         state: "queued",
         commandId: "next",
-        runningWork: {
-          kind: "session",
-          sessionId: "a",
-          commandId: "running",
-          title: "First",
-        },
+        runningWork: { phase: "thinking" },
       },
     }),
   );
@@ -320,45 +311,30 @@ it("changes the queued readout when the executor changes", () => {
     sameSessionViewState(behindSession, {
       kind: "queued",
       queuedCommandId: "next",
-      runningWork: {
-        kind: "session",
-        sessionId: "b",
-        commandId: "running",
-        title: "Second",
-      },
+      runningWork: { phase: "streaming" },
     }),
   ).toBe(false);
   expect(
     sameSessionViewState(behindSession, {
       kind: "queued",
       queuedCommandId: "next",
-      runningWork: {
-        kind: "session",
-        sessionId: "a",
-        commandId: "running",
-        title: "First",
-      },
+      runningWork: { phase: "thinking" },
     }),
   ).toBe(true);
   expect(
     sameSessionViewState(behindSession, {
       kind: "queued",
       queuedCommandId: "next",
-      runningWork: {
-        kind: "session",
-        sessionId: "a",
-        commandId: "running",
-        title: "Renamed",
-      },
+      runningWork: { phase: "waiting_on_you" },
     }),
   ).toBe(false);
 });
 
-it("compares host blocker facts without confusing them with a Session", () => {
+it("compares identity-free occupancy phases and vacancy", () => {
   const queued = {
     kind: "queued",
     queuedCommandId: "next",
-    runningWork: { kind: "host", lane: "delivery", jobId: "one" },
+    runningWork: { phase: "thinking" },
   } satisfies SessionViewState;
   expect(
     sameSessionViewState(queued, {
@@ -369,13 +345,13 @@ it("compares host blocker facts without confusing them with a Session", () => {
   expect(
     sameSessionViewState(queued, {
       ...queued,
-      runningWork: { ...queued.runningWork, lane: "cleanup" },
+      runningWork: { phase: "running_tool" },
     }),
   ).toBe(false);
   expect(
     sameSessionViewState(queued, {
       ...queued,
-      runningWork: { ...queued.runningWork, jobId: "two" },
+      runningWork: { phase: "cancelling" },
     }),
   ).toBe(false);
   expect(sameSessionViewState(queued, { ...queued, runningWork: null })).toBe(
@@ -384,12 +360,7 @@ it("compares host blocker facts without confusing them with a Session", () => {
   expect(
     sameSessionViewState(queued, {
       ...queued,
-      runningWork: {
-        kind: "session",
-        sessionId: "delivery",
-        commandId: "one",
-        title: "",
-      },
+      runningWork: { phase: "waiting_on_you" },
     }),
   ).toBe(false);
 });

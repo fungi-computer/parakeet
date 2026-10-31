@@ -2545,6 +2545,7 @@ function sessionStateLabel(
   | "idle"
   | "thinking"
   | "failed"
+  | "cancelling"
   | "streaming"
   | "running a tool"
   | "waiting on you";
@@ -2561,8 +2562,8 @@ Activity only: queued messages belong in the transcript, never in this label.
 
 #### Returns
 
-\| `"idle"` \| `"thinking"` \| `"failed"` \| `"streaming"` \| `"running a tool"`
-\| `"waiting on you"`
+\| `"idle"` \| `"thinking"` \| `"failed"` \| `"cancelling"` \| `"streaming"` \|
+`"running a tool"` \| `"waiting on you"`
 
 ---
 

@@ -107,42 +107,21 @@ const cancelWaiting = (container: HTMLElement) =>
   container.querySelector<HTMLButtonElement>("[data-parakeet-waiting] button");
 
 it.each([
-  {
-    name: "known title",
-    work: {
-      kind: "session",
-      sessionId: "session_raw-blocker",
-      commandId: "running-1",
-      title: "Lanes tick",
-    },
-  },
-  {
-    name: "unknown title",
-    work: {
-      kind: "session",
-      sessionId: "session_raw-blocker",
-      commandId: "running-1",
-      title: "",
-    },
-  },
-  {
-    name: "host work",
-    work: {
-      kind: "host",
-      lane: "lane_private",
-      jobId: "job_private",
-    },
-  },
+  "thinking",
+  "streaming",
+  "running_tool",
+  "waiting_on_you",
+  "cancelling",
 ] as const)(
-  "never renders a queued-behind notice ($name)",
-  async ({ work }) => {
+  "never renders a queued-behind notice for the %s occupant phase",
+  async (phase) => {
     const snapshot = sessionSnapshot({
       activity: {
         ...queuedFacts("queued-1"),
         queue: {
           state: "queued",
           commandId: "queued-1",
-          runningWork: work,
+          runningWork: { phase },
         },
       },
     });
@@ -152,10 +131,7 @@ it.each([
       const notice = container.querySelector("[data-parakeet-waiting]");
       expect(notice).toBeNull();
       expect(container.textContent).not.toContain("Queued behind");
-      expect(container.textContent).not.toContain("Lanes tick");
-      expect(container.textContent).not.toContain("session_raw-blocker");
-      expect(container.textContent).not.toContain("lane_private");
-      expect(container.textContent).not.toContain("job_private");
+      expect(container.textContent).not.toContain(waitingCopy);
     });
   },
 );
