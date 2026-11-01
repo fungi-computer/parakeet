@@ -14,6 +14,8 @@ import {
 import type { ParakeetSession } from "../session.js";
 import { applySessionFrame } from "./session-projection.js";
 import { reportFailure } from "../lib/failure.js";
+import * as Stream from "effect/Stream";
+import { sessionSilenceDeadlineMs } from "@fungi.computer/shiitake/client";
 
 type SessionObservation =
   | Readonly<{ kind: "opening" }>
@@ -101,7 +103,22 @@ async function* observeSession(
     if (signal.aborted) return;
     let snapshot = watch.snapshot;
     yield { kind: "snapshot", value: snapshot };
-    for await (const frame of watch.changes) {
+    const frames = Stream.fromAsyncIterable(
+      watch.changes,
+      (cause) => cause,
+    ).pipe(
+      Stream.timeoutOrElse({
+        duration: sessionSilenceDeadlineMs,
+        orElse: () =>
+          Stream.fail(
+            new Error(
+              "Session feed is connected but silent; the service may be busy",
+            ),
+          ),
+      }),
+      Stream.toAsyncIterable,
+    );
+    for await (const frame of frames) {
       snapshot = applySessionFrame(snapshot, frame);
       if (snapshot.messages.length > LIVE_HISTORY_REFRESH_AT) {
         snapshot = await session.read({ limit: LIVE_HISTORY_LIMIT });

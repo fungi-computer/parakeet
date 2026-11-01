@@ -186,6 +186,7 @@ export function applySessionFrame(
   current: SessionSnapshot,
   frame: SessionFrame,
 ): SessionSnapshot {
+  if (frame.kind === "heartbeat") return current;
   if (frame.kind === "reset")
     return {
       ...frame.baseline,

@@ -109,6 +109,13 @@ it("applies each delivered frame once and retains the retry prompt through non-u
     }
     expect(apply).toHaveBeenCalledTimes(4);
     expect(state()?.snapshot?.progress?.text).toBe("Partial");
+    const beforeHeartbeat = state();
+    await deliver({ kind: "heartbeat" });
+    expect(state()?.snapshot).toBe(beforeHeartbeat?.snapshot);
+    expect(state()?.latestPrompt).toBe(prompt);
+    expect(state()?.lastReplyAt).toBeGreaterThan(
+      beforeHeartbeat?.lastReplyAt ?? 0,
+    );
     await deliver(
       sessionFrame({
         kind: "update",
@@ -140,7 +147,7 @@ it("applies each delivered frame once and retains the retry prompt through non-u
     });
     expect(state()?.snapshot?.messages).toEqual([]);
     expect(state()?.latestPrompt?.text).toBe("Now this");
-    expect(apply).toHaveBeenCalledTimes(6);
+    expect(apply).toHaveBeenCalledTimes(7);
   } finally {
     await client.cancelQueries(options);
     await observing;

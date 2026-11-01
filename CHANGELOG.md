@@ -1,5 +1,22 @@
 # @fungi.computer/parakeet
 
+## 0.7.0
+
+### Minor Changes
+
+- Changes since 0.6.2:
+
+  - feat(shiitake): retain bounded Session feeds on current Integration
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/shiitake@0.9.0
+  - @fungi.computer/sigils@0.3.0
+  - @fungi.computer/knapsack@0.4.3
+  - @fungi.computer/caps@0.6.0
+
 ## 0.6.2
 
 ### Patch Changes

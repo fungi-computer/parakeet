@@ -168,7 +168,8 @@ export type FixtureSessionFrame =
   | (Omit<FixtureSessionProgressFrame, "activity"> & FixtureActivity);
 
 export function sessionFrame(input: FixtureSessionFrame): SessionFrame {
-  if (input.kind === "reset") return parseSessionFrame(JSON.stringify(input));
+  if (input.kind === "reset" || input.kind === "heartbeat")
+    return parseSessionFrame(JSON.stringify(input));
   const { status, ...frame } = { status: undefined, ...input };
   const activity = frame.activity ?? activityOf(status ?? "idle");
   return parseSessionFrame(
