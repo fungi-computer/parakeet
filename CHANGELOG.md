@@ -1,5 +1,17 @@
 # @fungi.computer/parakeet
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.7.0
+  - @fungi.computer/caps@0.7.0
+  - @fungi.computer/shiitake@0.9.1
+  - @fungi.computer/knapsack@0.4.4
+
 ## 0.7.0
 
 ### Minor Changes

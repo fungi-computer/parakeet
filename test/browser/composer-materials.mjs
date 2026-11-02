@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import process from "node:process";
 import { build } from "esbuild";
 import { chromium } from "playwright";
+import { launchIsolatedChromium } from "../../../../tooling/proof-runner/isolated-chromium.mjs";
 import { z } from "zod";
 
 const packageRoot = resolve(import.meta.dirname, "../..");
@@ -80,7 +81,7 @@ try {
     })
     .parse(server.address());
 
-  browser = await chromium.launch();
+  browser = await launchIsolatedChromium(chromium, [address.port]);
   const page = await browser.newPage({
     viewport: {
       height: 900,
