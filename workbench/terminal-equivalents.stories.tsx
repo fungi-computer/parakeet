@@ -6,7 +6,16 @@ import {
 } from "../src/components/ChatComposer.js";
 import { ClientRows } from "../src/components/ClientRows.js";
 import type { ClientContributionV1 } from "@fungi.computer/shiitake/client-entry";
-import type { FixtureGoal } from "../test/fixtures/session.fixture.js";
+import {
+  commandHandler,
+  commandResult,
+  noExtension,
+  sessionSnapshot,
+  type FixtureGoal,
+} from "../test/fixtures/session.fixture.js";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ParakeetProvider } from "../src/headless.js";
+import type { ParakeetSession } from "../src/session.js";
 import { z } from "zod";
 import "@fungi.computer/parakeet/styles.css";
 
@@ -87,6 +96,27 @@ export const QueueFull = composer("thinking", {
   admissionError: "queue_full",
   draft: "Please check the final result at phone width.",
 });
+/** An idle Session: the rows read their interaction store from the provider's scope. */
+const idleSession: ParakeetSession = {
+  address: "workbench://parakeet/terminal-equivalents",
+  latestPending: () => Promise.resolve(null),
+  withdraw: () => Promise.resolve({ status: "unknown" }),
+  command: commandHandler(commandResult),
+  extension: noExtension,
+  read: () => Promise.resolve(sessionSnapshot()),
+  watch: () =>
+    Promise.resolve({
+      snapshot: sessionSnapshot(),
+      changes: {
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise(() => undefined),
+          return: () => Promise.resolve({ done: true, value: undefined }),
+        }),
+      },
+      close: () => Promise.resolve(),
+    }),
+};
+const queryClient = new QueryClient();
 function goal(initial: FixtureGoal["state"], offline = false): Story {
   return () => {
     const [state, setState] = useState(initial);
@@ -117,23 +147,27 @@ function goal(initial: FixtureGoal["state"], offline = false): Story {
         : []),
     ];
     return (
-      <div className="mx-auto max-w-[48rem] p-md">
-        <ClientRows
-          entryId="example"
-          rows={rows}
-          actions={{
-            state: new Map(),
-            enabled: !offline,
-            execute: (_entryId, action) => {
-              const input = z
-                .object({ action: z.enum(["pause", "resume"]) })
-                .parse(action.input);
-              setState(input.action === "pause" ? "paused" : "active");
-              return Promise.resolve();
-            },
-          }}
-        />
-      </div>
+      <QueryClientProvider client={queryClient}>
+        <ParakeetProvider session={idleSession}>
+          <div className="mx-auto max-w-[48rem] p-md">
+            <ClientRows
+              entryId="example"
+              rows={rows}
+              actions={{
+                state: new Map(),
+                enabled: !offline,
+                execute: (_entryId, action) => {
+                  const input = z
+                    .object({ action: z.enum(["pause", "resume"]) })
+                    .parse(action.input);
+                  setState(input.action === "pause" ? "paused" : "active");
+                  return Promise.resolve();
+                },
+              }}
+            />
+          </div>
+        </ParakeetProvider>
+      </QueryClientProvider>
     );
   };
 }

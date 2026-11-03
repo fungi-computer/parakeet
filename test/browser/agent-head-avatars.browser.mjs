@@ -7,19 +7,17 @@
 // Keep the full story inventory: the root storyOrder references other packages.
 // In another terminal, run this proof against that server:
 //   pnpm --dir packages/parakeet exec node test/browser/agent-head-avatars.browser.mjs
-// Screenshots go to AGENT_HEAD_AVATAR_SHOTS, default
-// ~/Botanical-cto/polish-shots/2026-10-07/avatars-s2/.
+// Screenshots go to AGENT_HEAD_AVATAR_SHOTS, default .botanical/avatars-s2 in
+// the package checkout.
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import process from "node:process";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
 
 const base = process.env.AGENT_HEAD_WORKBENCH_URL ?? "http://127.0.0.1:61000";
 const shots =
-  process.env.AGENT_HEAD_AVATAR_SHOTS ??
-  resolve(homedir(), "Botanical-cto/polish-shots/2026-10-07/avatars-s2");
+  process.env.AGENT_HEAD_AVATAR_SHOTS ?? resolve(".botanical/avatars-s2");
 await mkdir(shots, { recursive: true });
 
 const story = (id, theme) => `${base}/?story=${id}&mode=preview&theme=${theme}`;

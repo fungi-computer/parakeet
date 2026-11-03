@@ -1,5 +1,23 @@
 # @fungi.computer/parakeet
 
+## 0.7.2
+
+### Patch Changes
+
+- Changes since 0.7.1:
+
+  - fix(workbench): repair the root browser proofs the nightly first ran
+  - fix(tests): keep proof evidence and logs out of the operator's home
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/caps@0.7.1
+  - @fungi.computer/gills@0.2.1
+  - @fungi.computer/agar@0.7.1
+  - @fungi.computer/shiitake@0.9.2
+  - @fungi.computer/knapsack@0.4.5
+  - @fungi.computer/bird-dog@0.3.2
+
 ## 0.7.1
 
 ### Patch Changes
