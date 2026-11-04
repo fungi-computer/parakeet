@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/parakeet",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "author": "Levi <levi@technomancy.dev>",
   "private": false,
   "description": "Standalone React composer for a typed Shiitake Session",
@@ -26,6 +26,10 @@
     "./agent-head": {
       "types": "./dist/agent-head.d.ts",
       "import": "./dist/agent-head.js"
+    },
+    "./website-visitor-client": {
+      "types": "./dist/website-visitor-client.d.ts",
+      "import": "./dist/website-visitor-client.js"
     },
     "./slash": {
       "types": "./dist/commands/slash.d.ts",
@@ -83,7 +87,6 @@
     "@types/node": "24.13.3",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.3",
-    "effect": "4.0.2",
     "esbuild": "0.28.2",
     "playwright": "1.62.1",
     "react": "18.3.1",
@@ -107,6 +110,7 @@
     "@tanstack/markdown": "0.0.12",
     "@tanstack/react-virtual": "3.14.10",
     "diff": "8.0.4",
+    "effect": "4.0.2",
     "eventsource": "5.1.1",
     "jotai": "2.20.3",
     "jotai-tanstack-query": "0.11.0",

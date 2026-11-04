@@ -1,5 +1,20 @@
 # @fungi.computer/parakeet
 
+## 0.8.0
+
+### Minor Changes
+
+- Changes since 0.7.2:
+
+  - fix(oyster): satisfy the lint and suppression budgets for the website
+    channel
+  - feat(oyster): ask a Turnstile-protected site's visitors for the check
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/shiitake@0.10.0
+
 ## 0.7.2
 
 ### Patch Changes
