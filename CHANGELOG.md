@@ -1,5 +1,19 @@
 # @fungi.computer/parakeet
 
+## 0.8.2
+
+### Patch Changes
+
+- Changes since 0.8.1:
+
+  - fix(oyster): complete runtime dependency qualification closure
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/bird-dog@0.3.3
+  - @fungi.computer/shiitake@0.11.1
+  - @fungi.computer/caps@0.7.1
+
 ## 0.8.1
 
 ### Patch Changes
