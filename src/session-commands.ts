@@ -2,6 +2,7 @@ import { nanoid } from "@fungi.computer/cairn";
 import { ShiitakeError } from "@fungi.computer/shiitake";
 import type { ParakeetSessionCommand } from "./session.js";
 import type {
+  WhistleContribution,
   WhistleExecutionInput,
   WhistleInteraction,
   WhistleRuntime,
@@ -87,12 +88,11 @@ function tell(interaction: WhistleInteraction | undefined, message: string) {
   return message;
 }
 
-/** Contribute the shared Session command vocabulary to one Whistle host. */
-export function contributeSessionCommands(
-  commands: Pick<SessionCommandRuntime, "contribute">,
+/** Shared Session definitions; a pane includes its model command in this namespace. */
+export function sessionCommandDefinitions(
   session: SessionCommandSession,
   options: ParakeetSessionCommandOptions,
-) {
+): WhistleContribution["commands"] {
   const unavailable = (name: string): never => {
     throw new Error(`${name} is unavailable in this host.`);
   };
@@ -332,5 +332,18 @@ export function contributeSessionCommands(
       },
     ],
   } satisfies Parameters<SessionCommandRuntime["contribute"]>[0];
-  return commands.contribute(contribution);
+  return contribution.commands;
+}
+
+/** Contribute the shared Session command vocabulary to one Whistle host. */
+export function contributeSessionCommands(
+  commands: Pick<SessionCommandRuntime, "contribute">,
+  session: SessionCommandSession,
+  options: ParakeetSessionCommandOptions,
+) {
+  return commands.contribute({
+    sourceId: options.sourceId,
+    namespace: options.namespace,
+    commands: sessionCommandDefinitions(session, options),
+  });
 }

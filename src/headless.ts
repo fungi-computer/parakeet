@@ -83,6 +83,7 @@ export {
 } from "./reload-command.js";
 export {
   contributeSessionCommands,
+  sessionCommandDefinitions,
   type ParakeetSessionCommandOptions,
 } from "./session-commands.js";
 export {

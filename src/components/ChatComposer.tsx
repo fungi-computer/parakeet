@@ -445,6 +445,7 @@ function useComposerRow({
   const needsAttention =
     viewState.kind === "waiting_for_you" || viewState.kind === "error";
   const modelName = model === undefined ? undefined : composerModelName(model);
+  const canPickModel = slash?.available("model") === true;
   const contextText =
     context === undefined ? undefined : formatContextUsage(context);
   const usageText =
@@ -474,7 +475,24 @@ function useComposerRow({
             content: (
               <StatusTrayList className="composer-settings">
                 {modelName === undefined ? null : (
-                  <StatusTrayRow primary="Model" secondary={modelName} />
+                  <StatusTrayRow
+                    primary="Model"
+                    secondary={modelName}
+                    actions={
+                      canPickModel ? (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => {
+                            setOpenId(null);
+                            slash.runCommand("model");
+                          }}
+                        >
+                          Open
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 )}
                 {contextText === undefined ? null : (
                   <StatusTrayRow
@@ -518,14 +536,15 @@ function useComposerRow({
         {attach}
         {modelName === undefined ? null : (
           <ComposerModelKey
-            aria-label={`Model: ${modelName}. Open settings`}
+            aria-label={`Model: ${modelName}. ${canPickModel ? "Change model" : "Open settings"}`}
             aria-haspopup="dialog"
-            expanded={openId === "settings"}
+            {...(canPickModel ? {} : { expanded: openId === "settings" })}
             label={modelName}
             onClick={() => {
-              setOpenId((id) => (id === "settings" ? null : "settings"));
+              if (canPickModel) slash.runCommand("model");
+              else setOpenId((id) => (id === "settings" ? null : "settings"));
             }}
-            title={`${modelName} · Settings`}
+            title={canPickModel ? "Change model" : `${modelName} · Settings`}
           />
         )}
         {statusChips?.map((chip, index) => (

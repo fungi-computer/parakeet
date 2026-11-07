@@ -1,5 +1,29 @@
 # @fungi.computer/parakeet
 
+## 0.9.0
+
+### Minor Changes
+
+- Changes since 0.8.2:
+
+  - fix(oyster): qualify the packed dependency inventory for strangers
+  - fix(parakeet): call admitted model picker directly
+  - fix(parakeet): open shared model picker from Settings row
+  - feat(grove): pick host-admitted Agent models through shared Session command
+  - fix(grove): merge integration and restore composer model picker
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.7.2
+  - @fungi.computer/bird-dog@0.3.4
+  - @fungi.computer/gills@0.2.2
+  - @fungi.computer/shiitake@0.12.0
+  - @fungi.computer/knapsack@0.4.6
+
 ## 0.8.2
 
 ### Patch Changes

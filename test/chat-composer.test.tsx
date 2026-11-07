@@ -541,7 +541,7 @@ it("offers Attach only when the host takes images, and removes one in place", ()
   ).toBeNull();
 });
 
-it("opens and closes Settings from the model key when no model command exists", () => {
+it.each([false, true])("routes the model key (%s)", (available) => {
   const store = createParakeetInteractions();
   const runCommand = vi.fn();
   const slash: SlashCommandController = {
@@ -558,7 +558,7 @@ it("opens and closes Settings from the model key when no model command exists", 
     dismiss: () => false,
     submit: () => undefined,
     choose: () => undefined,
-    available: () => false,
+    available: (alias) => available && alias === "model",
     runCommand,
   };
   const container = document.createElement("div");
@@ -583,12 +583,18 @@ it("opens and closes Settings from the model key when no model command exists", 
     );
   });
   const key = container.querySelector<HTMLButtonElement>(
-    '[aria-label="Model: GPT-6 Astra. Open settings"]',
+    "button.parakeet-composer-model-key",
   );
   expect(key?.classList.contains("caps-keycap-button")).toBe(true);
   act(() => {
     key?.click();
   });
+  if (available) {
+    expect(runCommand).toHaveBeenCalledExactlyOnceWith("model");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector("textarea")?.value).toBe("Keep this draft");
+    return;
+  }
   expect(runCommand).not.toHaveBeenCalled();
   expect(key?.getAttribute("aria-expanded")).toBe("true");
   expect(container.querySelector('[role="dialog"]')?.textContent).toContain(

@@ -113,6 +113,69 @@ const account: ModelAccountContext = {
 };
 import { contributeModelCommands } from "../src/model-commands.js";
 
+it("uses the host-admitted Agent list without a browser credential owner", async () => {
+  const offered = [
+    {
+      providerId: "@fungi",
+      providerName: "Fungi",
+      id: "luna",
+      name: "Luna",
+      reasoning: [],
+    },
+  ];
+  let live = offered;
+  let preference: ModelPreference | null = null;
+  const set = vi.fn((next: ModelPreference | null) => {
+    preference = next;
+    return Promise.resolve();
+  });
+  const refreshModels = vi.fn(() => Promise.resolve(live));
+  const commands = createWhistle();
+  contributeModelCommands(
+    commands,
+    { modelPreference: { read: () => Promise.resolve(preference), set } },
+    {
+      sourceId: "host-agent-model",
+      namespace: "session",
+      models: offered,
+      refreshModels,
+    },
+  );
+  const answers = ["@fungi", "0"];
+  const interaction: WhistleInteraction = {
+    run: (operation) => operation(),
+    signal: new AbortController().signal,
+    prompt: (prompt) =>
+      Promise.resolve(parsePromptAnswer(prompt, answers.shift() ?? "")),
+    notify: () => undefined,
+  };
+  try {
+    expect(
+      await commands.execute(
+        { namespace: "session", id: "model" },
+        { origin: "slash", interaction },
+      ),
+    ).toMatchObject({ status: "handled" });
+    expect(set).toHaveBeenCalledExactlyOnceWith({
+      providerId: "@fungi",
+      modelId: "luna",
+    });
+    expect(refreshModels).toHaveBeenCalledExactlyOnceWith(interaction.signal);
+    live = [];
+    const stale = await commands.execute(
+      { namespace: "session", id: "model" },
+      {
+        origin: "agent",
+        arguments: { providerId: "@fungi", modelId: "luna" },
+      },
+    );
+    expect(stale).toMatchObject({ status: "failed" });
+    expect(set).toHaveBeenCalledTimes(1);
+  } finally {
+    commands.close();
+  }
+});
+
 it("Enter after a provider choice selects its most recently used model", async () => {
   let preference: ModelPreference | null = null;
   const commands = createWhistle();

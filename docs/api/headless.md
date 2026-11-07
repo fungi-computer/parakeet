@@ -990,16 +990,10 @@ Coarse activity of a Session, for composer gating.
 ### SessionModelChoice
 
 ```ts
-type SessionModelChoice = Readonly<{
-  providerId: string;
-  providerName: string;
-  id: string;
-  name: string;
-  reasoning: readonly NonNullable<ModelPreference["reasoning"]>[];
-}>;
+type SessionModelChoice = Readonly<AgentModelList[number]>;
 ```
 
-A host's maintained catalog projection; no credentials or provider execution.
+The TUI and Grove render the same secret-free host projection.
 
 ---
 
@@ -1007,7 +1001,7 @@ A host's maintained catalog projection; no credentials or provider execution.
 
 ```ts
 type SessionModelCommandOptions = Readonly<{
-  account: ModelAccountContext;
+  account?: ModelAccountContext;
   sourceId: string;
   namespace: string;
   models: readonly SessionModelChoice[];
@@ -2187,6 +2181,11 @@ Apply one already-decoded Shiitake frame to its authoritative projection.
 function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
   observation: "live" | "connecting";
   snapshot:   | Readonly<{
+     parent?: {
+        agentId: string;
+        sessionId: string;
+        name: string;
+     };
      sessionId: string;
      cursor: string | null;
      hasMore: boolean;
@@ -2249,6 +2248,11 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
 }>, Error, Readonly<{
   observation: "live" | "connecting";
   snapshot:   | Readonly<{
+     parent?: {
+        agentId: string;
+        sessionId: string;
+        name: string;
+     };
      sessionId: string;
      cursor: string | null;
      hasMore: boolean;
@@ -2311,6 +2315,11 @@ function sessionQueryOptions(session): OmitKeyof<UseQueryOptions<Readonly<{
 }>, readonly ["shiitake-session", string]>, "queryFn"> & object & QueryKeyWithDataTag<readonly ["shiitake-session", string], Readonly<{
   observation: "live" | "connecting";
   snapshot:   | Readonly<{
+     parent?: {
+        agentId: string;
+        sessionId: string;
+        name: string;
+     };
      sessionId: string;
      cursor: string | null;
      hasMore: boolean;
@@ -2398,7 +2407,8 @@ One shared TanStack observation keyed by Shiitake's logical Session address.
 #### Returns
 
 `OmitKeyof`\<`UseQueryOptions`\<`Readonly`\<\{ `observation`: `"live"` \|
-`"connecting"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
+`"connecting"`; `snapshot`: \| `Readonly`\<\{ `parent?`: \{ `agentId`: `string`;
+`sessionId`: `string`; `name`: `string`; \}; `sessionId`: `string`; `cursor`:
 `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`;
 `messages`: readonly `Readonly`\<\{ `requestId?`: ...; `meta?`: ...; `data?`:
 ...; `origin?`: ...; `id`: ...; `sequence`: ...; `commandId`: ...; `value`: ...;
@@ -2417,7 +2427,8 @@ readonly `object`[]; `context?`: `Readonly`\<\{ `tokens`: ...; `window`: ...;
 `latestPrompt`: \| `Readonly`\<\{ `commandId`: `string`; `text`: `string`;
 `images`: readonly `object`[] \| `undefined`; \}\> \| `undefined`; \}\>,
 `Error`, `Readonly`\<\{ `observation`: `"live"` \| `"connecting"`; `snapshot`:
-\| `Readonly`\<\{ `sessionId`: `string`; `cursor`: `string` \| `null`;
+\| `Readonly`\<\{ `parent?`: \{ `agentId`: `string`; `sessionId`: `string`;
+`name`: `string`; \}; `sessionId`: `string`; `cursor`: `string` \| `null`;
 `hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`; `messages`: readonly
 `Readonly`\<\{ `requestId?`: ...; `meta?`: ...; `data?`: ...; `origin?`: ...;
 `id`: ...; `sequence`: ...; `commandId`: ...; `value`: ...; \}\>[]; `terminals`:
@@ -2437,7 +2448,8 @@ readonly `Readonly`\<\{ `commandId`: ...; `outcome`: ...; `sequence`: ...;
 `undefined`; \}\> \| `undefined`; \}\>, readonly \[`"shiitake-session"`,
 `string`\]\>, `"queryFn"`\> & `object` & `QueryKeyWithDataTag`\<readonly
 \[`"shiitake-session"`, `string`\], `Readonly`\<\{ `observation`: `"live"` \|
-`"connecting"`; `snapshot`: \| `Readonly`\<\{ `sessionId`: `string`; `cursor`:
+`"connecting"`; `snapshot`: \| `Readonly`\<\{ `parent?`: \{ `agentId`: `string`;
+`sessionId`: `string`; `name`: `string`; \}; `sessionId`: `string`; `cursor`:
 `string` \| `null`; `hasMore`: `boolean`; `oldestCursor?`: `string` \| `null`;
 `messages`: readonly `Readonly`\<\{ `requestId?`: ... \| ...; `meta?`: ... \|
 ...; `data?`: ... \| ...; `origin?`: ... \| ...; `id`: `string`; `sequence`:
@@ -3074,6 +3086,168 @@ Contribute `/reload` to one Whistle host.
 #### Returns
 
 `Readonly`\<\{ `update`: (`commands`) => `void`; `dispose`: () => `void`; \}\>
+
+---
+
+### sessionCommandDefinitions()
+
+```ts
+function sessionCommandDefinitions(session, options): readonly Readonly<{
+  id: string;
+  title: string;
+  category: string;
+  description?: string;
+  projections?: {
+     bindings?: {
+        order?: number;
+        values: readonly string[];
+     };
+     agent?: {
+        keybind?: string;
+        order?: number;
+     };
+     help?: {
+        order?: number;
+     };
+     menu?: {
+        order?: number;
+     };
+     palette?: {
+        order?: number;
+     };
+     slash?: {
+        aliases: readonly string[];
+        consumesDraft?: boolean;
+        order?: number;
+        arguments?: {
+           hint: string;
+           words?: readonly ...[];
+           text?: {
+              field: ...;
+              arguments: ...;
+              requestIdField?: ...;
+           };
+        };
+     };
+  };
+  action?: {
+     inputSchema?: {
+      [key: string]:
+        | string
+        | number
+        | boolean
+        | readonly string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | ... 4 more ... | null)[] | { ...; } | null)[] | { ...; } | null)[] | { ...; } | ...[]
+        | {
+      [key: string]: string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | ... 4 more ... | null)[] | { ...; } | null)[] | { ...; } | null)[] | { ...; } | ...;
+      }
+        | null;
+     };
+     outputSchema?: {
+      [key: string]:
+        | string
+        | number
+        | boolean
+        | readonly string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | ... 4 more ... | null)[] | { ...; } | null)[] | { ...; } | null)[] | { ...; } | ...[]
+        | {
+      [key: string]: string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | ... 4 more ... | null)[] | { ...; } | null)[] | { ...; } | null)[] | { ...; } | ...;
+      }
+        | null;
+     };
+     presentation?:   | {
+        type: "action";
+      }
+        | {
+        type: "custom";
+        data: {
+         [key: string]:
+           | string
+           | number
+           | boolean
+           | readonly string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | ... 4 more ... | null)[] | { ...; } | null)[] | { ...; } | null)[] | { ...; } | ...[]
+           | {
+         [key: string]: string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | number | boolean | readonly (string | ... 4 more ... | null)[] | { ...; } | null)[] | { ...; } | null)[] | { ...; } | ...;
+         }
+           | null;
+        };
+      }
+        | {
+        type: "choice";
+        options: readonly object[];
+      }
+        | {
+        type: "form";
+        submitLabel?: string;
+      }
+        | {
+        type: "confirmation";
+        message: string;
+        confirmLabel?: string;
+        cancelLabel?: string;
+      };
+  };
+  availability?: () => WhistleAvailability;
+  handler: (input) => unknown;
+}>[];
+```
+
+Shared Session definitions; a pane includes its model command in this namespace.
+
+#### Parameters
+
+| Parameter | Type                                                              |
+| --------- | ----------------------------------------------------------------- |
+| `session` | `SessionCommandSession`                                           |
+| `options` | [`ParakeetSessionCommandOptions`](#parakeetsessioncommandoptions) |
+
+#### Returns
+
+readonly `Readonly`\<\{ `id`: `string`; `title`: `string`; `category`: `string`;
+`description?`: `string`; `projections?`: \{ `bindings?`: \{ `order?`: `number`;
+`values`: readonly `string`[]; \}; `agent?`: \{ `keybind?`: `string`; `order?`:
+`number`; \}; `help?`: \{ `order?`: `number`; \}; `menu?`: \{ `order?`:
+`number`; \}; `palette?`: \{ `order?`: `number`; \}; `slash?`: \{ `aliases`:
+readonly `string`[]; `consumesDraft?`: `boolean`; `order?`: `number`;
+`arguments?`: \{ `hint`: `string`; `words?`: readonly ...[]; `text?`: \{
+`field`: ...; `arguments`: ...; `requestIdField?`: ...; \}; \}; \}; \};
+`action?`: \{ `inputSchema?`: \{ \[`key`: `string`\]: \| `string` \| `number` \|
+`boolean` \| readonly string \| number \| boolean \| readonly (string \| number
+\| boolean \| readonly (string \| number \| boolean \| readonly (string \|
+number \| boolean \| readonly (string \| number \| boolean \| readonly (string
+\| number \| boolean \| readonly (string \| ... 4 more ... \| null)\[\] \| \{
+...; \} \| null)\[\] \| \{ ...; \} \| null)\[\] \| \{ ...; \} \| ...[] \| \{
+\[`key`: `string`\]: string \| number \| boolean \| readonly (string \| number
+\| boolean \| readonly (string \| number \| boolean \| readonly (string \|
+number \| boolean \| readonly (string \| number \| boolean \| readonly (string
+\| number \| boolean \| readonly (string \| ... 4 more ... \| null)\[\] \| \{
+...; \} \| null)\[\] \| \{ ...; \} \| null)\[\] \| \{ ...; \} \| ...; \} \|
+`null`; \}; `outputSchema?`: \{ \[`key`: `string`\]: \| `string` \| `number` \|
+`boolean` \| readonly string \| number \| boolean \| readonly (string \| number
+\| boolean \| readonly (string \| number \| boolean \| readonly (string \|
+number \| boolean \| readonly (string \| number \| boolean \| readonly (string
+\| number \| boolean \| readonly (string \| ... 4 more ... \| null)\[\] \| \{
+...; \} \| null)\[\] \| \{ ...; \} \| null)\[\] \| \{ ...; \} \| ...[] \| \{
+\[`key`: `string`\]: string \| number \| boolean \| readonly (string \| number
+\| boolean \| readonly (string \| number \| boolean \| readonly (string \|
+number \| boolean \| readonly (string \| number \| boolean \| readonly (string
+\| number \| boolean \| readonly (string \| ... 4 more ... \| null)\[\] \| \{
+...; \} \| null)\[\] \| \{ ...; \} \| null)\[\] \| \{ ...; \} \| ...; \} \|
+`null`; \}; `presentation?`: \| \{ `type`: `"action"`; \} \| \{ `type`:
+`"custom"`; `data`: \{ \[`key`: `string`\]: \| `string` \| `number` \| `boolean`
+\| readonly string \| number \| boolean \| readonly (string \| number \| boolean
+\| readonly (string \| number \| boolean \| readonly (string \| number \|
+boolean \| readonly (string \| number \| boolean \| readonly (string \| number
+\| boolean \| readonly (string \| ... 4 more ... \| null)\[\] \| \{ ...; \} \|
+null)\[\] \| \{ ...; \} \| null)\[\] \| \{ ...; \} \| ...[] \| \{ \[`key`:
+`string`\]: string \| number \| boolean \| readonly (string \| number \| boolean
+\| readonly (string \| number \| boolean \| readonly (string \| number \|
+boolean \| readonly (string \| number \| boolean \| readonly (string \| number
+\| boolean \| readonly (string \| ... 4 more ... \| null)\[\] \| \{ ...; \} \|
+null)\[\] \| \{ ...; \} \| null)\[\] \| \{ ...; \} \| ...; \} \| `null`; \}; \}
+\| \{ `type`: `"choice"`; `options`: readonly `object`[]; \} \| \{ `type`:
+`"form"`; `submitLabel?`: `string`; \} \| \{ `type`: `"confirmation"`;
+`message`: `string`; `confirmLabel?`: `string`; `cancelLabel?`: `string`; \};
+\}; `availability?`: () => `WhistleAvailability`; `handler`: (`input`) =>
+`unknown`; \}\>[]
 
 ---
 

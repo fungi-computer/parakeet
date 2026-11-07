@@ -3,6 +3,7 @@ import {
   parseModelPreference,
   type ModelPreference,
 } from "@fungi.computer/shiitake/model-preference";
+import type { AgentModelList } from "@fungi.computer/shiitake/model-list";
 import {
   WhistleActionError,
   type WhistleAvailability,
@@ -20,19 +21,8 @@ import {
 } from "./account-commands.js";
 import { providerChoices } from "./provider-choices.js";
 
-/** A host's maintained catalog projection; no credentials or provider execution. */
-export type SessionModelChoice = Readonly<{
-  /** Stable provider identity used in a Session preference. */
-  providerId: string;
-  /** Provider label displayed by clients. */
-  providerName: string;
-  /** Model identity within this provider. */
-  id: string;
-  /** Human-facing model label. */
-  name: string;
-  /** Thinking levels supported by this catalog entry. */
-  reasoning: readonly NonNullable<ModelPreference["reasoning"]>[];
-}>;
+/** The TUI and Grove render the same secret-free host projection. */
+export type SessionModelChoice = Readonly<AgentModelList[number]>;
 
 export type ModelPreferenceOwner = Readonly<{
   modelPreference: Readonly<{
@@ -43,8 +33,8 @@ export type ModelPreferenceOwner = Readonly<{
 
 /** Contribution identity, catalog and optional local model-picker presentation. */
 export type SessionModelCommandOptions = Readonly<{
-  /** Shared credential owner and policy for the interactive provider flow. */
-  account: ModelAccountContext;
+  /** Local credential owner; hosted Agents offer only their admitted catalog. */
+  account?: ModelAccountContext;
   /** Host source that owns the contribution lease. */
   sourceId: string;
   /** Namespace for the semantic model command. */
@@ -116,10 +106,37 @@ const maximumModelOptions = 255;
 async function chooseProviderModels(
   interaction: WhistleInteraction,
   models: readonly SessionModelChoice[],
-  account: ModelAccountContext,
+  account: ModelAccountContext | undefined,
   refreshModels: SessionModelCommandOptions["refreshModels"],
   currentProviderId: string | undefined,
 ) {
+  if (account === undefined) {
+    const providers = [
+      ...new Map(models.map((model) => [model.providerId, model.providerName])),
+    ].slice(0, maximumModelOptions);
+    const providerId = await interaction.prompt({
+      type: "choice",
+      message: "Choose a provider",
+      summary: "Or follow the Agent's own model.",
+      current: currentProviderId ?? defaultChoice,
+      options: [
+        { value: defaultChoice, label: "Use agent model" },
+        ...providers.map(([value, label]) => ({ value, label })),
+      ],
+    });
+    if (providerId === defaultChoice) return null;
+    const offered = (
+      await interaction.run(() => refreshModels(interaction.signal))
+    )
+      .filter((model) => model.providerId === providerId)
+      .slice(0, maximumModelOptions);
+    if (offered.length === 0)
+      throw new WhistleActionError(
+        "model_unavailable",
+        "That provider has no available models. Retry /model.",
+      );
+    return offered;
+  }
   const { owner } = account;
   const [access, registry] = await Promise.all([
     owner.access(interaction.signal),
@@ -324,7 +341,13 @@ export function sessionModelCommandDefinitions(
         }
         if (preference !== null) {
           const selected = preference;
-          const model = options.models.find(
+          const offered =
+            options.account === undefined
+              ? await options.refreshModels(
+                  input.signal ?? new AbortController().signal,
+                )
+              : options.models;
+          const model = offered.find(
             (choice) =>
               choice.providerId === selected.providerId &&
               choice.id === selected.modelId,
