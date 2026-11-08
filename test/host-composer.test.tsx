@@ -5,6 +5,7 @@ import type {
   SessionFrame,
   SessionSnapshot,
 } from "@fungi.computer/shiitake/client";
+import type { ParakeetHostFacts } from "../src/host-facts.js";
 import { createWhistle, type WhistleRuntime } from "@fungi.computer/whistle";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactElement } from "react";
@@ -109,13 +110,16 @@ function hostSession(
 function HostView({
   commands,
   onLink,
+  hostFacts,
 }: Readonly<{
   commands: WhistleRuntime;
   onLink?: ((href: string) => boolean) | undefined;
+  hostFacts?: ParakeetHostFacts | undefined;
 }>): ReactElement {
   return (
     <ParakeetView
       commands={commands}
+      hostFacts={hostFacts}
       onLink={onLink}
       empty={
         onLink ? (
@@ -134,6 +138,7 @@ function render(
   session: ParakeetSession,
   commands: WhistleRuntime,
   onLink?: (href: string) => boolean,
+  hostFacts?: ParakeetHostFacts,
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -143,7 +148,7 @@ function render(
     root.render(
       <QueryClientProvider client={new QueryClient()}>
         <ParakeetProvider session={session}>
-          <HostView commands={commands} onLink={onLink} />
+          <HostView commands={commands} onLink={onLink} hostFacts={hostFacts} />
         </ParakeetProvider>
       </QueryClientProvider>,
     );
@@ -183,6 +188,55 @@ it("lets the host handle a transcript link before sandbox popup navigation", asy
     new MouseEvent("click", { bubbles: true, cancelable: true }),
   );
   expect(prevented).toBe(false);
+});
+
+it("offers host starter chips in the empty conversation and sends the one chosen", async () => {
+  const commands: SessionCommand[] = [];
+  const container = render(
+    hostSession(sessionSnapshot(), frames(), commands),
+    createWhistle(),
+    undefined,
+    { starters: ["Plan a weekend trip", "Summarize my notes"] },
+  );
+  await settle();
+  expect(container.textContent).not.toContain("What would you like to build?");
+  const chips = [...container.querySelectorAll("button")].filter((button) =>
+    ["Plan a weekend trip", "Summarize my notes"].includes(button.textContent),
+  );
+  expect(chips).toHaveLength(2);
+  await settle(() => chips[0]?.click());
+  await vi.waitFor(() => {
+    expect(prompts(commands)).toMatchObject([{ text: "Plan a weekend trip" }]);
+  });
+});
+
+it("says up front, before any run, that a model must be connected, with the fix as the one action", async () => {
+  const onSelect = vi.fn();
+  const container = render(
+    hostSession(sessionSnapshot(), frames(), []),
+    createWhistle(),
+    undefined,
+    {
+      modelSetup: {
+        state: "missing",
+        fix: { label: "Add a model key", onSelect },
+      },
+      starters: ["Plan a weekend trip"],
+    },
+  );
+  await settle();
+  expect(container.textContent).toContain("Connect a model to start");
+  expect(container.textContent).not.toContain("Plan a weekend trip");
+  // Typing cannot work yet, and the composer says why.
+  expect(textarea(container).disabled).toBe(true);
+  expect(textarea(container).placeholder).toBe(
+    "Connect a model to start chatting",
+  );
+  const fix = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Add a model key",
+  );
+  await settle(() => fix?.click());
+  expect(onSelect).toHaveBeenCalledOnce();
 });
 
 async function settle(operation?: () => void): Promise<void> {

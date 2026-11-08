@@ -1,5 +1,32 @@
 # @fungi.computer/parakeet
 
+## 0.10.0
+
+### Minor Changes
+
+- Changes since 0.9.2:
+
+  - feat(grove): setup-first first run, clickable starters, fewer steps to a
+    first Agent
+  - feat(parakeet): connect-a-model panel up front, specific Retry name
+  - feat(parakeet): one plain failure line, the setup notice for no model, host
+    starters
+  - fix(parakeet): build the package before its docs check
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.9.0
+  - @fungi.computer/caps@0.9.0
+  - @fungi.computer/gills@0.3.0
+  - @fungi.computer/sprite@0.2.2
+  - @fungi.computer/shiitake@0.12.3
+  - @fungi.computer/sprite-zdog@0.3.2
+  - @fungi.computer/knapsack@0.4.9
+
 ## 0.9.2
 
 ### Patch Changes

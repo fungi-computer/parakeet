@@ -1,11 +1,18 @@
 import type { ClientEntryV1 } from "@fungi.computer/shiitake/client-entry";
 import { Button } from "@fungi.computer/caps/components/button";
+import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
+import { EmptyState } from "@fungi.computer/caps/blocks/empty-state";
+import {
+  ParakeetHostFactsContext,
+  type ParakeetHostFacts,
+} from "./host-facts.js";
 import { Dialog, DialogContent } from "@fungi.computer/caps/components/dialog";
 import { ScrollToBottomBlob } from "@fungi.computer/caps/components/scroll-to-bottom-blob";
 import { createWhistle } from "@fungi.computer/whistle";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -89,6 +96,8 @@ export type ParakeetProps = Readonly<{
   onOpen?: ((target: NonNullable<RowV1["open"]>) => void) | undefined;
   /** Optional caller-owned empty conversation state. */
   empty?: ReactNode | undefined;
+  /** What the host knows: model setup, billing and starter prompts. */
+  hostFacts?: ParakeetHostFacts | undefined;
   /** Optional host Whistle runtime; Parakeet makes its own when omitted. */
   commands?: ParakeetCommandRuntime | undefined;
 }>;
@@ -115,6 +124,8 @@ export type ParakeetViewProps = Readonly<{
   onOpen?: ((target: NonNullable<RowV1["open"]>) => void) | undefined;
   /** Optional caller-owned empty conversation state. */
   empty?: ReactNode | undefined;
+  /** What the host knows: model setup, billing and starter prompts. */
+  hostFacts?: ParakeetHostFacts | undefined;
   /**
    * Optional host Whistle runtime holding the host's own commands. Parakeet
    * adds its built-ins and the Session's advertised commands to it, and makes
@@ -129,6 +140,7 @@ export function ParakeetView({
   visitor,
   composerActionVariant,
   empty,
+  hostFacts,
   commands,
   renderToolActions,
   claimsToolMedia,
@@ -166,103 +178,109 @@ export function ParakeetView({
     ],
   );
   return (
-    <div
-      className="parakeet flex h-full flex-col items-stretch"
-      data-parakeet="standalone"
-      data-testid="parakeet-view"
-      onClickCapture={(event) => {
-        const anchor =
-          event.target instanceof Element
-            ? event.target.closest("a[href]")
-            : null;
-        if (anchor instanceof HTMLAnchorElement && onLink?.(anchor.href))
-          event.preventDefault();
-      }}
-    >
-      <div className="flex h-full w-full flex-col border-r border-base-300">
-        <ConversationTimeline
-          disambiguateAuthors={
-            visitor === undefined && disambiguateAuthors === true
-          }
-          clientActions={clientActions}
-          onOpen={onOpen}
-          focusAfterJump={textareaRef}
-          empty={empty}
-          renderToolActions={renderToolActions}
-          claimsToolMedia={claimsToolMedia}
-          renderAssistantAttachment={renderAssistantAttachment}
-          formatAssistantText={formatAssistantText}
-        />
-        {contributions.some(({ entryId, value }) =>
-          value.panel.some(
-            (row) => JSON.stringify([entryId, row.id]) !== answering,
-          ),
-        ) ? (
-          <section
-            aria-label="Session extension controls"
-            className="w-full shrink-0 border-t border-base-300 bg-base-100"
-          >
-            {contributions.map(({ entryId, value: contribution }) => {
-              const value = {
-                ...contribution,
-                panel: contribution.panel.filter(
-                  (row) => JSON.stringify([entryId, row.id]) !== answering,
-                ),
-              };
-              // An extension's retained-event notice and null-anchor rows
-              // join its own footer entry; one with no panel row here keeps
-              // none of this, rather than growing a section just to show it.
-              const omittedHere =
-                value.panel.length === 0
-                  ? undefined
-                  : placed.omitted.find((entry) => entry.entryId === entryId);
-              const unanchoredHere =
-                value.panel.length === 0
-                  ? []
-                  : placed.unanchored
-                      .filter((entry) => entry.entryId === entryId)
-                      .flatMap(({ cell }) =>
-                        cell.rows.map((row) => ({
-                          ...row,
-                          id: `unanchored:${cell.id}:${row.id}`,
-                        })),
-                      );
-              return (
-                <ClientRows
-                  key={entryId}
-                  entryId={entryId}
-                  rows={[
-                    ...value.panel,
-                    ...(omittedHere === undefined
-                      ? []
-                      : [
-                          {
-                            id: `omitted:${entryId}`,
-                            title: `${String(omittedHere.count)} earlier change${omittedHere.count === 1 ? "" : "s"} omitted`,
-                            tone: "muted" as const,
-                          },
-                        ]),
-                    ...unanchoredHere,
-                  ]}
-                  actions={clientActions}
-                  onOpen={onOpen}
-                />
-              );
-            })}
-          </section>
+    <ParakeetHostFactsContext.Provider value={hostFacts ?? noHostFacts}>
+      <div
+        className="parakeet flex h-full flex-col items-stretch"
+        data-parakeet="standalone"
+        data-testid="parakeet-view"
+        onClickCapture={(event) => {
+          const anchor =
+            event.target instanceof Element
+              ? event.target.closest("a[href]")
+              : null;
+          if (anchor instanceof HTMLAnchorElement && onLink?.(anchor.href))
+            event.preventDefault();
+        }}
+      >
+        <div className="flex h-full w-full flex-col border-r border-base-300">
+          <ConversationTimeline
+            disambiguateAuthors={
+              visitor === undefined && disambiguateAuthors === true
+            }
+            clientActions={clientActions}
+            onOpen={onOpen}
+            focusAfterJump={textareaRef}
+            empty={empty}
+            renderToolActions={renderToolActions}
+            claimsToolMedia={claimsToolMedia}
+            renderAssistantAttachment={renderAssistantAttachment}
+            formatAssistantText={formatAssistantText}
+          />
+          {contributions.some(({ entryId, value }) =>
+            value.panel.some(
+              (row) => JSON.stringify([entryId, row.id]) !== answering,
+            ),
+          ) ? (
+            <section
+              aria-label="Session extension controls"
+              className="w-full shrink-0 border-t border-base-300 bg-base-100"
+            >
+              {contributions.map(({ entryId, value: contribution }) => {
+                const value = {
+                  ...contribution,
+                  panel: contribution.panel.filter(
+                    (row) => JSON.stringify([entryId, row.id]) !== answering,
+                  ),
+                };
+                // An extension's retained-event notice and null-anchor rows
+                // join its own footer entry; one with no panel row here keeps
+                // none of this, rather than growing a section just to show it.
+                const omittedHere =
+                  value.panel.length === 0
+                    ? undefined
+                    : placed.omitted.find((entry) => entry.entryId === entryId);
+                const unanchoredHere =
+                  value.panel.length === 0
+                    ? []
+                    : placed.unanchored
+                        .filter((entry) => entry.entryId === entryId)
+                        .flatMap(({ cell }) =>
+                          cell.rows.map((row) => ({
+                            ...row,
+                            id: `unanchored:${cell.id}:${row.id}`,
+                          })),
+                        );
+                return (
+                  <ClientRows
+                    key={entryId}
+                    entryId={entryId}
+                    rows={[
+                      ...value.panel,
+                      ...(omittedHere === undefined
+                        ? []
+                        : [
+                            {
+                              id: `omitted:${entryId}`,
+                              title: `${String(omittedHere.count)} earlier change${omittedHere.count === 1 ? "" : "s"} omitted`,
+                              tone: "muted" as const,
+                            },
+                          ]),
+                      ...unanchoredHere,
+                    ]}
+                    actions={clientActions}
+                    onOpen={onOpen}
+                  />
+                );
+              })}
+            </section>
+          ) : null}
+          <ConversationWaiting clientActions={clientActions} />
+          <ConversationComposer
+            visitor={visitor}
+            textareaRef={textareaRef}
+            composerActionVariant={composerActionVariant}
+            slash={slash}
+          />
+        </div>
+        {visitor === undefined ? (
+          <ConversationInteraction slash={slash} />
         ) : null}
-        <ConversationWaiting clientActions={clientActions} />
-        <ConversationComposer
-          visitor={visitor}
-          textareaRef={textareaRef}
-          composerActionVariant={composerActionVariant}
-          slash={slash}
-        />
       </div>
-      {visitor === undefined ? <ConversationInteraction slash={slash} /> : null}
-    </div>
+    </ParakeetHostFactsContext.Provider>
   );
 }
+
+const noHostFacts: ParakeetHostFacts = {};
 
 const busyStatuses = new Set([
   "cancelling",
@@ -566,16 +584,7 @@ function ConversationTimeline({
         ) : before.length > 0 ? (
           before
         ) : hasMoreHistory ? null : (
-          (empty ?? (
-            <div className="flex h-full items-center justify-center text-center">
-              <div>
-                <p className="mb-1 text-xs text-base-content">Ready</p>
-                <p className="text-[10px] text-dim">
-                  What would you like to build?
-                </p>
-              </div>
-            </div>
-          ))
+          (empty ?? <ConversationStarters />)
         )}
       </div>
       {count > 0 ? (
@@ -587,6 +596,50 @@ function ConversationTimeline({
           scrollerRef={scrollerRef}
         />
       ) : null}
+    </div>
+  );
+}
+
+/** The empty conversation: host starter chips when there are any, the quiet prompt otherwise. */
+function ConversationStarters() {
+  const { modelSetup, starters } = useContext(ParakeetHostFactsContext);
+  const composer = useComposer();
+  // Known up front, before any run: say so once, with the fix as the one action.
+  if (modelSetup?.state === "missing")
+    return (
+      <div className="flex h-full items-center justify-center">
+        <SetupNotice
+          cause="No model is connected to this workspace yet."
+          fix={modelSetup.fix}
+          need="Connect a model to start"
+          variant="panel"
+        />
+      </div>
+    );
+  if (starters === undefined || starters.length === 0)
+    return (
+      <div className="flex h-full items-center justify-center text-center">
+        <div>
+          <p className="mb-1 text-xs text-base-content">Ready</p>
+          <p className="text-[10px] text-dim">What would you like to build?</p>
+        </div>
+      </div>
+    );
+  return (
+    <div className="flex h-full items-center justify-center">
+      <EmptyState
+        description="Pick one to start, or type your own below."
+        suggestions={starters.map((prompt) => ({
+          label: prompt,
+          onSelect: () => {
+            // Same path as typing it: the draft is the prompt, then it sends.
+            composer.setDraft(prompt);
+            composer.send();
+          },
+        }))}
+        title="What would you like to do?"
+        variant="quiet"
+      />
     </div>
   );
 }
@@ -642,6 +695,7 @@ function ConversationComposer({
     slash: SlashCommandController;
     textareaRef: RefObject<HTMLTextAreaElement>;
   }>) {
+  const hostFacts = useContext(ParakeetHostFactsContext);
   const composer = useComposer();
   const sessionStatus = useStatus();
   const contributions = useClientContributions();
@@ -674,6 +728,11 @@ function ConversationComposer({
     slash: visitor === undefined ? slash : undefined,
     placeholder:
       visitor === undefined ? undefined : `Ask ${visitor.agentName}…`,
+    // No model means no reply: say why instead of taking a prompt that cannot work.
+    disabledReason:
+      hostFacts.modelSetup?.state === "missing"
+        ? "Connect a model to start chatting"
+        : undefined,
     showFooter: visitor === undefined,
     status: sessionStatus.status,
     viewState: sessionStatus.viewState,
@@ -693,6 +752,7 @@ export function Parakeet({
   markdownPolicy = "session",
   composerActionVariant,
   empty,
+  hostFacts,
   session,
   clients,
   renderToolActions,
@@ -711,6 +771,7 @@ export function Parakeet({
           visitor={visitor}
           composerActionVariant={composerActionVariant}
           empty={empty}
+          hostFacts={hostFacts}
           renderToolActions={renderToolActions}
           claimsToolMedia={claimsToolMedia}
           renderAssistantAttachment={renderAssistantAttachment}

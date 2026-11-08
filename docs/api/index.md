@@ -531,6 +531,36 @@ Renderer-neutral presentation of one tool call and its joined result.
 
 ---
 
+### ParakeetModelSetup
+
+```ts
+type ParakeetModelSetup = Readonly<{
+  state: "ready" | "missing" | "unknown";
+  fix: Readonly<{
+    label: string;
+    onSelect: () => void;
+  }>;
+}>;
+```
+
+Whether a model is connected, with the one fix the host offers.
+
+---
+
+### ParakeetHostFacts
+
+```ts
+type ParakeetHostFacts = Readonly<{
+  modelSetup?: ParakeetModelSetup;
+  billing?: boolean;
+  starters?: readonly string[];
+}>;
+```
+
+What the host knows that the conversation needs to speak plainly.
+
+---
+
 ### ParakeetVisitor
 
 ```ts
@@ -561,6 +591,7 @@ type ParakeetProps = Readonly<{
   onLink?: (href) => boolean;
   onOpen?: (target) => void;
   empty?: ReactNode;
+  hostFacts?: ParakeetHostFacts;
   commands?: ParakeetCommandRuntime;
 }>;
 ```
@@ -583,6 +614,7 @@ type ParakeetViewProps = Readonly<{
   onLink?: (href) => boolean;
   onOpen?: (target) => void;
   empty?: ReactNode;
+  hostFacts?: ParakeetHostFacts;
   commands?: ParakeetCommandRuntime;
 }>;
 ```

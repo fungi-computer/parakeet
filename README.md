@@ -16,13 +16,12 @@ message; the visitor mode does not register or execute slash commands.
 
 ## Set up
 
-Install `@fungi.computer/parakeet` from its package tarball. It requires a
-compatible React and React DOM pair, TanStack Query and an authorized Session
-supplied by the host. The manifest supports React 18.2 or 19.2 and later within
-those major versions. Build the dependency closure from the repository root:
+Install `@fungi.computer/parakeet` from npm. It requires a compatible React and
+React DOM pair, TanStack Query and an authorized Session supplied by the host.
+The manifest supports React 18.2 or 19.2 and later within those major versions.
 
 ```sh
-pnpm turbo:run run build --filter=@fungi.computer/parakeet
+npm install @fungi.computer/parakeet react react-dom @tanstack/react-query
 ```
 
 Browser hosts import `@fungi.computer/parakeet/styles.css` once. It includes the

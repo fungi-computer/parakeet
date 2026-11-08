@@ -129,7 +129,7 @@ it.each(["admission", "failed", "interrupted"] as const)(
       );
     });
     const alert = container.querySelector('[role="alert"]');
-    expect(alert?.classList.contains("caps-alert")).toBe(true);
+    expect(alert?.classList.contains("caps-failure-line")).toBe(true);
     expect(alert?.textContent).toContain(
       "If the model didn’t start, there’s no charge.",
     );
@@ -137,7 +137,7 @@ it.each(["admission", "failed", "interrupted"] as const)(
       "Model work already done can still use credits.",
     );
     const retry = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Retry prompt"]',
+      ".caps-failure-line button",
     );
     expect(retry).not.toBeNull();
     act(() => retry?.click());

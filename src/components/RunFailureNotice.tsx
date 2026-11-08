@@ -1,7 +1,9 @@
-import { Alert } from "@fungi.computer/caps/components/alert";
-import { Button } from "@fungi.computer/caps/components/button";
+import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
+import { FailureLine } from "@fungi.computer/caps/components/failure-line";
 import { boundedDiagnostic } from "@fungi.computer/bird-dog/effect";
+import { useContext } from "react";
 import type { ComposerController } from "../conversation.js";
+import { ParakeetHostFactsContext } from "../host-facts.js";
 
 const messages = {
   admission: "Your prompt didn’t make it through. Let’s give it another go.",
@@ -21,6 +23,18 @@ export function RunFailureNotice({
   cause?: string | undefined;
   onRetry: () => void;
 }>) {
+  const { billing = true, modelSetup } = useContext(ParakeetHostFactsContext);
+  // With no model connected the timeline already says so, once, with the fix.
+  if (failure === "failed" && modelSetup?.state === "missing") return null;
+  if (failure === "admission" && modelSetup?.state === "missing")
+    return (
+      <SetupNotice
+        cause="No model is connected to this workspace."
+        fix={modelSetup.fix}
+        need="No model could answer"
+        variant="inline"
+      />
+    );
   const bounded = cause === undefined ? undefined : boundedDiagnostic(cause);
   // Diagnostic metadata is useful to the owner, not a public explanation.
   const publicCause =
@@ -31,31 +45,19 @@ export function RunFailureNotice({
       : undefined;
   const interruptedWithReason =
     failure === "interrupted" && publicCause !== undefined;
+  const credits = billing
+    ? " If the model didn’t start, there’s no charge. Model work already done can still use credits."
+    : "";
+  const message = interruptedWithReason
+    ? `This turn stopped before it finished: ${publicCause}. Your prompt is still here.`
+    : `${messages[failure]}${credits}${publicCause ? ` ${publicCause}` : ""}`;
   return (
-    <Alert
-      tone="warning"
-      title={failure === "cancelled" ? "Taking a breather" : "A little tangle"}
-      description={
-        interruptedWithReason ? (
-          <>
-            This turn stopped before it finished: {publicCause}. Your prompt is
-            still here.
-          </>
-        ) : (
-          <>
-            {messages[failure]} If the model didn’t start, there’s no charge.
-            Model work already done can still use credits.
-            {publicCause ? <span className="block">{publicCause}</span> : null}
-          </>
-        )
-      }
-      action={
-        failure === "cancelled" ? undefined : (
-          <Button aria-label="Retry prompt" variant="outline" onClick={onRetry}>
-            Retry
-          </Button>
-        )
-      }
+    <FailureLine
+      message={message}
+      role="alert"
+      {...(failure === "cancelled"
+        ? {}
+        : { onRetry, retryAriaLabel: "Retry prompt" })}
     />
   );
 }

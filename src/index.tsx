@@ -68,6 +68,7 @@ export type {
   MarkdownInline,
 } from "./headless.js";
 export type { ParakeetProps, ParakeetViewProps } from "./parakeet.js";
+export type { ParakeetHostFacts, ParakeetModelSetup } from "./host-facts.js";
 export type { ParakeetAuthor, ParakeetAuthorOf } from "./core/author-labels.js";
 export type {
   ParakeetSessionCommand,

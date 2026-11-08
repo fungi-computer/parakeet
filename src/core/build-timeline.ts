@@ -249,8 +249,9 @@ function collapseProviderErrors(
       row.isError &&
       prior?.kind === "assistant_message" &&
       prior.isError &&
-      row.providerError !== undefined &&
-      prior.providerError !== undefined &&
+      // Error-only turns repeat too: a provider detail is not required to fold.
+      (row.providerError === undefined) ===
+        (prior.providerError === undefined) &&
       row.text === prior.text &&
       row.errorDetail === prior.errorDetail &&
       row.thinking === prior.thinking &&
@@ -261,7 +262,9 @@ function collapseProviderErrors(
         ...prior,
         repeatCount: (prior.repeatCount ?? 1) + 1,
         // Details show the latest response, including its request id.
-        providerError: row.providerError,
+        ...(row.providerError !== undefined && {
+          providerError: row.providerError,
+        }),
       };
       aliases.set(row.id, prior.id);
     } else items.push(row);

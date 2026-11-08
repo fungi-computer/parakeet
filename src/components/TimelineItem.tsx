@@ -1,6 +1,6 @@
 import { Sigil } from "@fungi.computer/sigils";
 import { Button } from "@fungi.computer/caps/components/button";
-import { memo, type ReactNode } from "react";
+import { memo, useContext, type ReactNode } from "react";
 
 import {
   disclosureOpen,
@@ -10,6 +10,9 @@ import {
 import { assistantMessageVisible } from "../core/assistant-visibility.js";
 import { formatTokenCount } from "../core/format-context.js";
 import type { TimelineItem as TimelineRow, ToolItem } from "../store/types.js";
+import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
+import { FailureLine } from "@fungi.computer/caps/components/failure-line";
+import { ParakeetHostFactsContext, plainModelFailure } from "../host-facts.js";
 import { ChatMessage, PendingMessageStatus } from "./ChatMessage.js";
 import { ToolGroup, type ToggleToolDisclosure } from "./ToolGroup.js";
 
@@ -47,6 +50,7 @@ export const TimelineItem = memo(function TimelineItem({
   /** Flip one tool group or call. */
   onToggleTool?: ToggleToolDisclosure | undefined;
 }>) {
+  const facts = useContext(ParakeetHostFactsContext);
   switch (item.kind) {
     case "user_message": {
       const pending = item.status === "pending" || item.status === "queued";
@@ -157,8 +161,28 @@ export const TimelineItem = memo(function TimelineItem({
         </>
       );
     }
-    case "assistant_message":
+    case "assistant_message": {
       if (!assistantMessageVisible(item)) return null;
+      const modelFailure = item.isError
+        ? plainModelFailure(item.text)
+        : undefined;
+      if (modelFailure !== undefined) {
+        // One line per run of identical failures, never the raw code.
+        return modelFailure.unreachable &&
+          facts.modelSetup?.state === "missing" ? (
+          <SetupNotice
+            cause="No model is connected to this workspace."
+            fix={facts.modelSetup.fix}
+            need="No model could answer"
+            variant="inline"
+          />
+        ) : (
+          <FailureLine
+            count={item.repeatCount ?? 1}
+            message={modelFailure.message}
+          />
+        );
+      }
       return (
         <>
           {item.author ? (
@@ -193,6 +217,7 @@ export const TimelineItem = memo(function TimelineItem({
             : null}
         </>
       );
+    }
     case "tool_group":
       return (
         <ToolGroup

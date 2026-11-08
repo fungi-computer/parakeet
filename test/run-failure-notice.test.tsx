@@ -27,9 +27,7 @@ it("does not display credentials or internal IDs from terminal diagnostics", () 
     });
     expect(container.textContent).not.toContain("mule_run_private123");
     expect(container.textContent).not.toContain("reason_unavailable");
-    expect(
-      container.querySelector('[aria-label="Retry prompt"]'),
-    ).not.toBeNull();
+    expect(container.querySelector(".caps-failure-line button")).not.toBeNull();
 
     act(() => {
       root.render(
@@ -42,9 +40,7 @@ it("does not display credentials or internal IDs from terminal diagnostics", () 
     });
     expect(container.textContent).not.toContain("synthetic-private-token");
     expect(container.textContent).not.toContain("session-private123");
-    expect(
-      container.querySelector('[aria-label="Retry prompt"]'),
-    ).not.toBeNull();
+    expect(container.querySelector(".caps-failure-line button")).not.toBeNull();
 
     act(() => {
       root.render(

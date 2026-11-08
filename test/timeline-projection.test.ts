@@ -1268,3 +1268,39 @@ it("retains display data and images when a durable result replaces a live tail",
   );
   expect(buildDurableTimeline(replay.messages).items).toEqual(projected.items);
 });
+
+it("folds repeated error-only turns that carry no provider detail", () => {
+  const assistant = messages.find(
+    (message) => message.value.role === "assistant",
+  );
+  if (assistant?.value.role !== "assistant")
+    throw new Error("Missing assistant fixture");
+  const value = {
+    ...assistant.value,
+    content: [],
+    stopReason: "error" as const,
+  };
+  const failures = Array.from({ length: 4 }, (_, index): SessionMessage => ({
+    ...assistant,
+    id: `bare-${String(index)}`,
+    commandId: `bare-work-${String(index)}`,
+    sequence: index + 1,
+    value,
+  }));
+  const projection = buildDurableTimeline(
+    failures,
+    [],
+    undefined,
+    undefined,
+    undefined,
+    [],
+    [4],
+  );
+  expect(projection.items).toHaveLength(1);
+  expect(projection.items[0]).toMatchObject({
+    id: "bare-0",
+    isError: true,
+    repeatCount: 4,
+  });
+  expect(projection.items[0]).not.toHaveProperty("providerError");
+});

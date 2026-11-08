@@ -2,6 +2,11 @@
   "$schema": "https://turborepo.com/schema.json",
   "extends": ["//"],
   "tasks": {
+    // The docs check compiles the stranger consumer, which imports the
+    // package's own built entrypoints.
+    "docs": {
+      "dependsOn": ["^build", "build"],
+    },
     // Turbo restores dist without running pnpm's post-build injection hook.
     // Run the maintained hook even on a cache hit, before injected consumers.
     "sync:injected": {

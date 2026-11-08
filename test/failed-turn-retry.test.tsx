@@ -169,14 +169,14 @@ for (const example of [
     await vi.waitFor(async () => {
       await settle();
       expect(
-        container.querySelector('button[aria-label="Retry prompt"]'),
+        container.querySelector(".caps-failure-line button"),
       ).not.toBeNull();
     });
     expect(composer?.draft).toBe(text);
     expect(composer?.images).toEqual(example.restoredImages);
     await settle(() => {
       container
-        .querySelector<HTMLButtonElement>('button[aria-label="Retry prompt"]')
+        .querySelector<HTMLButtonElement>(".caps-failure-line button")
         ?.click();
     });
     expect(command).toHaveBeenCalledTimes(1);
@@ -336,7 +336,7 @@ for (const outcome of ["failed", "interrupted"] satisfies (
         await vi.waitFor(async () => {
           await settle();
           expect(
-            container.querySelector('button[aria-label="Retry prompt"]'),
+            container.querySelector(".caps-failure-line button"),
           ).not.toBeNull();
         });
         const input = container.querySelector("input");
@@ -353,9 +353,7 @@ for (const outcome of ["failed", "interrupted"] satisfies (
         });
         await settle(() => {
           container
-            .querySelector<HTMLButtonElement>(
-              'button[aria-label="Retry prompt"]',
-            )
+            .querySelector<HTMLButtonElement>(".caps-failure-line button")
             ?.click();
         });
         expect(command).toHaveBeenCalledTimes(1);

@@ -119,6 +119,8 @@ export type ChatComposerProps = {
     Pick<ComposerController, "recall" | "recallState" | "images"> | undefined;
   /** Caller-owned prompt hint; omitted for the ordinary Session composer. */
   placeholder?: string | undefined;
+  /** Why typing cannot work yet, such as no model connected. It disables input and sending, and replaces the hint. */
+  disabledReason?: string | undefined;
   /** Hide internal model, usage and status readouts for visitors. */
   showFooter?: boolean;
   /** Display-only status text supplied by the conversation's admitted entries. */
@@ -148,6 +150,7 @@ export type ChatComposerProps = {
 };
 
 function HostComposerTextarea({
+  disabledReason,
   placeholder,
   onChange,
   onSend,
@@ -160,6 +163,7 @@ function HostComposerTextarea({
   queuedRecall,
 }: {
   queuedRecall: ChatComposerProps["queuedRecall"];
+  disabledReason: string | undefined;
   placeholder: string | undefined;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -327,6 +331,7 @@ function HostComposerTextarea({
             .join(" ") || undefined
         }
         aria-busy={recalling}
+        disabled={disabledReason !== undefined}
         readOnly={recalling}
         {...(slash === undefined
           ? {}
@@ -343,6 +348,7 @@ function HostComposerTextarea({
         }}
         onKeyDown={onKeyDown}
         placeholder={
+          disabledReason ??
           placeholder ??
           (slash === undefined ? "Ask agent..." : "Ask agent… (/ for commands)")
         }
@@ -612,6 +618,7 @@ export const ChatComposer = memo(function ChatComposer({
   queuedRecall,
   onImagesChange,
   placeholder,
+  disabledReason,
   showFooter = true,
   statusChips,
   actionVariant = "primary",
@@ -670,8 +677,9 @@ export const ChatComposer = memo(function ChatComposer({
       aria-label={sendLabel}
       className="composer-send-key"
       disabled={
-        sendState === "busy" &&
-        (recallBusy || status === "queued" || status === "cancelling")
+        disabledReason !== undefined ||
+        (sendState === "busy" &&
+          (recallBusy || status === "queued" || status === "cancelling"))
       }
       onClick={() => {
         onSend(busy ? "followUp" : "steer");
@@ -802,6 +810,7 @@ export const ChatComposer = memo(function ChatComposer({
             {/* The draft stays mounted, so it and its history return untouched. */}
             <div hidden={takeover !== undefined}>
               <HostComposerTextarea
+                disabledReason={disabledReason}
                 queuedRecall={queuedRecall}
                 placeholder={placeholder}
                 onChange={onChange}
