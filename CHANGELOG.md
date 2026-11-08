@@ -1,5 +1,22 @@
 # @fungi.computer/parakeet
 
+## 0.9.2
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.8.0
+  - @fungi.computer/caps@0.8.0
+  - @fungi.computer/shiitake@0.12.2
+  - @fungi.computer/sprite@0.2.1
+  - @fungi.computer/knapsack@0.4.8
+  - @fungi.computer/sprite-zdog@0.3.1
+  - @fungi.computer/sigils@0.3.0
+  - @fungi.computer/bird-dog@0.3.6
+
 ## 0.9.1
 
 ### Patch Changes
