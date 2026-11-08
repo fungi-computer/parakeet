@@ -111,15 +111,18 @@ function HostView({
   commands,
   onLink,
   hostFacts,
+  autoFocus,
 }: Readonly<{
   commands: WhistleRuntime;
   onLink?: ((href: string) => boolean) | undefined;
   hostFacts?: ParakeetHostFacts | undefined;
+  autoFocus?: boolean | undefined;
 }>): ReactElement {
   return (
     <ParakeetView
       commands={commands}
       hostFacts={hostFacts}
+      autoFocus={autoFocus}
       onLink={onLink}
       empty={
         onLink ? (
@@ -139,6 +142,7 @@ function render(
   commands: WhistleRuntime,
   onLink?: (href: string) => boolean,
   hostFacts?: ParakeetHostFacts,
+  autoFocus?: boolean,
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -148,7 +152,12 @@ function render(
     root.render(
       <QueryClientProvider client={new QueryClient()}>
         <ParakeetProvider session={session}>
-          <HostView commands={commands} onLink={onLink} hostFacts={hostFacts} />
+          <HostView
+            commands={commands}
+            onLink={onLink}
+            hostFacts={hostFacts}
+            autoFocus={autoFocus}
+          />
         </ParakeetProvider>
       </QueryClientProvider>,
     );
@@ -237,6 +246,18 @@ it("says up front, before any run, that a model must be connected, with the fix 
   );
   await settle(() => fix?.click());
   expect(onSelect).toHaveBeenCalledOnce();
+});
+
+it("puts the caret in the composer when the host asks, so the person can just type", async () => {
+  const container = render(
+    hostSession(sessionSnapshot(), frames(), []),
+    createWhistle(),
+    undefined,
+    undefined,
+    true,
+  );
+  await settle();
+  expect(document.activeElement).toBe(textarea(container));
 });
 
 async function settle(operation?: () => void): Promise<void> {

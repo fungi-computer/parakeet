@@ -126,6 +126,8 @@ export type ParakeetViewProps = Readonly<{
   empty?: ReactNode | undefined;
   /** What the host knows: model setup, billing and starter prompts. */
   hostFacts?: ParakeetHostFacts | undefined;
+  /** Focus the composer when the conversation opens, so the person can just type. */
+  autoFocus?: boolean | undefined;
   /**
    * Optional host Whistle runtime holding the host's own commands. Parakeet
    * adds its built-ins and the Session's advertised commands to it, and makes
@@ -141,6 +143,7 @@ export function ParakeetView({
   composerActionVariant,
   empty,
   hostFacts,
+  autoFocus,
   commands,
   renderToolActions,
   claimsToolMedia,
@@ -150,6 +153,10 @@ export function ParakeetView({
   onOpen,
 }: ParakeetViewProps): ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Opening a conversation puts the caret in the composer; a click elsewhere keeps it.
+  useEffect(() => {
+    if (autoFocus === true) textareaRef.current?.focus();
+  }, [autoFocus]);
   const [ownCommands] = useState(() => createWhistle());
   const slash = useSlashCommands({
     enabled: visitor === undefined,

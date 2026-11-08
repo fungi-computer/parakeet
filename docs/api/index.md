@@ -615,6 +615,7 @@ type ParakeetViewProps = Readonly<{
   onOpen?: (target) => void;
   empty?: ReactNode;
   hostFacts?: ParakeetHostFacts;
+  autoFocus?: boolean;
   commands?: ParakeetCommandRuntime;
 }>;
 ```
