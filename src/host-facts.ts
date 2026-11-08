@@ -27,17 +27,26 @@ export type ParakeetHostFacts = Readonly<{
 export const ParakeetHostFactsContext = createContext<ParakeetHostFacts>({});
 
 const modelFailure = /^Model request failed \(([a-z_]+)\)\./u;
+const unfinishedRun = "This run couldn’t finish.";
 
-/** A model run that failed, with the plain sentence for its cause; undefined for any other text. */
-export function plainModelFailure(
-  text: string,
-): Readonly<{ unreachable: boolean; message: string }> | undefined {
+/** A failed model run in plain words; `detail` is the stored text, kept for a details disclosure. */
+export type PlainModelFailure = Readonly<{
+  unreachable: boolean;
+  message: string;
+  detail: string;
+}>;
+
+/** A run that failed, with the plain sentence for its cause; undefined for any other text. */
+export function plainModelFailure(text: string): PlainModelFailure | undefined {
+  if (text === unfinishedRun)
+    return {
+      unreachable: false,
+      message: "The run couldn’t finish",
+      detail: text,
+    };
   const code = modelFailure.exec(text)?.[1];
   if (code === undefined) return undefined;
   return code === "provider_unavailable" || code === "setup_required"
-    ? {
-        unreachable: true,
-        message: "The model provider couldn't be reached. Try again.",
-      }
-    : { unreachable: false, message: "The model request failed. Try again." };
+    ? { unreachable: true, message: "Couldn’t reach the model", detail: text }
+    : { unreachable: false, message: "The model request failed", detail: text };
 }

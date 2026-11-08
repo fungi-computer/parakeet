@@ -10,7 +10,6 @@ import {
 import { assistantMessageVisible } from "../core/assistant-visibility.js";
 import { formatTokenCount } from "../core/format-context.js";
 import type { TimelineItem as TimelineRow, ToolItem } from "../store/types.js";
-import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
 import { FailureLine } from "@fungi.computer/caps/components/failure-line";
 import { ParakeetHostFactsContext, plainModelFailure } from "../host-facts.js";
 import { ChatMessage, PendingMessageStatus } from "./ChatMessage.js";
@@ -28,6 +27,7 @@ const compactionNoticeLabel = {
 export const TimelineItem = memo(function TimelineItem({
   item,
   onDismissFailed,
+  onRetry,
   onCancelQueued,
   cancellingQueued = false,
   renderToolActions,
@@ -39,6 +39,8 @@ export const TimelineItem = memo(function TimelineItem({
 }: Readonly<{
   item: TimelineRow;
   onDismissFailed?: ((requestId: string) => void) | undefined;
+  /** Run the failed prompt again; given only to the row the failure belongs to. */
+  onRetry?: (() => void) | undefined;
   onCancelQueued?: ((commandId: string) => void) | undefined;
   cancellingQueued?: boolean | undefined;
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
@@ -99,6 +101,17 @@ export const TimelineItem = memo(function TimelineItem({
                 ? "That Agent message didn’t make it through."
                 : "Your prompt didn’t make it through."}
             </span>
+            {onRetry === undefined ? null : (
+              <Button
+                aria-label="Retry prompt"
+                variant="outline"
+                size="xs"
+                onClick={onRetry}
+                type="button"
+              >
+                Retry
+              </Button>
+            )}
             {dismissAction}
           </div>
         ) : null;
@@ -168,19 +181,39 @@ export const TimelineItem = memo(function TimelineItem({
         : undefined;
       if (modelFailure !== undefined) {
         // One line per run of identical failures, never the raw code.
-        return modelFailure.unreachable &&
-          facts.modelSetup?.state === "missing" ? (
-          <SetupNotice
-            cause="No model is connected to this workspace."
-            fix={facts.modelSetup.fix}
-            need="No model could answer"
-            variant="inline"
-          />
-        ) : (
-          <FailureLine
-            count={item.repeatCount ?? 1}
-            message={modelFailure.message}
-          />
+        // With no model connected the composer already says so, with the fix.
+        if (modelFailure.unreachable && facts.modelSetup?.state === "missing")
+          return null;
+        const tries = item.repeatCount ?? 1;
+        return (
+          <div data-failure={item.id}>
+            <FailureLine
+              message={
+                tries > 1
+                  ? `${modelFailure.message} · ${String(tries)} tries`
+                  : modelFailure.message
+              }
+              {...(onRetry === undefined
+                ? {}
+                : { onRetry, retryAriaLabel: "Retry prompt" })}
+            />
+            <div
+              className="px-3 text-xs text-dim"
+              {...(item.providerError === undefined
+                ? {}
+                : { "data-provider-error": item.id })}
+            >
+              <details>
+                <summary>Details</summary>
+                <div>{modelFailure.detail}</div>
+                {item.providerError === undefined ? null : (
+                  <pre className="whitespace-pre-wrap">
+                    {item.providerError}
+                  </pre>
+                )}
+              </details>
+            </div>
+          </div>
         );
       }
       return (
@@ -198,9 +231,6 @@ export const TimelineItem = memo(function TimelineItem({
           >
             {formatAssistantText?.(item.text) ?? item.text}
           </ChatMessage>
-          {item.isError && item.repeatCount !== undefined ? (
-            <span className="px-3 text-error">x{item.repeatCount}</span>
-          ) : null}
           {item.isError && item.errorDetail ? (
             <p className="px-3 text-dim">{item.errorDetail}</p>
           ) : null}

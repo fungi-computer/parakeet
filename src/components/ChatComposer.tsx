@@ -1,8 +1,11 @@
 import { formatTokens } from "../core/format-tokens.js";
+import {
+  SetupNotice,
+  type SetupNoticeFix,
+} from "@fungi.computer/caps/blocks/setup-notice";
 import { composerModelName } from "../core/composer-model-name.js";
 import { formatContextUsage } from "../core/format-context.js";
 import { isImeComposing } from "@fungi.computer/caps/lib/ime";
-import { RunFailureNotice } from "./RunFailureNotice.js";
 import { SendAction } from "@fungi.computer/caps/components/send-action";
 import { formatMoney } from "@fungi.computer/caps/lib/format-money";
 import { Status } from "@fungi.computer/caps/components/status";
@@ -121,18 +124,17 @@ export type ChatComposerProps = {
   placeholder?: string | undefined;
   /** Why typing cannot work yet, such as no model connected. It disables input and sending, and replaces the hint. */
   disabledReason?: string | undefined;
+  /** No model is connected: the send path gives way to this one setup step. */
+  setup?: SetupNoticeFix | undefined;
   /** Hide internal model, usage and status readouts for visitors. */
   showFooter?: boolean;
   /** Display-only status text supplied by the conversation's admitted entries. */
   statusChips?: readonly string[] | undefined;
   actionVariant?: "primary" | "outline" | undefined;
   draft: string;
-  failure: ComposerController["failure"];
-  failureCause?: string | undefined;
   model?: ChatComposerModel | undefined;
   onAbort: () => void;
   onChange: (value: string) => void;
-  onRetry: () => void;
   /** Submit the draft; `followUp` while a run is active, otherwise `steer`. */
   onSend: (delivery: PromptDelivery) => void;
   admissionError?: ComposerController["admissionError"];
@@ -619,17 +621,15 @@ export const ChatComposer = memo(function ChatComposer({
   onImagesChange,
   placeholder,
   disabledReason,
+  setup,
   showFooter = true,
   statusChips,
   actionVariant = "primary",
   draft,
-  failure,
-  failureCause,
   admissionError,
   model,
   onAbort,
   onChange,
-  onRetry,
   onSend,
   status,
   viewState,
@@ -737,6 +737,17 @@ export const ChatComposer = memo(function ChatComposer({
     send: sendAction,
   });
 
+  if (setup !== undefined)
+    return (
+      <div className="chat-composer not-prose flex-shrink-0">
+        <SetupNotice
+          cause="Agents answer with a model, and none is connected yet."
+          fix={setup}
+          need="Connect a model"
+          variant="banner"
+        />
+      </div>
+    );
   return (
     <div className="chat-composer not-prose flex-shrink-0">
       {admissionError !== undefined ? (
@@ -745,13 +756,6 @@ export const ChatComposer = memo(function ChatComposer({
             ? "One prompt is already queued; it sends when the service is back."
             : "Too many prompts are still awaiting admission. Try again shortly."}
         </div>
-      ) : null}
-      {failure !== undefined ? (
-        <RunFailureNotice
-          failure={failure}
-          cause={failureCause}
-          onRetry={onRetry}
-        />
       ) : null}
       {slash?.interactions.notice === undefined ? null : (
         <div

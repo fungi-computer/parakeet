@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { FailureLine } from "@fungi.computer/caps/components/failure-line";
 import { PassThrough } from "node:stream";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
@@ -10,7 +11,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ParakeetProvider, useComposer, useTimeline } from "../src/headless.js";
-import { RunFailureNotice } from "../src/components/RunFailureNotice.js";
 import { draftJournal } from "../src/core/draft-storage.js";
 import type { ParakeetSession } from "../src/session.js";
 import {
@@ -71,7 +71,7 @@ function FailedTurn({
         }}
       />
       {composer.failure === undefined ? null : (
-        <RunFailureNotice failure={composer.failure} onRetry={composer.retry} />
+        <FailureLine message="The run failed" onRetry={composer.retry} />
       )}
     </>
   );

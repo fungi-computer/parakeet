@@ -236,14 +236,14 @@ it("says up front, before any run, that a model must be connected, with the fix 
   await settle();
   expect(container.textContent).toContain("Connect a model to start");
   expect(container.textContent).not.toContain("Plan a weekend trip");
-  // Typing cannot work yet, and the composer says why.
-  expect(textarea(container).disabled).toBe(true);
-  expect(textarea(container).placeholder).toBe(
-    "Connect a model to start chatting",
-  );
-  const fix = [...container.querySelectorAll("button")].find(
+  // Typing cannot work yet: the composer's send path gives way to the one step.
+  expect(container.querySelector("textarea")).toBeNull();
+  expect(container.textContent).toContain("Connect a model");
+  const fixes = [...container.querySelectorAll("button")].filter(
     (button) => button.textContent === "Add a model key",
   );
+  expect(fixes).toHaveLength(1);
+  const fix = fixes[0];
   await settle(() => fix?.click());
   expect(onSelect).toHaveBeenCalledOnce();
 });

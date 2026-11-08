@@ -1,6 +1,7 @@
 import type { ClientEntryV1 } from "@fungi.computer/shiitake/client-entry";
 import { Button } from "@fungi.computer/caps/components/button";
-import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
+import { boundedDiagnostic } from "@fungi.computer/bird-dog/effect";
+import { FailureLine } from "@fungi.computer/caps/components/failure-line";
 import { EmptyState } from "@fungi.computer/caps/blocks/empty-state";
 import {
   ParakeetHostFactsContext,
@@ -354,6 +355,7 @@ function ConversationTimeline({
   onOpen: ParakeetViewProps["onOpen"];
 }) {
   const dismissFailed = useDismissFailedPrompt();
+  const composer = useComposer();
   const timelineController = useTimeline();
   const cancelQueued = useCallback(
     (commandId: string) => {
@@ -566,6 +568,13 @@ function ConversationTimeline({
                         : item
                     }
                     onDismissFailed={dismissFailed}
+                    onRetry={
+                      virtualItem.index === count - 1 &&
+                      (composer.failure === "failed" ||
+                        composer.failure === "admission")
+                        ? composer.retry
+                        : undefined
+                    }
                     onCancelQueued={cancelQueued}
                     cancellingQueued={timelineController.cancellingQueued}
                     onToggleTool={toggleTool}
@@ -575,6 +584,18 @@ function ConversationTimeline({
                     formatAssistantText={formatAssistantText}
                     toolDisclosure={toolDisclosure}
                   />
+                  {virtualItem.index === count - 1 ? (
+                    <RunStopped
+                      failure={composer.failure}
+                      cause={
+                        sessionStatus.viewState.kind === "error"
+                          ? sessionStatus.viewState.cause
+                          : undefined
+                      }
+                      lastItem={item}
+                      onRetry={composer.retry}
+                    />
+                  ) : null}
                   {placed.after.get(item.id)?.map(({ entryId, cell }) => (
                     <ClientRows
                       key={`${entryId}:${cell.id}`}
@@ -607,19 +628,80 @@ function ConversationTimeline({
   );
 }
 
+const stoppedMessages = {
+  failed: "The run stopped. Your prompt is still here.",
+  interrupted:
+    "The worker stopped before this run finished. Your prompt is still here.",
+  cancelled: "The run was cancelled. Send a new prompt when you’re ready.",
+} as const;
+
+/**
+ * A run that ended with no failed row of its own to show it, said once, in the
+ * thread where it stopped. A failed row or prompt already carries its own line.
+ */
+function RunStopped({
+  failure,
+  cause,
+  lastItem,
+  onRetry,
+}: Readonly<{
+  failure: ReturnType<typeof useComposer>["failure"];
+  /** The Session's own diagnostic for the stop, when it names one. */
+  cause: string | undefined;
+  lastItem: ReturnType<typeof useTimeline>["settled"][number];
+  onRetry: () => void;
+}>) {
+  if (failure === undefined || failure === "admission") return null;
+  if (
+    failure === "failed" &&
+    lastItem.kind === "assistant_message" &&
+    lastItem.isError
+  )
+    return null;
+  // A cancelled run's assistant row already says so.
+  if (
+    failure === "cancelled" &&
+    lastItem.kind === "assistant_message" &&
+    lastItem.isError
+  )
+    return null;
+  const bounded = cause === undefined ? undefined : boundedDiagnostic(cause);
+  // Diagnostic metadata is useful to the owner, not a public explanation.
+  const publicCause =
+    bounded !== undefined &&
+    !bounded.startsWith("reason_unavailable:") &&
+    !/\b(?:run|session)=/iu.test(bounded)
+      ? bounded
+      : undefined;
+  const message =
+    publicCause === undefined || failure === "cancelled"
+      ? stoppedMessages[failure]
+      : failure === "interrupted"
+        ? `This turn stopped before it finished: ${publicCause}. Your prompt is still here.`
+        : `The run stopped: ${publicCause}. Your prompt is still here.`;
+  return (
+    <FailureLine
+      message={message}
+      role="alert"
+      {...(failure === "cancelled"
+        ? {}
+        : { onRetry, retryAriaLabel: "Retry prompt" })}
+    />
+  );
+}
+
 /** The empty conversation: host starter chips when there are any, the quiet prompt otherwise. */
 function ConversationStarters() {
   const { modelSetup, starters } = useContext(ParakeetHostFactsContext);
   const composer = useComposer();
-  // Known up front, before any run: say so once, with the fix as the one action.
+  // Known up front, before any run: the fix is the composer's one action below.
   if (modelSetup?.state === "missing")
     return (
       <div className="flex h-full items-center justify-center">
-        <SetupNotice
-          cause="No model is connected to this workspace yet."
-          fix={modelSetup.fix}
-          need="Connect a model to start"
-          variant="panel"
+        <EmptyState
+          description="Agents answer with a model, and none is connected yet."
+          title="Connect a model to start"
+          variant="quiet"
         />
       </div>
     );
@@ -722,15 +804,9 @@ function ConversationComposer({
       .map(({ row }) => row.title),
     actionVariant: composerActionVariant,
     draft: composer.draft,
-    failure: composer.failure,
-    failureCause:
-      sessionStatus.viewState.kind === "error"
-        ? sessionStatus.viewState.cause
-        : undefined,
     admissionError: composer.admissionError,
     onAbort: abort,
     onChange: composer.setDraft,
-    onRetry: composer.retry,
     onSend: slash.submit,
     slash: visitor === undefined ? slash : undefined,
     placeholder:
@@ -739,6 +815,11 @@ function ConversationComposer({
     disabledReason:
       hostFacts.modelSetup?.state === "missing"
         ? "Connect a model to start chatting"
+        : undefined,
+    // No model: the composer's send path gives way to the one setup step.
+    setup:
+      hostFacts.modelSetup?.state === "missing"
+        ? hostFacts.modelSetup.fix
         : undefined,
     showFooter: visitor === undefined,
     status: sessionStatus.status,

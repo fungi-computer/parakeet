@@ -202,7 +202,7 @@ function assistantMessageItem(
     text:
       blocks.text.length === 0
         ? value.stopReason === "error"
-          ? "This run couldn’t finish."
+          ? (value.errorMessage ?? "This run couldn’t finish.")
           : value.stopReason === "aborted"
             ? "The run was cancelled."
             : ""

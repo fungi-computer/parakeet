@@ -1,5 +1,14 @@
 # @fungi.computer/parakeet
 
+## 0.11.2
+
+### Patch Changes
+
+- Changes since 0.11.1:
+
+  - fix(grove): model setup instead of a run failure; one inline failure line
+    (#380)
+
 ## 0.11.1
 
 ### Patch Changes

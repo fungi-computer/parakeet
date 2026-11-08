@@ -147,7 +147,6 @@ function page(scene: Scene): Story {
           }}
           onImagesChange={setImages}
           draft={draft}
-          failure={undefined}
           model={{ provider: "openai", model: "gpt-6-luna" }}
           status={status}
           viewState={busy ? { kind: "responding" } : { kind: "idle" }}
@@ -160,7 +159,6 @@ function page(scene: Scene): Story {
           onAbort={() => {
             setStatus("idle");
           }}
-          onRetry={() => undefined}
           usage={{ tokens: 18_452, cost: 0.0347 }}
           context={{ tokens: 12_345, window: 200_000 }}
           slash={slash}

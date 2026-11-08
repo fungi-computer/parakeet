@@ -1,6 +1,5 @@
 import type { StoryDefault } from "@ladle/react";
 import { EmptyState } from "@fungi.computer/caps/blocks/empty-state";
-import { RunFailureNotice } from "../src/components/RunFailureNotice.js";
 import { TimelineItem } from "../src/components/TimelineItem.js";
 import {
   ParakeetHostFactsContext,
@@ -54,14 +53,6 @@ export const NoModelConnected = () => (
 export const FoldedFailure = () => (
   <Frame facts={{}}>
     <TimelineItem item={modelFailure} />
-    <RunFailureNotice failure="failed" onRetry={() => undefined} />
-  </Frame>
-);
-
-/** A host with no billing never mentions credits. */
-export const NoBilling = () => (
-  <Frame facts={{ billing: false }}>
-    <RunFailureNotice failure="failed" onRetry={() => undefined} />
   </Frame>
 );
 

@@ -22,10 +22,8 @@ function KeyboardComposerFixture() {
         }}
         onImagesChange={setImages}
         draft={draft}
-        failure={undefined}
         onAbort={() => undefined}
         onChange={setDraft}
-        onRetry={() => undefined}
         onSend={() => {
           setSends((count) => count + 1);
         }}
@@ -52,7 +50,6 @@ createRoot(root).render(
       <ChatComposer
         queuedRecall={undefined}
         draft=""
-        failure={undefined}
         model={{
           model: "@cf/mistralai/mistral-small-3.1-24b-instruct",
           provider: "cloudflare-workers-ai",
@@ -61,7 +58,6 @@ createRoot(root).render(
         onImagesChange={() => undefined}
         onAbort={() => undefined}
         onChange={() => undefined}
-        onRetry={() => undefined}
         onSend={() => undefined}
         viewState={{ kind: "waiting_for_you" }}
         status="thinking"

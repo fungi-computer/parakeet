@@ -2,7 +2,6 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { RunFailureNotice } from "../src/components/RunFailureNotice.js";
 import { TimelineItem } from "../src/components/TimelineItem.js";
 import {
   ParakeetHostFactsContext,
@@ -53,13 +52,15 @@ const failedRun: Row = {
 it("names the cause of a model failure in plain words and never shows the code", () => {
   expect(plainModelFailure(failedText)).toEqual({
     unreachable: true,
-    message: "The model provider couldn't be reached. Try again.",
+    message: "Couldn’t reach the model",
+    detail: failedText,
   });
   expect(
     plainModelFailure("Model request failed (provider_rejected)."),
   ).toEqual({
     unreachable: false,
-    message: "The model request failed. Try again.",
+    message: "The model request failed",
+    detail: "Model request failed (provider_rejected).",
   });
   expect(plainModelFailure("Something else broke.")).toBeUndefined();
 });
@@ -67,55 +68,28 @@ it("names the cause of a model failure in plain words and never shows the code",
 it("folds four identical failures into one line with a count and no raw code", () => {
   const container = render({}, <TimelineItem item={failedRun} />);
   expect(container.querySelectorAll(".caps-failure-line")).toHaveLength(1);
-  expect(container.textContent).toContain("Failed 4 times");
-  expect(container.textContent).not.toContain("provider_unavailable");
+  expect(container.querySelector(".caps-failure-line")?.textContent).toContain(
+    "Couldn’t reach the model · 4 tries",
+  );
+  expect(container.textContent).not.toContain("x4");
+  // The raw code lives only behind the details disclosure.
+  expect(
+    container.querySelector(".caps-failure-line")?.textContent,
+  ).not.toContain("provider_unavailable");
+  expect(container.querySelector("details")?.textContent).toContain(
+    "provider_unavailable",
+  );
 });
 
-it("shows the setup notice with its fix when no model is connected", () => {
-  const onSelect = vi.fn();
+it("leaves a no-model failure to the composer's setup notice", () => {
   const container = render(
     {
       modelSetup: {
         state: "missing",
-        fix: { label: "Add a model key", onSelect },
+        fix: { label: "Add a model key", onSelect: vi.fn() },
       },
     },
     <TimelineItem item={failedRun} />,
   );
-  expect(container.textContent).toContain("No model could answer");
-  expect(container.textContent).not.toContain("provider_unavailable");
-  const fix = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Add a model key",
-  );
-  act(() => fix?.click());
-  expect(onSelect).toHaveBeenCalledOnce();
-});
-
-it("leaves the composer notice to the timeline when no model is connected, and drops credits with no billing", () => {
-  const modelSetup = {
-    state: "missing" as const,
-    fix: { label: "Add a model key", onSelect: vi.fn() },
-  };
-  const quiet = render(
-    { modelSetup },
-    <RunFailureNotice failure="failed" onRetry={vi.fn()} />,
-  );
-  expect(quiet.textContent).toBe("");
-  const admission = render(
-    { modelSetup },
-    <RunFailureNotice failure="admission" onRetry={vi.fn()} />,
-  );
-  expect(admission.textContent).toContain("No model could answer");
-
-  const withBilling = render(
-    {},
-    <RunFailureNotice failure="failed" onRetry={vi.fn()} />,
-  );
-  expect(withBilling.textContent).toContain("no charge");
-  const noBilling = render(
-    { billing: false },
-    <RunFailureNotice failure="failed" onRetry={vi.fn()} />,
-  );
-  expect(noBilling.textContent).not.toContain("charge");
-  expect(noBilling.textContent).not.toContain("credits");
+  expect(container.textContent).toBe("");
 });

@@ -25,10 +25,7 @@ export default {
 function composer(
   initial: ChatComposerProps["status"],
   extra: Partial<
-    Pick<
-      ChatComposerProps,
-      "failure" | "failureCause" | "admissionError" | "draft" | "usage"
-    >
+    Pick<ChatComposerProps, "admissionError" | "draft" | "usage">
   > = {},
 ): Story {
   return () => {
@@ -41,7 +38,6 @@ function composer(
           {...extra}
           queuedRecall={undefined}
           draft={draft}
-          failure={status === "error" ? extra.failure : undefined}
           model={{ provider: "fungi", model: "@fungi/luna" }}
           status={status}
           viewState={{ kind: "idle" }}
@@ -53,9 +49,6 @@ function composer(
           }}
           onAbort={() => {
             setStatus("idle");
-          }}
-          onRetry={() => {
-            setStatus("retrying");
           }}
           usage={extra.usage ?? { tokens: 18452, cost: 0.0347 }}
         />
@@ -82,16 +75,6 @@ export const Queued = composer("queued", {
 export const Cancelling = composer("cancelling");
 export const Retrying = composer("retrying");
 export const Disconnected = composer("disconnected");
-export const Failed = composer("error", {
-  failure: "failed",
-  failureCause:
-    "The model provider is temporarily unavailable. Your prompt is preserved.",
-});
-export const Interrupted = composer("error", { failure: "interrupted" });
-export const AdmissionRefused = composer("error", {
-  failure: "admission",
-  failureCause: "Your Team is out of credit. Add credit in Billing.",
-});
 export const QueueFull = composer("thinking", {
   admissionError: "queue_full",
   draft: "Please check the final result at phone width.",

@@ -302,11 +302,11 @@ try {
   await page.evaluate(() =>
     globalThis.__parakeetBrowserProof.terminateLatestRun("failed"),
   );
-  const runFailure = page.locator(".chat-composer [role=alert]");
+  const runFailure = page.locator(".caps-failure-line").last();
   await runFailure.waitFor();
   if (
     !(await runFailure.textContent())?.includes(
-      "The run stopped. Check the message above before trying again.",
+      "The run stopped. Your prompt is still here.",
     )
   )
     throw new Error(
@@ -488,9 +488,7 @@ try {
     globalThis.__parakeetBrowserProof.terminateLatestRun("failed"),
   );
   await runFailure
-    .getByText(
-      /The run stopped\. Check the message above before trying again\./u,
-    )
+    .getByText(/The run stopped\. Your prompt is still here\./u)
     .waitFor();
   await textarea.fill("A newer unsent draft");
   await runFailure.getByRole("button", { name: "Retry prompt" }).click();

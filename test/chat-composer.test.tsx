@@ -45,10 +45,8 @@ function renderComposer(
         model={model}
         usage={usage}
         context={context}
-        failure={undefined}
         onAbort={onAbort}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={onSend}
         status={status}
         viewState={{ kind: "idle" }}
@@ -88,11 +86,9 @@ it("explains the single offline queue slot without implying an admission flood",
       <ChatComposer
         queuedRecall={undefined}
         draft="Keep this second draft"
-        failure={undefined}
         admissionError="offline_queue_full"
         onAbort={vi.fn()}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={vi.fn()}
         status="idle"
         viewState={{ kind: "idle" }}
@@ -104,46 +100,6 @@ it("explains the single offline queue slot without implying an admission flood",
     "One prompt is already queued; it sends when the service is back.",
   );
 });
-
-it.each(["admission", "failed", "interrupted"] as const)(
-  "shows a Caps notice and retries a %s prompt",
-  (failure) => {
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    roots.add(root);
-    const onRetry = vi.fn();
-    act(() => {
-      root.render(
-        <ChatComposer
-          queuedRecall={undefined}
-          draft=""
-          failure={failure}
-          onAbort={vi.fn()}
-          onChange={vi.fn()}
-          onRetry={onRetry}
-          onSend={vi.fn()}
-          status="error"
-          viewState={{ kind: "error", cause: "Prompt failed" }}
-          textareaRef={createRef<HTMLTextAreaElement>()}
-        />,
-      );
-    });
-    const alert = container.querySelector('[role="alert"]');
-    expect(alert?.classList.contains("caps-failure-line")).toBe(true);
-    expect(alert?.textContent).toContain(
-      "If the model didn’t start, there’s no charge.",
-    );
-    expect(alert?.textContent).toContain(
-      "Model work already done can still use credits.",
-    );
-    const retry = container.querySelector<HTMLButtonElement>(
-      ".caps-failure-line button",
-    );
-    expect(retry).not.toBeNull();
-    act(() => retry?.click());
-    expect(onRetry).toHaveBeenCalledOnce();
-  },
-);
 
 function enter(textarea: HTMLTextAreaElement, init: KeyboardEventInit = {}) {
   const event = new KeyboardEvent("keydown", {
@@ -305,10 +261,8 @@ it.each([
         viewState={viewState}
         status="sending"
         draft=""
-        failure={undefined}
         onAbort={vi.fn()}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={vi.fn()}
         textareaRef={createRef<HTMLTextAreaElement>()}
       />,
@@ -334,10 +288,8 @@ it.each([
         viewState={viewState}
         status="sending"
         draft=""
-        failure={undefined}
         onAbort={vi.fn()}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={vi.fn()}
         showFooter={false}
         textareaRef={createRef<HTMLTextAreaElement>()}
@@ -416,10 +368,8 @@ it("keeps one key in the same place as a run starts and ends", () => {
         <ChatComposer
           queuedRecall={undefined}
           draft=""
-          failure={undefined}
           onAbort={vi.fn()}
           onChange={vi.fn()}
-          onRetry={vi.fn()}
           onSend={vi.fn()}
           status={status}
           viewState={{ kind: "idle" }}
@@ -449,10 +399,8 @@ it("shows images riding with the draft above the text", () => {
           recall: () => Promise.resolve("empty"),
         }}
         draft=""
-        failure={undefined}
         onAbort={vi.fn()}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={vi.fn()}
         status="idle"
         viewState={{ kind: "idle" }}
@@ -508,10 +456,8 @@ it("offers Attach only when the host takes images, and removes one in place", ()
         }}
         onImagesChange={onImagesChange}
         draft=""
-        failure={undefined}
         onAbort={vi.fn()}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={vi.fn()}
         status="idle"
         viewState={{ kind: "idle" }}
@@ -570,10 +516,8 @@ it.each([false, true])("routes the model key (%s)", (available) => {
         queuedRecall={undefined}
         draft="Keep this draft"
         model={{ provider: "openai", model: "gpt-6-astra" }}
-        failure={undefined}
         onAbort={vi.fn()}
         onChange={vi.fn()}
-        onRetry={vi.fn()}
         onSend={vi.fn()}
         status="idle"
         viewState={{ kind: "idle" }}
