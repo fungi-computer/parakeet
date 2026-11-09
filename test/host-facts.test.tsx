@@ -52,6 +52,7 @@ const failedRun: Row = {
 it("names the cause of a model failure in plain words and never shows the code", () => {
   expect(plainModelFailure(failedText)).toEqual({
     unreachable: true,
+    setup: false,
     message: "Couldn’t reach the model",
     detail: failedText,
   });
@@ -59,6 +60,7 @@ it("names the cause of a model failure in plain words and never shows the code",
     plainModelFailure("Model request failed (provider_rejected)."),
   ).toEqual({
     unreachable: false,
+    setup: false,
     message: "The model request failed",
     detail: "Model request failed (provider_rejected).",
   });
@@ -92,4 +94,30 @@ it("leaves a no-model failure to the composer's setup notice", () => {
     <TimelineItem item={failedRun} />,
   );
   expect(container.textContent).toBe("");
+});
+
+it("turns a setup_required run into the Connect a model fix, never a Retry", () => {
+  const onSelect = vi.fn();
+  const container = render(
+    {
+      modelSetup: {
+        state: "unknown",
+        fix: { label: "Add a model key", onSelect },
+      },
+    },
+    <TimelineItem
+      item={{
+        ...failedRun,
+        text: "Model request failed (setup_required). Connect a model first.",
+        repeatCount: 1,
+      }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(container.textContent).toContain("Connect a model");
+  expect(
+    [...container.querySelectorAll("button")].map((b) => b.textContent),
+  ).toEqual(["Add a model key"]);
+  act(() => container.querySelector("button")?.click());
+  expect(onSelect).toHaveBeenCalledOnce();
 });

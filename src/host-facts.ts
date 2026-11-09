@@ -32,6 +32,8 @@ const unfinishedRun = "This run couldn’t finish.";
 /** A failed model run in plain words; `detail` is the stored text, kept for a details disclosure. */
 export type PlainModelFailure = Readonly<{
   unreachable: boolean;
+  /** No model provider is connected: the fix is setup, not a retry. */
+  setup: boolean;
   message: string;
   detail: string;
 }>;
@@ -41,12 +43,30 @@ export function plainModelFailure(text: string): PlainModelFailure | undefined {
   if (text === unfinishedRun)
     return {
       unreachable: false,
+      setup: false,
       message: "The run couldn’t finish",
       detail: text,
     };
   const code = modelFailure.exec(text)?.[1];
   if (code === undefined) return undefined;
-  return code === "provider_unavailable" || code === "setup_required"
-    ? { unreachable: true, message: "Couldn’t reach the model", detail: text }
-    : { unreachable: false, message: "The model request failed", detail: text };
+  if (code === "setup_required")
+    return {
+      unreachable: false,
+      setup: true,
+      message: "No model is connected",
+      detail: text,
+    };
+  return code === "provider_unavailable"
+    ? {
+        unreachable: true,
+        setup: false,
+        message: "Couldn’t reach the model",
+        detail: text,
+      }
+    : {
+        unreachable: false,
+        setup: false,
+        message: "The model request failed",
+        detail: text,
+      };
 }

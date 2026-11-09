@@ -10,6 +10,7 @@ import {
 import { assistantMessageVisible } from "../core/assistant-visibility.js";
 import { formatTokenCount } from "../core/format-context.js";
 import type { TimelineItem as TimelineRow, ToolItem } from "../store/types.js";
+import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
 import { FailureLine } from "@fungi.computer/caps/components/failure-line";
 import { ParakeetHostFactsContext, plainModelFailure } from "../host-facts.js";
 import { ChatMessage, PendingMessageStatus } from "./ChatMessage.js";
@@ -182,8 +183,21 @@ export const TimelineItem = memo(function TimelineItem({
       if (modelFailure !== undefined) {
         // One line per run of identical failures, never the raw code.
         // With no model connected the composer already says so, with the fix.
-        if (modelFailure.unreachable && facts.modelSetup?.state === "missing")
+        if (
+          (modelFailure.unreachable || modelFailure.setup) &&
+          facts.modelSetup?.state === "missing"
+        )
           return null;
+        // A run that needed a model nobody connected: the fix is setup, and Retry would loop.
+        if (modelFailure.setup && facts.modelSetup !== undefined)
+          return (
+            <SetupNotice
+              cause="The run could not start because no model is connected."
+              fix={facts.modelSetup.fix}
+              need="Connect a model"
+              variant="inline"
+            />
+          );
         const tries = item.repeatCount ?? 1;
         return (
           <div data-failure={item.id}>
@@ -193,7 +207,7 @@ export const TimelineItem = memo(function TimelineItem({
                   ? `${modelFailure.message} · ${String(tries)} tries`
                   : modelFailure.message
               }
-              {...(onRetry === undefined
+              {...(onRetry === undefined || modelFailure.setup
                 ? {}
                 : { onRetry, retryAriaLabel: "Retry prompt" })}
             />

@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.11.3
+
+### Patch Changes
+
+- Changes since 0.11.2:
+
+  - fix(nacre): deliver setup facts and fixes to every App (#393)
+
 ## 0.11.2
 
 ### Patch Changes
