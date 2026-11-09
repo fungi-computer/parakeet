@@ -182,7 +182,7 @@ export const TimelineItem = memo(function TimelineItem({
         : undefined;
       if (modelFailure !== undefined) {
         // One line per run of identical failures, never the raw code.
-        // With no model connected the composer already says so, with the fix.
+        // With no model connected the central setup panel already owns the fix.
         if (
           (modelFailure.unreachable || modelFailure.setup) &&
           facts.modelSetup?.state === "missing"

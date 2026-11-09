@@ -1,8 +1,4 @@
 import { formatTokens } from "../core/format-tokens.js";
-import {
-  SetupNotice,
-  type SetupNoticeFix,
-} from "@fungi.computer/caps/blocks/setup-notice";
 import { composerModelName } from "../core/composer-model-name.js";
 import { formatContextUsage } from "../core/format-context.js";
 import { isImeComposing } from "@fungi.computer/caps/lib/ime";
@@ -122,10 +118,6 @@ export type ChatComposerProps = {
     Pick<ComposerController, "recall" | "recallState" | "images"> | undefined;
   /** Caller-owned prompt hint; omitted for the ordinary Session composer. */
   placeholder?: string | undefined;
-  /** Why typing cannot work yet, such as no model connected. It disables input and sending, and replaces the hint. */
-  disabledReason?: string | undefined;
-  /** No model is connected: the send path gives way to this one setup step. */
-  setup?: SetupNoticeFix | undefined;
   /** Hide internal model, usage and status readouts for visitors. */
   showFooter?: boolean;
   /** Display-only status text supplied by the conversation's admitted entries. */
@@ -152,7 +144,6 @@ export type ChatComposerProps = {
 };
 
 function HostComposerTextarea({
-  disabledReason,
   placeholder,
   onChange,
   onSend,
@@ -165,7 +156,6 @@ function HostComposerTextarea({
   queuedRecall,
 }: {
   queuedRecall: ChatComposerProps["queuedRecall"];
-  disabledReason: string | undefined;
   placeholder: string | undefined;
   onChange: (value: string) => void;
   onSend: () => void;
@@ -333,7 +323,6 @@ function HostComposerTextarea({
             .join(" ") || undefined
         }
         aria-busy={recalling}
-        disabled={disabledReason !== undefined}
         readOnly={recalling}
         {...(slash === undefined
           ? {}
@@ -350,7 +339,6 @@ function HostComposerTextarea({
         }}
         onKeyDown={onKeyDown}
         placeholder={
-          disabledReason ??
           placeholder ??
           (slash === undefined ? "Ask agent..." : "Ask agent… (/ for commands)")
         }
@@ -620,8 +608,6 @@ export const ChatComposer = memo(function ChatComposer({
   queuedRecall,
   onImagesChange,
   placeholder,
-  disabledReason,
-  setup,
   showFooter = true,
   statusChips,
   actionVariant = "primary",
@@ -677,9 +663,8 @@ export const ChatComposer = memo(function ChatComposer({
       aria-label={sendLabel}
       className="composer-send-key"
       disabled={
-        disabledReason !== undefined ||
-        (sendState === "busy" &&
-          (recallBusy || status === "queued" || status === "cancelling"))
+        sendState === "busy" &&
+        (recallBusy || status === "queued" || status === "cancelling")
       }
       onClick={() => {
         onSend(busy ? "followUp" : "steer");
@@ -737,17 +722,6 @@ export const ChatComposer = memo(function ChatComposer({
     send: sendAction,
   });
 
-  if (setup !== undefined)
-    return (
-      <div className="chat-composer not-prose flex-shrink-0">
-        <SetupNotice
-          cause="Agents answer with a model, and none is connected yet."
-          fix={setup}
-          need="Connect a model"
-          variant="banner"
-        />
-      </div>
-    );
   return (
     <div className="chat-composer not-prose flex-shrink-0">
       {admissionError !== undefined ? (
@@ -814,7 +788,6 @@ export const ChatComposer = memo(function ChatComposer({
             {/* The draft stays mounted, so it and its history return untouched. */}
             <div hidden={takeover !== undefined}>
               <HostComposerTextarea
-                disabledReason={disabledReason}
                 queuedRecall={queuedRecall}
                 placeholder={placeholder}
                 onChange={onChange}

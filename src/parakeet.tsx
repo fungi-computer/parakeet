@@ -2,6 +2,7 @@ import type { ClientEntryV1 } from "@fungi.computer/shiitake/client-entry";
 import { Button } from "@fungi.computer/caps/components/button";
 import { boundedDiagnostic } from "@fungi.computer/bird-dog/effect";
 import { FailureLine } from "@fungi.computer/caps/components/failure-line";
+import { SetupNotice } from "@fungi.computer/caps/blocks/setup-notice";
 import { EmptyState } from "@fungi.computer/caps/blocks/empty-state";
 import {
   ParakeetHostFactsContext,
@@ -354,6 +355,7 @@ function ConversationTimeline({
   clientActions: ReturnType<typeof useClientActions>;
   onOpen: ParakeetViewProps["onOpen"];
 }) {
+  const { modelSetup } = useContext(ParakeetHostFactsContext);
   const dismissFailed = useDismissFailedPrompt();
   const composer = useComposer();
   const timelineController = useTimeline();
@@ -611,9 +613,21 @@ function ConversationTimeline({
           </div>
         ) : before.length > 0 ? (
           before
-        ) : hasMoreHistory ? null : (
+        ) : hasMoreHistory || modelSetup?.state === "missing" ? null : (
           (empty ?? <ConversationStarters />)
         )}
+        {modelSetup?.state === "missing" ? (
+          <div
+            className={`flex items-center justify-center p-6 ${count === 0 ? "h-full" : "min-h-64"}`}
+          >
+            <SetupNotice
+              need="Connect a model to start"
+              cause="Agents answer with a model, and none is connected yet."
+              fix={modelSetup.fix}
+              variant="panel"
+            />
+          </div>
+        ) : null}
       </div>
       {count > 0 ? (
         <ScrollToBottomBlob
@@ -692,19 +706,8 @@ function RunStopped({
 
 /** The empty conversation: host starter chips when there are any, the quiet prompt otherwise. */
 function ConversationStarters() {
-  const { modelSetup, starters } = useContext(ParakeetHostFactsContext);
+  const { starters } = useContext(ParakeetHostFactsContext);
   const composer = useComposer();
-  // Known up front, before any run: the fix is the composer's one action below.
-  if (modelSetup?.state === "missing")
-    return (
-      <div className="flex h-full items-center justify-center">
-        <EmptyState
-          description="Agents answer with a model, and none is connected yet."
-          title="Connect a model to start"
-          variant="quiet"
-        />
-      </div>
-    );
   if (starters === undefined || starters.length === 0)
     return (
       <div className="flex h-full items-center justify-center text-center">
@@ -795,6 +798,7 @@ function ConversationComposer({
   const abort = useCallback(() => {
     void composer.cancel();
   }, [composer.cancel]);
+  if (hostFacts.modelSetup?.state === "missing") return null;
   const composerProps: ChatComposerProps = {
     queuedRecall: visitor === undefined ? composer : undefined,
     onImagesChange: visitor === undefined ? composer.setImages : undefined,
@@ -811,16 +815,6 @@ function ConversationComposer({
     slash: visitor === undefined ? slash : undefined,
     placeholder:
       visitor === undefined ? undefined : `Ask ${visitor.agentName}…`,
-    // No model means no reply: say why instead of taking a prompt that cannot work.
-    disabledReason:
-      hostFacts.modelSetup?.state === "missing"
-        ? "Connect a model to start chatting"
-        : undefined,
-    // No model: the composer's send path gives way to the one setup step.
-    setup:
-      hostFacts.modelSetup?.state === "missing"
-        ? hostFacts.modelSetup.fix
-        : undefined,
     showFooter: visitor === undefined,
     status: sessionStatus.status,
     viewState: sessionStatus.viewState,

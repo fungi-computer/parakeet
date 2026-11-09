@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.11.5
+
+### Patch Changes
+
+- Changes since 0.11.4:
+
+  - fix(grove): show one central model setup notice
+
 ## 0.11.4
 
 ### Patch Changes

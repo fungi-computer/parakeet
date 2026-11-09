@@ -39,6 +39,7 @@ afterEach(async () => {
     await Promise.resolve();
   });
   roots.clear();
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -235,6 +236,11 @@ it("says up front, before any run, that a model must be connected, with the fix 
   );
   await settle();
   expect(container.textContent).toContain("Connect a model to start");
+  expect(container.querySelectorAll(".caps-setup-notice")).toHaveLength(1);
+  expect(
+    container.querySelector('.caps-setup-notice[data-variant="panel"]'),
+  ).not.toBeNull();
+  expect(container.querySelector(".chat-composer")).toBeNull();
   expect(container.textContent).not.toContain("Plan a weekend trip");
   // Typing cannot work yet: the composer's send path gives way to the one step.
   expect(container.querySelector("textarea")).toBeNull();
@@ -246,6 +252,49 @@ it("says up front, before any run, that a model must be connected, with the fix 
   const fix = fixes[0];
   await settle(() => fix?.click());
   expect(onSelect).toHaveBeenCalledOnce();
+});
+
+it("keeps saved conversation history beside one central setup panel without a composer banner", async () => {
+  // JSDOM has no layout; keep the existing virtualizer's history measurable.
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const snapshot = sessionSnapshot({
+    messages: [
+      {
+        id: "saved-user",
+        commandId: "saved-command",
+        sequence: 1,
+        value: {
+          role: "user",
+          content: "Keep my saved conversation",
+          timestamp: 1,
+        },
+      },
+    ],
+    terminals: [{ commandId: "saved-command", outcome: "completed" }],
+    status: "idle",
+  });
+  const container = render(
+    hostSession(snapshot, frames(), []),
+    createWhistle(),
+    undefined,
+    {
+      modelSetup: {
+        state: "missing",
+        fix: { label: "Add a model key", onSelect: vi.fn() },
+      },
+    },
+  );
+  await vi.waitFor(async () => {
+    await settle();
+    expect(container.textContent).toContain("Keep my saved conversation");
+  });
+  expect(container.querySelectorAll(".caps-setup-notice")).toHaveLength(1);
+  expect(
+    container.querySelector('.caps-setup-notice[data-variant="panel"]'),
+  ).not.toBeNull();
+  expect(container.querySelector(".chat-composer")).toBeNull();
+  expect(container.querySelector("textarea")).toBeNull();
 });
 
 it("puts the caret in the composer when the host asks, so the person can just type", async () => {
