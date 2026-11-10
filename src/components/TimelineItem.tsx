@@ -207,9 +207,17 @@ export const TimelineItem = memo(function TimelineItem({
                   ? `${modelFailure.message} · ${String(tries)} tries`
                   : modelFailure.message
               }
-              {...(onRetry === undefined || modelFailure.setup
-                ? {}
-                : { onRetry, retryAriaLabel: "Retry prompt" })}
+              {...(modelFailure.toolsUnsupported
+                ? facts.modelSetup === undefined
+                  ? {}
+                  : {
+                      onRetry: facts.modelSetup.fix.onSelect,
+                      retryLabel: "Choose model",
+                      retryAriaLabel: "Choose model",
+                    }
+                : onRetry === undefined || modelFailure.setup
+                  ? {}
+                  : { onRetry, retryAriaLabel: "Retry prompt" })}
             />
             <div
               className="px-3 text-xs text-dim"

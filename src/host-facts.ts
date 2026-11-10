@@ -34,6 +34,8 @@ export type PlainModelFailure = Readonly<{
   unreachable: boolean;
   /** No model provider is connected: the fix is setup, not a retry. */
   setup: boolean;
+  /** The saved choice cannot run Agent tools; changing models is the fix. */
+  toolsUnsupported: boolean;
   message: string;
   detail: string;
 }>;
@@ -44,6 +46,7 @@ export function plainModelFailure(text: string): PlainModelFailure | undefined {
     return {
       unreachable: false,
       setup: false,
+      toolsUnsupported: false,
       message: "The run couldn’t finish",
       detail: text,
     };
@@ -53,19 +56,30 @@ export function plainModelFailure(text: string): PlainModelFailure | undefined {
     return {
       unreachable: false,
       setup: true,
+      toolsUnsupported: false,
       message: "No model is connected",
+      detail: text,
+    };
+  if (code === "tools_unsupported")
+    return {
+      unreachable: false,
+      setup: false,
+      toolsUnsupported: true,
+      message: "This model can’t use tools here. Pick one marked tools.",
       detail: text,
     };
   return code === "provider_unavailable"
     ? {
         unreachable: true,
         setup: false,
+        toolsUnsupported: false,
         message: "Couldn’t reach the model",
         detail: text,
       }
     : {
         unreachable: false,
         setup: false,
+        toolsUnsupported: false,
         message: "The model request failed",
         detail: text,
       };

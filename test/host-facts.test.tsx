@@ -53,6 +53,7 @@ it("names the cause of a model failure in plain words and never shows the code",
   expect(plainModelFailure(failedText)).toEqual({
     unreachable: true,
     setup: false,
+    toolsUnsupported: false,
     message: "Couldn’t reach the model",
     detail: failedText,
   });
@@ -61,6 +62,7 @@ it("names the cause of a model failure in plain words and never shows the code",
   ).toEqual({
     unreachable: false,
     setup: false,
+    toolsUnsupported: false,
     message: "The model request failed",
     detail: "Model request failed (provider_rejected).",
   });
@@ -120,4 +122,45 @@ it("turns a setup_required run into the Connect a model fix, never a Retry", () 
   ).toEqual(["Add a model key"]);
   act(() => container.querySelector("button")?.click());
   expect(onSelect).toHaveBeenCalledOnce();
+});
+
+it("explains a model's tool limitation instead of a generic model failure", () => {
+  const container = render(
+    {},
+    <TimelineItem
+      item={{
+        ...failedRun,
+        text: "Model request failed (tools_unsupported). Pick a model marked tools.",
+        repeatCount: 1,
+      }}
+    />,
+  );
+  expect(container.querySelector(".caps-failure-line")?.textContent).toContain(
+    "This model can’t use tools here. Pick one marked tools.",
+  );
+});
+
+it("opens model settings for a tool limitation instead of retrying the same model", () => {
+  const chooseModel = vi.fn();
+  const retry = vi.fn();
+  const container = render(
+    {
+      modelSetup: {
+        state: "ready",
+        fix: { label: "Add a model key", onSelect: chooseModel },
+      },
+    },
+    <TimelineItem
+      item={{
+        ...failedRun,
+        text: "Model request failed (tools_unsupported). Pick a model marked tools.",
+        repeatCount: 1,
+      }}
+      onRetry={retry}
+    />,
+  );
+  expect(container.querySelector("button")?.textContent).toBe("Choose model");
+  act(() => container.querySelector("button")?.click());
+  expect(chooseModel).toHaveBeenCalledOnce();
+  expect(retry).not.toHaveBeenCalled();
 });

@@ -1,5 +1,14 @@
 # @fungi.computer/parakeet
 
+## 0.11.12
+
+### Patch Changes
+
+- Changes since 0.11.11:
+
+  - fix(grove): offer model settings for tool limitations
+  - fix(grove): keep tool-limited models out of agent choices
+
 ## 0.11.11
 
 ### Patch Changes
