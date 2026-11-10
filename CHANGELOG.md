@@ -1,5 +1,16 @@
 # @fungi.computer/parakeet
 
+## 0.11.8
+
+### Patch Changes
+
+- Changes since 0.11.7:
+
+  - fix(tui): explain shortcut sequences and verify audit sizes
+
+- Updated dependencies
+  - @fungi.computer/caps@0.10.4
+
 ## 0.11.7
 
 ### Patch Changes

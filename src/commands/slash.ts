@@ -43,6 +43,8 @@ export type KeyBindingRow = Readonly<{
   keys: string;
   /** What the key does. */
   title: string;
+  /** The command owner's context or current availability explanation. */
+  description?: string | undefined;
   /** Surface order supplied by the command owner. */
   order: number;
 }>;
@@ -52,8 +54,10 @@ export function keyLabel(
   binding: string,
   mac = /Mac|iPhone|iPad/u.test(globalThis.navigator.userAgent),
 ): string {
-  if (binding.startsWith("<leader>"))
-    return `Ctrl K ${binding.slice("<leader>".length)}`;
+  if (binding.startsWith("<leader>")) {
+    const sequence = binding.replaceAll("<leader>", "Ctrl K ").trimEnd();
+    return binding.endsWith(" ") ? `${sequence} Space` : sequence;
+  }
   return binding
     .split(" ")
     .map((chord) => {
@@ -115,6 +119,15 @@ export function keyBindings(
           ? keyLabel(row.binding)
           : `${current.keys}, ${keyLabel(row.binding)}`,
       title: row.title,
+      description:
+        [
+          row.description,
+          ...(row.availability.status === "unavailable"
+            ? [row.availability.reason]
+            : []),
+        ]
+          .filter((part) => part !== undefined)
+          .join(" · ") || undefined,
       order: current?.order ?? row.order,
     });
   }

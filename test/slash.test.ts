@@ -10,6 +10,7 @@ import {
   formatHints,
   parakeetBuiltinCommands,
   keyLabel,
+  keyBindings,
   parseSlashDraft,
   runSlashDraft,
   slashRegistry,
@@ -265,9 +266,48 @@ describe("key hints", () => {
 });
 
 describe("human key names", () => {
+  it("keeps command context and unavailable-action reasons in key help", () => {
+    const runtime = createWhistle();
+    runtime.contribute({
+      sourceId: "help",
+      namespace: "help",
+      commands: [
+        {
+          id: "zoom",
+          title: "Zoom pane",
+          category: "Panes",
+          description: "Alt+Enter inserts a newline in the composer.",
+          projections: { bindings: { values: ["alt+enter", "<leader>z"] } },
+          handler: () => undefined,
+        },
+        {
+          id: "status",
+          title: "Show service status",
+          category: "Advanced",
+          projections: { bindings: { values: ["ctrl+b"] } },
+          availability: () => ({
+            status: "unavailable",
+            reason: "Available only during service recovery.",
+          }),
+          handler: () => undefined,
+        },
+      ],
+    });
+    const rows = keyBindings(runtime.snapshot());
+    expect(
+      rows.find((row) => row.title === "Zoom pane")?.description,
+    ).toContain("newline in the composer");
+    expect(
+      rows.find((row) => row.title === "Show service status")?.description,
+    ).toBe("Available only during service recovery.");
+    runtime.close();
+  });
+
   it.each([
     ["<leader>x", false, "Ctrl K x"],
     ["<leader>:", false, "Ctrl K :"],
+    ["<leader><leader>", false, "Ctrl K Ctrl K"],
+    ["<leader> ", false, "Ctrl K Space"],
     ["mod+k", false, "Ctrl K"],
     ["mod+k", true, "⌘ K"],
     ["mod+o", false, "Ctrl+O"],

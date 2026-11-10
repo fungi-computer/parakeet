@@ -86,7 +86,10 @@ export function parakeetBuiltinCommands(
       handler: async (input: WhistleExecutionInput) => {
         const keys = keyBindings(runtime.snapshot());
         if (input.interaction === undefined)
-          return keys.map((row) => `${row.keys} ${row.title}`);
+          return keys.map(
+            (row) =>
+              `${row.keys} ${row.title}${row.description === undefined ? "" : ` · ${row.description}`}`,
+          );
         if (keys.length === 0) {
           input.interaction.notify({
             type: "info",
@@ -100,7 +103,9 @@ export function parakeetBuiltinCommands(
           options: keys.map((row) => ({
             value: row.commandId,
             label: row.title,
-            description: row.keys,
+            description: [row.keys, row.description]
+              .filter((part) => part !== undefined)
+              .join(" · "),
           })),
         });
         runAfter(

@@ -40,6 +40,7 @@ type KeyBindingRow = Readonly<{
   command: WhistleCommandKey;
   keys: string;
   title: string;
+  description?: string;
   order: number;
 }>;
 ```
@@ -235,6 +236,7 @@ function keyBindings(snapshot): readonly Readonly<{
   command: WhistleCommandKey;
   keys: string;
   title: string;
+  description?: string;
   order: number;
 }>[];
 ```
@@ -250,7 +252,8 @@ Every bound key in the live graph, grouped by command.
 #### Returns
 
 readonly `Readonly`\<\{ `commandId`: `string`; `command`: `WhistleCommandKey`;
-`keys`: `string`; `title`: `string`; `order`: `number`; \}\>[]
+`keys`: `string`; `title`: `string`; `description?`: `string`; `order`:
+`number`; \}\>[]
 
 ---
 
