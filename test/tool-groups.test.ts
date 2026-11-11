@@ -331,6 +331,99 @@ it("marks a group failed, counts failures, and opens the failed call", () => {
   expect(group.calls.map(toolCallDefaultOpen)).toEqual([false, true, false]);
 });
 
+it("shows a failure once and compact when a later call of the same kind completed", () => {
+  const calls = [bash("b1", "pnpm test"), bash("b2", "pnpm test")];
+  const group = onlyGroup(
+    buildDurableTimeline(loop(calls, new Set(["b1"]))).items,
+  );
+  expect(group.status).toBe("completed");
+  expect(group.failedCount).toBe(0);
+  expect(group.recoveredCount).toBe(1);
+  expect(toolGroupDefaultOpen(group)).toBe(false);
+  expect(group.calls.map(toolCallDefaultOpen)).toEqual([false, false]);
+  const [recovered] = group.calls;
+  expect(recovered?.recovered).toBe(true);
+  expect(recovered?.error).toBe("b1 output");
+  expect(JSON.stringify(recovered?.sections)).not.toContain("b1 output");
+});
+
+const script = (id: string, code: string): Call => ({
+  id,
+  name: "execute",
+  arguments: { code },
+});
+
+it("recovers a script failure through the next script, chained through further failures", () => {
+  const calls = [
+    script("s1", "return 1"),
+    script("s2", "return 2"),
+    script("s3", "return 3"),
+  ];
+  const group = onlyGroup(
+    buildDurableTimeline(loop(calls, new Set(["s1", "s2"]))).items,
+  );
+  expect(group.status).toBe("completed");
+  expect(group.failedCount).toBe(0);
+  expect(group.recoveredCount).toBe(2);
+});
+
+it("does not let an unrelated success hide a real failure", () => {
+  const calls = [
+    bash("b1", "pnpm test"),
+    script("s1", "return 1"),
+    bash("b2", "pnpm lint"),
+    read("r1", "a.ts"),
+  ];
+  const group = onlyGroup(
+    buildDurableTimeline(loop(calls, new Set(["b1"]))).items,
+  );
+  expect(group.status).toBe("error");
+  expect(group.failedCount).toBe(1);
+  expect(group.recoveredCount).toBe(0);
+  expect(group.calls.map(toolCallDefaultOpen)).toEqual([
+    true,
+    false,
+    false,
+    false,
+  ]);
+  const failedScript = onlyGroup(
+    buildDurableTimeline(
+      loop([script("s2", "return 2"), bash("b3", "ls")], new Set(["s2"])),
+    ).items,
+  );
+  expect(failedScript.failedCount).toBe(1);
+});
+
+it("keeps a failed edit failed when a later read of the same path succeeds", () => {
+  const group = onlyGroup(
+    buildDurableTimeline(
+      loop([patch("p1", "a.ts"), read("r1", "a.ts")], new Set(["p1"])),
+    ).items,
+  );
+  expect(group.status).toBe("error");
+  expect(group.failedCount).toBe(1);
+  expect(group.recoveredCount).toBe(0);
+});
+
+it("recovers a failed edit when the next edit of the same path succeeds", () => {
+  const group = onlyGroup(
+    buildDurableTimeline(
+      loop([patch("p1", "a.ts"), patch("p2", "a.ts")], new Set(["p1"])),
+    ).items,
+  );
+  expect(group.recoveredCount).toBe(1);
+  expect(group.failedCount).toBe(0);
+});
+
+it("names a script by its work, not the host's home directory", () => {
+  const group = onlyGroup(
+    buildDurableTimeline(
+      loop([script("s1", 'const p = "/home/levi/notes/a.md";')]),
+    ).items,
+  );
+  expect(group.calls[0]?.label).not.toContain("/home/levi");
+});
+
 it("keeps an earlier failed call visible while the next call runs", () => {
   const failed = bash("b1", "pnpm test");
   const next = bash("b2", "pnpm typecheck");

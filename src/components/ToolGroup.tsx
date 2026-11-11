@@ -199,8 +199,10 @@ function CallBody({
     <div className="space-y-1.5 py-1.5 pr-2" data-parakeet-call-body>
       {call.error === undefined ? null : (
         <p
-          className="not-prose m-0 font-mono text-[11px] text-error"
-          role="alert"
+          className={`not-prose m-0 break-words font-mono text-[11px] ${
+            call.recovered === true ? "text-dim" : "text-error"
+          }`}
+          role={call.recovered === true ? undefined : "alert"}
         >
           {call.error}
         </p>
@@ -267,11 +269,19 @@ function CallRow({
             <span className="font-mono">{call.label}</span>
           </>
         }
-        tone={call.status === "error" ? "error" : "neutral"}
+        tone={
+          call.status === "error" && call.recovered !== true
+            ? "error"
+            : "neutral"
+        }
         trailing={
           <>
+            {call.recovered === true ? <span>recovered</span> : null}
             {call.exitCode === undefined ? null : (
-              <Badge size="sm" tone="error">
+              <Badge
+                size="sm"
+                tone={call.recovered === true ? "neutral" : "error"}
+              >
                 exit {String(call.exitCode)}
               </Badge>
             )}
@@ -283,7 +293,7 @@ function CallRow({
               title={
                 call.status === "unknown" ? "result unavailable" : call.status
               }
-              tone={statusTone(call.status)}
+              tone={statusTone(call.status, call.recovered === true)}
             />
           </>
         }
@@ -377,6 +387,9 @@ export const ToolGroup = memo(function ToolGroup({
               <span className="text-error">
                 {String(group.failedCount)} failed
               </span>
+            ) : null}
+            {group.recoveredCount > 0 ? (
+              <span>{String(group.recoveredCount)} recovered</span>
             ) : null}
             {group.durationMs === undefined ? null : (
               <span>{formatToolDuration(group.durationMs)}</span>

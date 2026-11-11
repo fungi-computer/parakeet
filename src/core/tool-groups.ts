@@ -85,7 +85,8 @@ function summarizeToolCalls(calls: readonly ToolCallView[]): string {
 
 function groupStatus(calls: readonly ToolCallView[]): ToolGroupItem["status"] {
   if (calls.some((call) => call.status === "running")) return "running";
-  if (calls.some((call) => call.status === "error")) return "error";
+  if (calls.some((call) => call.status === "error" && call.recovered !== true))
+    return "error";
   if (calls.some((call) => call.status === "unknown")) return "unknown";
   return "completed";
 }
@@ -104,20 +105,50 @@ function groupDuration(tools: readonly ToolItem[]): number | undefined {
     : Math.max(0, end - start);
 }
 
+/**
+ * A failure is recovered when the Agent got past it: the next call of the same
+ * kind that did not itself fail (chained through further failures) completed
+ * and retried the same target. A script is retried by the next script; any
+ * other call needs the same command or a shared path. Other kinds never
+ * recover it, so a read of a file does not undo a failed edit of that file.
+ */
+function recoveredBy(calls: readonly ToolCallView[], index: number): boolean {
+  const call = calls[index];
+  if (call?.status !== "error") return false;
+  const next = calls
+    .slice(index + 1)
+    .find((other) => other.kind === call.kind && other.status !== "error");
+  if (next?.status !== "completed") return false;
+  return (
+    call.kind === "code" ||
+    next.label === call.label ||
+    next.paths.some((path) => call.paths.includes(path))
+  );
+}
+
 /** Build one group from a non-empty run of consecutive calls. */
 export function toolGroup(
   tools: readonly [ToolItem, ...ToolItem[]],
 ): ToolGroupItem {
-  const calls = tools.map(toolCallView);
+  const first = tools.map((tool) => toolCallView(tool));
+  const calls = tools.map((tool, index) => {
+    const call = first[index];
+    return call !== undefined && recoveredBy(first, index)
+      ? toolCallView(tool, true)
+      : (call ?? toolCallView(tool));
+  });
   const status = groupStatus(calls);
   const active = [...calls].reverse().find((call) => call.status === "running");
   return {
     active,
     calls,
     durationMs: status === "running" ? undefined : groupDuration(tools),
-    failedCount: calls.filter((call) => call.status === "error").length,
+    failedCount: calls.filter(
+      (call) => call.status === "error" && call.recovered !== true,
+    ).length,
     id: `tools:${tools[0].id}`,
     kind: "tool_group",
+    recoveredCount: calls.filter((call) => call.recovered === true).length,
     status,
     summary:
       calls.length === 1 && calls[0] !== undefined
@@ -196,9 +227,9 @@ export function visibleToolCalls(
   return open ? group.calls : group.calls.slice(-3);
 }
 
-/** A failed call opens by default so its error is visible. */
+/** A failed call opens by default so its error is visible; a recovered one stays compact. */
 export function toolCallDefaultOpen(call: ToolCallView): boolean {
-  return call.status === "error";
+  return call.status === "error" && call.recovered !== true;
 }
 
 /** Whether a group or call is currently open. */

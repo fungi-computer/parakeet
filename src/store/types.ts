@@ -139,8 +139,10 @@ export type ToolGroupItem = Readonly<{
   calls: readonly ToolCallView[];
   /** First call to last result, once no call is running. */
   durationMs?: number | undefined;
-  /** Calls whose joined result reports an error. */
+  /** Calls whose joined result reports an error and were not followed by a completed call. */
   failedCount: number;
+  /** Failed calls that a later completed call in the same run recovered from. */
+  recoveredCount: number;
   /** Stable identity derived from the first call, kept as calls append. */
   id: string;
   /** Tool-group timeline discriminator. */

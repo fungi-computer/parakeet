@@ -2602,16 +2602,20 @@ Coarse activity for a view state: what the composer gates on.
 ### toolStatusTone()
 
 ```ts
-function toolStatusTone(status): "error" | "success" | "info" | "neutral";
+function toolStatusTone(
+  status,
+  recovered?,
+): "error" | "success" | "info" | "neutral";
 ```
 
 Shared tool status meaning, used by the browser and native presentations.
 
 #### Parameters
 
-| Parameter | Type                                                     |
-| --------- | -------------------------------------------------------- |
-| `status`  | `"error"` \| `"unknown"` \| `"running"` \| `"completed"` |
+| Parameter   | Type                                                     | Default value |
+| ----------- | -------------------------------------------------------- | ------------- |
+| `status`    | `"error"` \| `"unknown"` \| `"running"` \| `"completed"` | `undefined`   |
+| `recovered` | `boolean`                                                | `false`       |
 
 #### Returns
 
@@ -2643,16 +2647,17 @@ readonly `string`[]
 ### toolCallView()
 
 ```ts
-function toolCallView(item): ParakeetToolCallView;
+function toolCallView(item, recovered?): ParakeetToolCallView;
 ```
 
 Build the renderer-neutral view of one call.
 
 #### Parameters
 
-| Parameter | Type                                            |
-| --------- | ----------------------------------------------- |
-| `item`    | [`ParakeetToolItem`](index.md#parakeettoolitem) |
+| Parameter   | Type                                            | Default value |
+| ----------- | ----------------------------------------------- | ------------- |
+| `item`      | [`ParakeetToolItem`](index.md#parakeettoolitem) | `undefined`   |
+| `recovered` | `boolean`                                       | `false`       |
 
 #### Returns
 

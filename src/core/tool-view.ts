@@ -18,8 +18,8 @@ import { reportFailure } from "../lib/failure.js";
 import { sanitizeDisplayText } from "./display-text.js";
 
 /** Shared tool status meaning, used by the browser and native presentations. */
-export function toolStatusTone(status: ToolItem["status"]) {
-  if (status === "error") return "error";
+export function toolStatusTone(status: ToolItem["status"], recovered = false) {
+  if (status === "error") return recovered ? "neutral" : "error";
   if (status === "unknown") return "neutral";
   return status === "running" ? "info" : "success";
 }
@@ -213,6 +213,8 @@ export type ToolCallView = Readonly<{
   exitCode?: number | undefined;
   /** The failure message, shown before the body, for failed calls. */
   error?: string | undefined;
+  /** A failed call that a later completed call in its run recovered from. */
+  recovered?: boolean | undefined;
   /** Expanded body sections, in display order. */
   sections: readonly ToolCallSection[];
   /** Replaceable output while the call runs. */
@@ -341,6 +343,11 @@ const hitPattern = /^(.+?:\d+)[:-]\s?(.*)$/u;
 /** Typed kind for one Pi tool name. */
 function toolKind(name: string): ToolKind {
   return kindByName.get(name) ?? "other";
+}
+
+/** A label names the work, not the machine: `/home/name/` reads as `~/`. */
+function hideHomePaths(text: string): string {
+  return text.replace(/\/(?:home|Users)\/[^/\s"'`]+/gu, "~");
 }
 
 function firstLine(text: string): string {
@@ -800,7 +807,7 @@ function callTarget(item: ToolItem, kind: ToolKind): CallTarget {
                 },
               ];
             },
-            label: firstLine(code.data.code),
+            label: firstLine(hideHomePaths(code.data.code)),
             paths: [],
           }
         : untypedTarget(item);
@@ -846,7 +853,7 @@ function callTarget(item: ToolItem, kind: ToolKind): CallTarget {
 }
 
 /** Build the renderer-neutral view of one call. */
-export function toolCallView(item: ToolItem): ToolCallView {
+export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
   const kind = toolKind(item.name);
   const target = callTarget(item, kind);
   const [verb, activeVerb] = verbs[kind];
@@ -873,22 +880,32 @@ export function toolCallView(item: ToolItem): ToolCallView {
     const value = resultValue(item.result);
     const body = resultBody(value, kind);
     const failed = item.status === "error" || refused;
-    const error = failed
+    const failure = failed
       ? (body.failure ?? "The tool reported an error.")
       : undefined;
+    // The failure line is the first line of the result text, shortened. When
+    // the result is that one line, show it once and in full.
+    const echoLine = (section: ToolCallSection): string | undefined => {
+      if (section.kind === "text" && section.lines.length === 1)
+        return section.lines[0];
+      if (section.kind === "output" && section.lines.length === 1)
+        return section.lines[0]?.text;
+      return undefined;
+    };
+    const echo =
+      failure === undefined
+        ? undefined
+        : body.sections.find(
+            (section) => firstLine(echoLine(section) ?? "") === failure,
+          );
+    const error =
+      echo === undefined ? failure : (echoLine(echo)?.trim() ?? failure);
     const resultHasDiff = body.sections.some(
       (section) => section.kind === "diff",
     );
     const resultSections = (
       kind === "edit" && !failed && !resultHasDiff ? [] : body.sections
-    ).filter(
-      (section) =>
-        !(
-          section.kind === "text" &&
-          section.lines.length === 1 &&
-          section.lines[0] === error
-        ),
-    );
+    ).filter((section) => section !== echo);
     details = {
       error,
       exitCode: body.exitCode,
@@ -918,6 +935,7 @@ export function toolCallView(item: ToolItem): ToolCallView {
     name: item.name,
     live: item.status === "running" ? item.live : undefined,
     paths: target.paths,
+    recovered: failed && recovered,
     get sections() {
       return getDetails().sections;
     },

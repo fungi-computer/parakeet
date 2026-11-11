@@ -1,5 +1,19 @@
 # @fungi.computer/parakeet
 
+## 0.11.13
+
+### Patch Changes
+
+- Changes since 0.11.12:
+
+  - fix(parakeet,grove): keep a failed edit failed when only a read follows
+  - fix(parakeet,grove): recover a tool failure only through its own retry
+  - fix(grove): show a recovered tool failure once and centre the no-model
+    welcome
+
+- Updated dependencies
+  - @fungi.computer/caps@0.10.6
+
 ## 0.11.12
 
 ### Patch Changes

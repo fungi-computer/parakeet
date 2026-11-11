@@ -269,6 +269,38 @@ export const Failed = () => (
   />
 );
 
+const failingScript: FixtureCall = {
+  id: "script-inkcap",
+  name: "execute",
+  arguments: {
+    code: 'const p = "/home/levi/cwd/my-oyster/notes/ftux-note.md";\nconst w = await env.APP.writeFile({ path: p, content: "Rain makes mushrooms happy." });\nif (w.error) return w;\nconst r = await env.APP.readFile({ path: p });\nif (r.error) return r;\nreturn { path: r.path, contents: r.contents };',
+  },
+  output:
+    "The sandbox failed for an unrecognized reason (ref t2phs1sawzrmobic0bvbm)",
+  isError: true,
+  elapsed: 4_300,
+};
+const recoveredScript: FixtureCall = {
+  id: "script-shed",
+  name: "execute",
+  arguments: {
+    code: "return await env.SHED.runCommand({ command: \"printf 'Rain makes mushrooms happy.' > ftux-note.md\" });",
+  },
+  output: "ok",
+  elapsed: 2_500,
+};
+
+/** A failure the Agent routed around shows once, compact, behind its row. */
+export const RecoveredFailure = () => (
+  <Timeline
+    messages={conversation([
+      say("Save a note that says rain makes mushrooms happy."),
+      ...[failingScript, recoveredScript].map(run),
+      say("The file is saved and read back: Rain makes mushrooms happy."),
+    ])}
+  />
+);
+
 /** Every call kind expanded: read, search, edit diff, command, script, failure. */
 export const ExpandedKinds = () => (
   <Timeline

@@ -522,6 +522,7 @@ type ParakeetToolCallView = Readonly<{
   durationMs?: number;
   exitCode?: number;
   error?: string;
+  recovered?: boolean;
   sections: readonly ParakeetToolCallSection[];
   live?: ParakeetToolItem["live"];
 }>;
@@ -894,6 +895,7 @@ type ParakeetToolGroupItem = Readonly<{
   calls: readonly ParakeetToolCallView[];
   durationMs?: number;
   failedCount: number;
+  recoveredCount: number;
   id: string;
   kind: "tool_group";
   status: "completed" | "error" | "running" | "unknown";
@@ -1360,6 +1362,7 @@ function visibleToolCalls(
   durationMs?: number;
   exitCode?: number;
   error?: string;
+  recovered?: boolean;
   sections: readonly ParakeetToolCallSection[];
   live?: Readonly<{
     lines: readonly string[];
@@ -1384,10 +1387,11 @@ readonly `Readonly`\<\{ `id`: `string`; `kind`:
 [`ParakeetToolKind`](#parakeettoolkind); `name`: `string`; `verb`: `string`;
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
 `status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
-`durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`; `sections`:
-readonly [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`:
-`Readonly`\<\{ `lines`: readonly `string`[]; `droppedBytes`: `number`;
-`revision`: `number`; \}\>; \}\>[]
+`durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`;
+`recovered?`: `boolean`; `sections`: readonly
+[`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`: `Readonly`\<\{
+`lines`: readonly `string`[]; `droppedBytes`: `number`; `revision`: `number`;
+\}\>; \}\>[]
 
 ---
 
@@ -1397,7 +1401,8 @@ readonly [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`:
 function toolCallDefaultOpen(call): boolean;
 ```
 
-A failed call opens by default so its error is visible.
+A failed call opens by default so its error is visible; a recovered one stays
+compact.
 
 #### Parameters
 
