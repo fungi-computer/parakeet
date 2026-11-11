@@ -2,7 +2,7 @@ import type {
   SessionMessage,
   SessionTerminal,
 } from "@fungi.computer/shiitake/client";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   buildDurableTimeline,
@@ -1303,4 +1303,94 @@ it("folds repeated error-only turns that carry no provider detail", () => {
     repeatCount: 4,
   });
   expect(projection.items[0]).not.toHaveProperty("providerError");
+});
+
+describe("assistant reasoning that a reader can read", () => {
+  const assistantWith = (
+    content: Extract<SessionMessage["value"], { role: "assistant" }>["content"],
+  ): readonly SessionMessage[] => [
+    {
+      id: "assistant-reasoning",
+      commandId: null,
+      sequence: 1,
+      value: {
+        role: "assistant",
+        api: "pi",
+        provider: "camel",
+        model: "auto",
+        content,
+        stopReason: "stop",
+        timestamp: 1,
+        usage,
+      },
+    },
+  ];
+  const thinkingOf = (messages: readonly SessionMessage[]) => {
+    const item = buildDurableTimeline(messages).items.find(
+      (row) => row.kind === "assistant_message",
+    );
+    return item?.kind === "assistant_message" ? item.thinking : undefined;
+  };
+
+  it("drops Anthropic redacted_thinking, which arrives as a placeholder", () => {
+    expect(
+      thinkingOf(
+        assistantWith([
+          {
+            type: "thinking",
+            thinking: "[Reasoning redacted]",
+            thinkingSignature: "EmwKAhgB",
+            redacted: true,
+          },
+          { type: "text", text: "Answer" },
+        ]),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("carries no text for signature-only Anthropic thinking", () => {
+    expect(
+      thinkingOf(
+        assistantWith([
+          { type: "thinking", thinking: "", thinkingSignature: "sig" },
+          { type: "text", text: "Answer" },
+        ]),
+      ),
+    ).toBe("");
+  });
+
+  it("carries no text for an OpenAI reasoning item with only encrypted content", () => {
+    expect(
+      thinkingOf(
+        assistantWith([
+          {
+            type: "thinking",
+            thinking: "",
+            thinkingSignature: JSON.stringify({
+              type: "reasoning",
+              id: "rs_1",
+              summary: [],
+              encrypted_content: "gAAAA",
+            }),
+          },
+          { type: "text", text: "Answer" },
+        ]),
+      ),
+    ).toBe("");
+  });
+
+  it("keeps readable reasoning from models that share it", () => {
+    expect(
+      thinkingOf(
+        assistantWith([
+          {
+            type: "thinking",
+            thinking: "Weighing two options",
+            thinkingSignature: "reasoning_content",
+          },
+          { type: "text", text: "Answer" },
+        ]),
+      ),
+    ).toBe("Weighing two options");
+  });
 });

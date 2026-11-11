@@ -1,3 +1,4 @@
+import { hasVisibleReasoning } from "../core/assistant-visibility.js";
 import { MarkdownRenderer } from "./MarkdownRenderer.js";
 import { ThinkingBlock } from "./ThinkingBlock.js";
 
@@ -47,10 +48,13 @@ export function ChatMessage({
     );
   }
   const hasText = children.trim().length > 0;
-  if (!hasText && !thinking) return null;
+  const hasThinking = hasVisibleReasoning(thinking);
+  if (!hasText && !hasThinking) return null;
   return (
     <div data-speaker="agent" data-pending={pending ? "true" : undefined}>
-      {thinking ? <ThinkingBlock thinking={thinking} /> : null}
+      {hasThinking && thinking !== undefined ? (
+        <ThinkingBlock thinking={thinking} />
+      ) : null}
       {hasText ? (
         <div
           className={`px-3 py-2 ${isError ? "text-error" : "text-base-content"}`}

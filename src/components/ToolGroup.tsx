@@ -347,7 +347,7 @@ export const ToolGroup = memo(function ToolGroup({
   const single = group.calls.length === 1 ? group.calls[0] : undefined;
   if (single !== undefined)
     return (
-      <div className="px-1">
+      <div>
         <CallRow
           call={single}
           disclosure={disclosure}
@@ -361,7 +361,7 @@ export const ToolGroup = memo(function ToolGroup({
       </div>
     );
   return (
-    <div className="px-1">
+    <div>
       <Disclosure
         className="[&>.caps-disclosure-panel]:hidden"
         leading={<Sigil name="list" size={16} />}

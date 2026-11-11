@@ -122,10 +122,16 @@ const script: FixtureCall = {
 /** Assistant prose, or one call followed by its joined result. */
 type Step =
   | Readonly<{ kind: "text"; text: string }>
-  | Readonly<{ kind: "call"; call: FixtureCall }>;
+  | Readonly<{ kind: "call"; call: FixtureCall; thinking?: string }>;
 
 const say = (text: string): Step => ({ kind: "text", text });
 const run = (call: FixtureCall): Step => ({ kind: "call", call });
+/** A call the model issued after a thinking block; providers often send it with no text. */
+const runAfterThought = (call: FixtureCall, thinking: string): Step => ({
+  kind: "call",
+  call,
+  thinking,
+});
 
 function conversation(
   steps: readonly Step[],
@@ -164,6 +170,14 @@ function conversation(
     }
     const tool = step.call;
     const issued = assistant([
+      ...(step.thinking === undefined
+        ? []
+        : [
+            {
+              type: "thinking" as const,
+              thinking: step.thinking,
+            },
+          ]),
       {
         type: "toolCall",
         id: tool.id,
@@ -351,6 +365,21 @@ export const LoneCall = () => (
       say("Checking one file."),
       run(readTranscript),
       say("Found it."),
+    ])}
+  />
+);
+
+/** Real run shape: a thinking block before every call, most of them empty. */
+export const EmptyThinkingBetweenCalls = () => (
+  <Timeline
+    messages={conversation([
+      say(intro),
+      runAfterThought(readFrame, "\u200b"),
+      runAfterThought(grep, "  \n"),
+      runAfterThought(patch, "The patch must keep the tone helper."),
+      runAfterThought(typecheck, ""),
+      runAfterThought(script, "\ufeff \u200b"),
+      say(outro),
     ])}
   />
 );

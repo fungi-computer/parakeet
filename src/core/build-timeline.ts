@@ -175,7 +175,9 @@ function collectAssistantBlocks(
   const tools: ToolItem[] = [];
   for (const block of value.content) {
     if (block.type === "text") text.push(block.text);
-    if (block.type === "thinking") thinking.push(block.thinking);
+    // Redacted reasoning carries a placeholder, not text a reader can read.
+    if (block.type === "thinking" && block.redacted !== true)
+      thinking.push(block.thinking);
     if (block.type === "toolCall") tools.push(toolItem(block, value.timestamp));
   }
   return { text, thinking, tools };

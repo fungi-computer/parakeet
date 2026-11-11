@@ -81,4 +81,30 @@ describe("the simple transcript", () => {
       renderToStaticMarkup(<ChatMessage speaker="agent">{""}</ChatMessage>),
     ).toBe("");
   });
+
+  it("renders nothing for thinking with no visible text, and keeps real thinking", () => {
+    for (const thinking of ["", "  \n", "\u200b", "\ufeff \u200b"]) {
+      expect(
+        renderToStaticMarkup(
+          <ChatMessage speaker="agent" thinking={thinking}>
+            {""}
+          </ChatMessage>,
+        ),
+      ).toBe("");
+      const answered = renderToStaticMarkup(
+        <ChatMessage speaker="agent" thinking={thinking}>
+          The answer
+        </ChatMessage>,
+      );
+      expect(answered).toContain("The answer");
+      expect(answered).not.toContain("Thoughts");
+    }
+    expect(
+      renderToStaticMarkup(
+        <ChatMessage speaker="agent" thinking="Check the beds">
+          {""}
+        </ChatMessage>,
+      ),
+    ).toContain("Thoughts");
+  });
 });

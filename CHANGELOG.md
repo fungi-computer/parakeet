@@ -1,5 +1,14 @@
 # @fungi.computer/parakeet
 
+## 0.11.16
+
+### Patch Changes
+
+- Changes since 0.11.15:
+
+  - fix(parakeet,graft): keep redacted reasoning placeholders out of thoughts
+  - fix(parakeet): hide thinking rows with no visible text and align tool steps
+
 ## 0.11.15
 
 ### Patch Changes
