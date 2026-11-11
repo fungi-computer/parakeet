@@ -249,7 +249,7 @@ try {
   await rejected.waitFor();
   if (!(await rejected.textContent())?.includes("Browser prompt"))
     throw new Error("rejected prompt content was not retained");
-  const alert = page.locator(".chat-composer [role=alert]");
+  const alert = rejected.getByRole("alert");
   await alert.waitFor();
   if (
     !(await textarea.evaluate(
@@ -306,7 +306,7 @@ try {
   await runFailure.waitFor();
   if (
     !(await runFailure.textContent())?.includes(
-      "The run stopped. Your prompt is still here.",
+      "The run stopped: Run failed without a diagnostic.",
     )
   )
     throw new Error(
@@ -488,7 +488,7 @@ try {
     globalThis.__parakeetBrowserProof.terminateLatestRun("failed"),
   );
   await runFailure
-    .getByText(/The run stopped\. Your prompt is still here\./u)
+    .getByText(/The run stopped: Run failed without a diagnostic\./u)
     .waitFor();
   await textarea.fill("A newer unsent draft");
   await runFailure.getByRole("button", { name: "Retry prompt" }).click();

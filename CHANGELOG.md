@@ -1,5 +1,14 @@
 # @fungi.computer/parakeet
 
+## 0.11.15
+
+### Patch Changes
+
+- Changes since 0.11.14:
+
+  - fix(parakeet): keep the last row clear of the jump-to-bottom control
+  - fix(parakeet,grove,prints): three usability bugs
+
 ## 0.11.14
 
 ### Patch Changes

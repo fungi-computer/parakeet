@@ -546,6 +546,10 @@ function ConversationTimeline({
                   ref={timeline.measureElement}
                   style={{
                     left: 0,
+                    // The last row keeps room for the jump-to-bottom control
+                    // (2rem plus its 1rem offset) so it can scroll clear of it.
+                    paddingBottom:
+                      virtualItem.index === count - 1 ? 48 : undefined,
                     position: "absolute",
                     top: 0,
                     transform: `translateY(${String(virtualItem.start)}px)`,
@@ -643,9 +647,8 @@ function ConversationTimeline({
 }
 
 const stoppedMessages = {
-  failed: "The run stopped. Your prompt is still here.",
-  interrupted:
-    "The worker stopped before this run finished. Your prompt is still here.",
+  failed: "The run stopped.",
+  interrupted: "The worker stopped before this run finished.",
   cancelled: "The run was cancelled. Send a new prompt when you’re ready.",
 } as const;
 
@@ -685,14 +688,14 @@ function RunStopped({
     bounded !== undefined &&
     !bounded.startsWith("reason_unavailable:") &&
     !/\b(?:run|session)=/iu.test(bounded)
-      ? bounded
+      ? bounded.replace(/[.\s]+$/u, "")
       : undefined;
   const message =
     publicCause === undefined || failure === "cancelled"
       ? stoppedMessages[failure]
       : failure === "interrupted"
-        ? `This turn stopped before it finished: ${publicCause}. Your prompt is still here.`
-        : `The run stopped: ${publicCause}. Your prompt is still here.`;
+        ? `This turn stopped before it finished: ${publicCause}.`
+        : `The run stopped: ${publicCause}.`;
   return (
     <FailureLine
       message={message}

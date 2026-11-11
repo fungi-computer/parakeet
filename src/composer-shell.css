@@ -120,6 +120,7 @@
 
 @container (max-width: 26rem) {
   .parakeet-composer-row .parakeet-composer-model-key {
-    max-width: 7rem;
+    min-width: 0;
+    max-width: none;
   }
 }

@@ -787,6 +787,44 @@ it("draws edit diffs from the headless rows, with no result envelope", () => {
   expect(container.textContent).not.toMatch(/Success|truncated|RESULT/iu);
 });
 
+it("shows the exit code of a completed call without the error tone", () => {
+  const { container, root } = mount();
+  const tool: ToolItem = {
+    id: "grep",
+    kind: "tool",
+    name: "bash",
+    args: { command: "grep missing notes.txt" },
+    status: "completed",
+    result: {
+      role: "toolResult",
+      toolCallId: "grep",
+      toolName: "bash",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            status: "completed",
+            exitCode: 1,
+            stdout: "",
+            stderr: "",
+            truncated: false,
+          }),
+        },
+      ],
+      isError: false,
+      timestamp: 2,
+    },
+  };
+  act(() => {
+    root.render(<DisclosureHarness item={toolGroup([tool])} />);
+  });
+  const badge = [...container.querySelectorAll(".badge")].find(
+    (element) => element.textContent === "exit 1",
+  );
+  expect(badge).toBeDefined();
+  expect(badge?.classList.contains("badge-error")).toBe(false);
+});
+
 it("keeps admission diagnostics out of the chat and preserves dismissal", async () => {
   const { container, root } = mount();
   const dismiss = vi.fn();

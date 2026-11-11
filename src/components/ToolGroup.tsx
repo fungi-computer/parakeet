@@ -280,7 +280,11 @@ function CallRow({
             {call.exitCode === undefined ? null : (
               <Badge
                 size="sm"
-                tone={call.recovered === true ? "neutral" : "error"}
+                tone={
+                  call.status === "error" && call.recovered !== true
+                    ? "error"
+                    : "neutral"
+                }
               >
                 exit {String(call.exitCode)}
               </Badge>
