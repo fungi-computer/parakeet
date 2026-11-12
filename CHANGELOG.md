@@ -1,5 +1,12 @@
 # @fungi.computer/parakeet
 
+## 0.11.17
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/caps@0.10.8
+
 ## 0.11.16
 
 ### Patch Changes
