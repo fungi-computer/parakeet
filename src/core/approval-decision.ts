@@ -57,13 +57,11 @@ export type ApprovalReview = Readonly<{
   argv?: readonly string[];
   /** The command words an Always-allow rule would match. */
   prefix?: readonly string[];
-  /** A warning shown when no rule is offered. */
-  warning?: string;
   /** Everything an Always-allow rule would cover. */
   alwaysAllowCoverage?: string;
   /** Why no Always-allow rule is offered. */
   alwaysAllowUnavailableReason?: string;
-  /** What a reusable rule risks. */
+  /** What running this command, or a reusable rule for it, risks. */
   risk?: Readonly<{
     /** The risk in one sentence, named once above the confirmation. */
     summary: string;
@@ -226,8 +224,9 @@ function escapeCard(
       "Scope",
       lead(review.alwaysAllowCoverage, Math.max(8, width - 12)),
     ]);
-  if (!offered && review.warning !== undefined)
-    facts.push(["Warning", review.warning]);
+  // An offered rule names its risk once, above the confirmation instead.
+  if (!offered && review.risk !== undefined)
+    facts.push(["Risk", review.risk.summary]);
   const always = !offered
     ? undefined
     : `Always allow “${shorten(prefix, Math.max(8, width - 5 - "Always allow “” in this project…".length))}” in this project…`;
@@ -250,12 +249,9 @@ function escapeCard(
     ]);
     if (review.alwaysAllowCoverage !== undefined)
       details.push(["Coverage", review.alwaysAllowCoverage]);
-    if (review.risk !== undefined) details.push(["Risk", review.risk.detail]);
   }
-  if (!offered && review.warning !== undefined)
-    // Details replace the preview by label; do not repeat the same
-    // once-only warning as a second "Risk" row.
-    details.push(["Warning", review.warning]);
+  // Details replace the preview by label, so the risk shows once.
+  if (review.risk !== undefined) details.push(["Risk", review.risk.detail]);
   details.push(...recordDetails(view, now));
   return {
     content: {

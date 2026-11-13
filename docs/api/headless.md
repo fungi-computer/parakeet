@@ -500,7 +500,6 @@ type ApprovalReview = Readonly<{
   kind: "exec" | "extension-install";
   argv?: readonly string[];
   prefix?: readonly string[];
-  warning?: string;
   alwaysAllowCoverage?: string;
   alwaysAllowUnavailableReason?: string;
   risk?: Readonly<{
@@ -1818,11 +1817,11 @@ shortens paths inside it to `~`; `now` dates the expiry.
 
 #### Parameters
 
-| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `view`    | [`ApprovalFacts`](#approvalfacts)                                                                                                                                                                                                                                                                                                                                                                                          |
-| `review`  | \| `Readonly`\<\{ `command`: `string`; `cwd`: `string`; `justification`: `string`; `form`: `"direct"` \| `"shell"`; `kind`: `"exec"` \| `"extension-install"`; `argv?`: readonly `string`[]; `prefix?`: readonly `string`[]; `warning?`: `string`; `alwaysAllowCoverage?`: `string`; `alwaysAllowUnavailableReason?`: `string`; `risk?`: `Readonly`\<\{ `summary`: `string`; `detail`: `string`; \}\>; \}\> \| `undefined` |
-| `options` | `Readonly`\<\{ `width`: `number`; `home`: `string`; `now`: `number`; \}\>                                                                                                                                                                                                                                                                                                                                                  |
+| Parameter | Type                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `view`    | [`ApprovalFacts`](#approvalfacts)                                                                                                                                                                                                                                                                                                                                                                    |
+| `review`  | \| `Readonly`\<\{ `command`: `string`; `cwd`: `string`; `justification`: `string`; `form`: `"direct"` \| `"shell"`; `kind`: `"exec"` \| `"extension-install"`; `argv?`: readonly `string`[]; `prefix?`: readonly `string`[]; `alwaysAllowCoverage?`: `string`; `alwaysAllowUnavailableReason?`: `string`; `risk?`: `Readonly`\<\{ `summary`: `string`; `detail`: `string`; \}\>; \}\> \| `undefined` |
+| `options` | `Readonly`\<\{ `width`: `number`; `home`: `string`; `now`: `number`; \}\>                                                                                                                                                                                                                                                                                                                            |
 
 #### Returns
 
