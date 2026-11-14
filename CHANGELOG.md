@@ -1,5 +1,24 @@
 # @fungi.computer/parakeet
 
+## 0.11.26
+
+### Patch Changes
+
+- Changes since 0.11.25:
+
+  - fix(parakeet): hide the script when an execute row is only its one command
+  - fix(parakeet): name an execute row's tool and command, not its script
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.13.0
+  - @fungi.computer/caps@0.11.4
+  - @fungi.computer/shiitake@0.16.0
+  - @fungi.computer/sigils@0.3.2
+  - @fungi.computer/knapsack@0.4.12
+
 ## 0.11.25
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/parakeet",
-  "version": "0.11.25",
+  "version": "0.11.26",
   "author": "Levi <levi@technomancy.dev>",
   "private": false,
   "description": "Standalone React composer for a typed Shiitake Session",
@@ -109,6 +109,7 @@
     "@fungi.computer/whistle": "workspace:*",
     "@tanstack/markdown": "0.0.12",
     "@tanstack/react-virtual": "3.14.10",
+    "acorn": "8.18.0",
     "diff": "8.0.4",
     "effect": "4.0.2",
     "eventsource": "5.1.1",

@@ -360,3 +360,58 @@ it("exports the shared tool-kind Sigil vocabulary for native renderers", async (
     search: "search",
   });
 });
+
+it("labels an execute script by its one operation and command, never its generated handle", () => {
+  const view = toolCallView(
+    call("execute", {
+      code: 'return await smoked_ascocarp.bash({"command":"for i in 1 2 3 4 5 6 7 8; do echo step $i; sleep 1; done","cwd":"/workspace"});',
+    }),
+  );
+  expect([view.activeVerb, view.verb]).toEqual(["Running bash:", "Ran bash:"]);
+  expect(view.label).toBe(
+    "for i in 1 2 3 4 5 6 7 8; do echo step $i; sleep 1; done",
+  );
+  expect(`${view.activeVerb} ${view.label}`).not.toContain("smoked_ascocarp");
+  // A script that is only that call adds nothing beyond the command.
+  expect(view.sections.map(({ kind }) => kind)).toEqual(["command"]);
+});
+
+it("reads a template-literal command and an assigned await", () => {
+  const view = toolCallView(
+    call("execute", {
+      code: "const r = await home_box.bash({ command: `npm test\nnpm run build`, cwd: '/w' });\nreturn r;",
+    }),
+  );
+  expect(view.label).toBe("npm test");
+  expect(view.verb).toBe("Ran bash:");
+  const [command] = view.sections;
+  expect(command?.kind === "command" && command.lines).toEqual([
+    "npm test",
+    "npm run build",
+  ]);
+});
+
+it("keeps the script's own first line when no literal command can be read", () => {
+  for (const code of [
+    "return await box.bash({ command: `echo ${name}` });",
+    "return await box.read({ path: '/a' });",
+    "const x = (",
+  ]) {
+    const view = toolCallView(call("execute", { code }));
+    expect([view.verb, view.activeVerb]).toEqual([
+      "Ran script",
+      "Running script",
+    ]);
+    expect(view.label).toBe(code.split("\n")[0]);
+  }
+});
+
+it("keeps the script when it does more than the one call", () => {
+  const view = toolCallView(
+    call("execute", {
+      code: "const r = await box.bash({ command: 'ls' });\nreturn r.stdout.split('\\n').length;",
+    }),
+  );
+  expect(view.label).toBe("ls");
+  expect(view.sections.map(({ kind }) => kind)).toEqual(["command", "script"]);
+});

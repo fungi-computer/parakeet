@@ -1,3 +1,4 @@
+import { executeCall } from "./execute-call.js";
 import type { SigilName } from "@fungi.computer/sigils";
 import {
   parseCodexPatch,
@@ -610,6 +611,8 @@ type CallTarget = Readonly<{
   paths: readonly string[];
   /** Sections drawn from the call's own input, before the result. */
   input: readonly ToolCallSection[];
+  /** Plain-word verbs for a script whose one operation could be read. */
+  verbs?: readonly [past: string, active: string];
 }>;
 
 const operationLabels = {
@@ -796,21 +799,39 @@ function callTarget(item: ToolItem, kind: ToolKind): CallTarget {
   switch (kind) {
     case "code": {
       const code = codeArgs.safeParse(item.args);
-      return code.success
+      if (!code.success) return untypedTarget(item);
+      const script = {
+        kind: "script" as const,
+        lines: textLines(code.data.code),
+        preview: toolScriptPreviewLimit,
+      };
+      // Say what the script does, in the operation's own words, instead of
+      // showing its source with the generated Computer handle in it.
+      const call = executeCall(code.data.code);
+      return call === undefined
         ? {
             get input() {
-              return [
-                {
-                  kind: "script" as const,
-                  lines: textLines(code.data.code),
-                  preview: toolScriptPreviewLimit,
-                },
-              ];
+              return [script];
             },
             label: firstLine(hideHomePaths(code.data.code)),
             paths: [],
           }
-        : untypedTarget(item);
+        : {
+            get input() {
+              return [
+                {
+                  kind: "command" as const,
+                  lines: textLines(call.command),
+                  preview: toolScriptPreviewLimit,
+                },
+                // A script that is only this call says nothing more.
+                ...(call.alone ? [] : [script]),
+              ];
+            },
+            label: firstLine(hideHomePaths(call.command)),
+            paths: [],
+            verbs: [`Ran ${call.tool}:`, `Running ${call.tool}:`],
+          };
     }
     case "command": {
       const command = commandArgs.safeParse(item.args);
@@ -856,7 +877,7 @@ function callTarget(item: ToolItem, kind: ToolKind): CallTarget {
 export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
   const kind = toolKind(item.name);
   const target = callTarget(item, kind);
-  const [verb, activeVerb] = verbs[kind];
+  const [verb, activeVerb] = target.verbs ?? verbs[kind];
   // A Files edit refusal can arrive inside a successful execute result and
   // must set the group status before its body is opened.
   const statusValue =
