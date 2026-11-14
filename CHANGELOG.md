@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.11.27
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.14.0
+  - @fungi.computer/shiitake@0.16.1
+
 ## 0.11.26
 
 ### Patch Changes
