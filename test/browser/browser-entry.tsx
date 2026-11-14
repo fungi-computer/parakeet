@@ -114,9 +114,14 @@ const usage = {
     total: 0,
   },
 };
+// `?paged` serves the latest 24 rows plus six older pages of 100 rows, so a
+// reader can load past the history window and have the newest page evicted.
+const paged = globalThis.location.search === "?paged";
+const pageCount = 6;
+const pageSize = 100;
 const initialHistory = Array.from({ length: 24 }, (_, index) => ({
   id: `browser-history-${String(index + 1)}`,
-  sequence: index + 1,
+  sequence: (paged ? 1000 : 0) + index + 1,
   commandId: `browser-history-command-${String(index + 1)}`,
   value: {
     role: "user" as const,
@@ -124,8 +129,29 @@ const initialHistory = Array.from({ length: 24 }, (_, index) => ({
     timestamp: index + 1,
   },
 }));
+// Live rows must sort after the paged history rows.
+const liveBase = paged ? 2000 : 0;
+const latestPaging = paged ? { oldestCursor: `page-${String(pageCount)}` } : {};
 
-let sequence = initialHistory.length;
+function olderPage(before: string) {
+  const page = Number(before.slice("page-".length));
+  return sessionSnapshot({
+    sessionId: "browser-session",
+    messages: Array.from({ length: pageSize }, (_, index) => ({
+      id: `paged-history-${String(page)}-${String(index)}`,
+      sequence: page * pageSize + index,
+      commandId: `paged-history-command-${String(page)}-${String(index)}`,
+      value: {
+        role: "user" as const,
+        content: `Older page ${String(page)} message ${String(index)}.`,
+        timestamp: page * pageSize + index,
+      },
+    })),
+    oldestCursor: page > 1 ? `page-${String(page - 1)}` : null,
+  });
+}
+
+let sequence = initialHistory.at(-1)?.sequence ?? 0;
 function nextSequence(): number {
   sequence += 1;
   return sequence;
@@ -302,12 +328,14 @@ const session: ParakeetSession = {
       },
     },
   }),
-  read: () =>
+  read: (options) =>
     Promise.resolve(
-      liveBaseline ??
+      (options?.before === undefined ? undefined : olderPage(options.before)) ??
+        liveBaseline ??
         sessionSnapshot({
           sessionId: "browser-session",
           messages: initialHistory,
+          ...latestPaging,
           extensions: goalSlots(goal),
         }),
     ),
@@ -318,6 +346,7 @@ const session: ParakeetSession = {
         sessionSnapshot({
           sessionId: "browser-session",
           messages: initialHistory,
+          ...latestPaging,
           extensions: goalSlots(goal),
         }),
       changes,
@@ -366,7 +395,7 @@ function beginLiveOutput(): void {
     messages: [
       ...Array.from({ length: 30 }, (_, index) => ({
         id: `live-history-${String(index)}`,
-        sequence: index + 1,
+        sequence: liveBase + index + 1,
         commandId: null,
         value: {
           role: "user" as const,
@@ -376,13 +405,13 @@ function beginLiveOutput(): void {
       })),
       {
         id: "live-prompt",
-        sequence: 31,
+        sequence: liveBase + 31,
         commandId: "running-command",
         value: { role: "user", content: "Run the build.", timestamp: 31 },
       },
       {
         id: "live-assistant",
-        sequence: 32,
+        sequence: liveBase + 32,
         commandId: "running-command",
         value: {
           role: "assistant",

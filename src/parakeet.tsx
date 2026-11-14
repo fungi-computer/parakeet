@@ -455,6 +455,29 @@ function ConversationTimeline({
     }
   }, [hasMoreHistory, loadOlderHistory, loadingOlderHistory, nearTop]);
 
+  // The end of a pinned window is the reader's intent to continue toward the
+  // latest output, however they got there: wheel, scrollbar drag or End key.
+  // Each newer page lands below the viewport, and the live tail's rows measure
+  // after the window resets, so keep scrolling to the end until the reader
+  // takes the scroller back (wheel up, pointer or a key other than End).
+  const followingToLatest = useRef(false);
+  useEffect(() => {
+    if (loadingOlderHistory) return;
+    if (atBottom && hasNewerHistory) {
+      followingToLatest.current = true;
+      loadNewerHistory();
+    } else if (followingToLatest.current && !atBottom) {
+      timeline.scrollToEnd({ behavior: "smooth" });
+    }
+  }, [
+    atBottom,
+    count,
+    hasNewerHistory,
+    loadNewerHistory,
+    loadingOlderHistory,
+    timeline,
+  ]);
+
   const jumpToBottom = useCallback(() => {
     setUnread(0);
     previousScrollTop.current = undefined;
@@ -484,7 +507,7 @@ function ConversationTimeline({
         </div>
       ) : null}
       <div
-        className="h-full min-h-0 overflow-y-auto"
+        className="h-full min-h-0 overflow-y-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset caps-focus-color"
         data-chat-scroller
         ref={scrollerRef}
         onScroll={(event) => {
@@ -496,10 +519,19 @@ function ConversationTimeline({
             timelineController.pinVisibleHistory();
           previousScrollTop.current = top;
         }}
+        onKeyDown={(event) => {
+          if (event.key !== "End") followingToLatest.current = false;
+        }}
+        onPointerDown={() => {
+          followingToLatest.current = false;
+        }}
         onWheel={(event) => {
           const scroller = scrollerRef.current;
           if (scroller === null || loadingOlderHistory) return;
-          if (event.deltaY < 0) timelineController.pinVisibleHistory();
+          if (event.deltaY < 0) {
+            followingToLatest.current = false;
+            timelineController.pinVisibleHistory();
+          }
           if (event.deltaY < 0 && scroller.scrollTop <= 1 && hasMoreHistory)
             loadOlderHistory();
           if (

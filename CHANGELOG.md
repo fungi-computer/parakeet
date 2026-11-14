@@ -1,5 +1,15 @@
 # @fungi.computer/parakeet
 
+## 0.11.33
+
+### Patch Changes
+
+- Changes since 0.11.32:
+
+  - fix(parakeet): show the Caps focus ring on the history scroller
+  - fix(parakeet): show the Caps focus ring on the history scroller
+  - fix(parakeet): follow the latest output after End in pinned history
+
 ## 0.11.32
 
 ### Patch Changes

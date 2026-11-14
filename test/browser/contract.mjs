@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, resolve } from "node:path";
 import process from "node:process";
+import { URL } from "node:url";
 import { chromium } from "playwright";
 import { z } from "zod";
 
@@ -18,6 +19,14 @@ const screenshot = resolve(
   "../../.botanical/parakeet-browser-proof.png",
 );
 const html = `<!doctype html><meta charset="utf-8"><style>html,body,#root{height:100%;margin:0}</style><link rel="stylesheet" href="/styles.css"><main id="root"></main><script type="module" src="/${basename(bundle)}"></script>`;
+
+// Optional frame sequence for UI review: PARAKEET_FRAME_DIR=<dir>.
+async function frame(name) {
+  const directory = process.env.PARAKEET_FRAME_DIR;
+  if (directory === undefined || page === undefined) return;
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: resolve(directory, `${name}.png`) });
+}
 
 let server;
 let browser;
@@ -36,12 +45,13 @@ try {
   await writeFile(resolve(stateRoot, "index.html"), html);
 
   server = createServer(async (request, response) => {
+    const path = new URL(request.url, "http://127.0.0.1").pathname;
     const file =
-      request.url === "/"
+      path === "/"
         ? resolve(stateRoot, "index.html")
-        : request.url === `/${basename(bundle)}`
+        : path === `/${basename(bundle)}`
           ? bundle
-          : request.url === "/styles.css"
+          : path === "/styles.css"
             ? stylesheet
             : undefined;
     if (file === undefined) {
@@ -660,7 +670,13 @@ try {
     away,
     "updates leave a wheel-scrolled reader and their history anchor in place",
   );
-  await jump.click();
+  // Native navigation of the pinned reader: the End key must reach and then
+  // follow the latest output without the explicit Jump to bottom action.
+  await scroller.evaluate((node) => {
+    node.tabIndex = -1;
+    node.focus();
+  });
+  await page.keyboard.press("End");
   await page.waitForFunction(() => {
     const node = globalThis.document.querySelector("[data-chat-scroller]");
     return (
@@ -670,6 +686,19 @@ try {
   });
   await tail.getByText(/^build step 60:/u).waitFor();
   await jump.waitFor({ state: "hidden" });
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.updateLiveOutput(61, 4096),
+  );
+  await tail.getByText(/^build step 61:/u).waitFor();
+  await jump.waitFor({ state: "hidden" });
+  await frame("unpaged-after-end");
+  await page.waitForFunction(() => {
+    const node = globalThis.document.querySelector("[data-chat-scroller]");
+    return (
+      node !== null &&
+      node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+    );
+  });
   await page.evaluate(() =>
     globalThis.__parakeetBrowserProof.finishLiveOutput(false),
   );
@@ -703,6 +732,73 @@ try {
     .getByText("Compiler failed", { exact: true })
     .waitFor();
   assert.equal(await liveToggle.getAttribute("aria-expanded"), "true");
+
+  // A reader who loaded past the bounded history window has had the newest
+  // pages evicted. Native scrollbar/End navigation must still reach and follow
+  // the latest output; only the wheel used to advance the window.
+  await page.goto(`http://127.0.0.1:${address.port}/?paged`, {
+    waitUntil: "load",
+  });
+  await page.getByRole("combobox", { name: "Message", exact: true }).waitFor();
+  const reachedBottom = () =>
+    page.waitForFunction(() => {
+      const node = globalThis.document.querySelector("[data-chat-scroller]");
+      return (
+        node !== null &&
+        node.scrollHeight - node.clientHeight - node.scrollTop <= 1
+      );
+    });
+  await scroller.hover();
+  const oldest = page.getByText(/^Older page 1 message /u).first();
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if ((await oldest.count()) > 0) break;
+    await scroller.evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    await page.mouse.wheel(0, -2000);
+    await page.waitForTimeout(150);
+  }
+  await oldest.waitFor();
+  await page.getByRole("button", { name: "Jump to bottom" }).waitFor();
+  await frame("paged-history-pinned");
+  await scroller.evaluate((node) => {
+    node.tabIndex = -1;
+    node.focus();
+  });
+  await page.keyboard.press("End");
+  await page
+    .getByText(/^Retained history message 24\./u)
+    .waitFor({ timeout: 15_000 });
+  await reachedBottom();
+  await page
+    .getByRole("button", { name: "Jump to bottom" })
+    .waitFor({ state: "hidden" });
+  assert.notEqual(
+    await scroller.evaluate(
+      (node) => globalThis.getComputedStyle(node).boxShadow,
+    ),
+    "none",
+    "the focused scroller shows the Caps focus ring, not the browser outline",
+  );
+  await frame("paged-history-after-end");
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.beginLiveOutput(),
+  );
+  await observed.getByText("1", { exact: true }).waitFor({ state: "attached" });
+  // The fixture's reset replaces the whole baseline, so settle on it with the
+  // explicit action before checking that later output is followed.
+  await followLiveOutput();
+  await tail.getByText(/^build step 1:/u).waitFor();
+  await reachedBottom();
+  await page.evaluate(() =>
+    globalThis.__parakeetBrowserProof.updateLiveOutput(8),
+  );
+  await tail.getByText(/^build step 8:/u).waitFor();
+  await reachedBottom();
+  await page
+    .getByRole("button", { name: "Jump to bottom" })
+    .waitFor({ state: "hidden" });
+  await frame("paged-history-live-output");
   assert.deepEqual(pageErrors, []);
 
   process.stdout.write(
