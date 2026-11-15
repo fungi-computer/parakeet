@@ -53,6 +53,14 @@
   min-height: var(--caps-status-tray-key-height);
 }
 
+/* Touch phones: composer keys are 44px targets. The caps toolbar sets the key
+   height on the tray itself, so the rule sits on the tray, not the shell. */
+@media (pointer: coarse) {
+  .parakeet-composer-shell .caps-composer-toolbar > .caps-status-tray {
+    --caps-status-tray-key-height: 2.75rem;
+  }
+}
+
 /* Composer keys already disclose through their face and chevron. Keep native
    expanded/pressed semantics without redundant decorative corner lamps. */
 .parakeet-composer-row .caps-keycap-led {

@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.11.38
+
+### Patch Changes
+
+- Changes since 0.11.37:
+
+  - fix(parakeet): make composer keys 44px touch targets on phones
+
 ## 0.11.37
 
 ### Patch Changes
