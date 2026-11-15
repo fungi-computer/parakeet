@@ -557,10 +557,20 @@ try {
     fullHeight > smallHeight,
     "a short tail grows naturally until full",
   );
-  const beforeLive = await scroller.evaluate((node) => ({
-    height: node.scrollHeight,
-    top: node.scrollTop,
-  }));
+  // The rows' own extent: the list keeps a reserve under its last row that
+  // depends on whether the reader is at the end, so compare without it.
+  const rowsHeight = () =>
+    scroller.evaluate((node) =>
+      Math.max(
+        ...[...node.querySelectorAll("[data-index]")].map(
+          (row) =>
+            Number(
+              /translateY\((\d+(?:\.\d+)?)px\)/u.exec(row.style.transform)?.[1],
+            ) + row.getBoundingClientRect().height,
+        ),
+      ),
+    );
+  const beforeRows = await rowsHeight();
   await page.evaluate(() =>
     globalThis.__parakeetBrowserProof.updateLiveOutput(30, 2048),
   );
@@ -574,10 +584,7 @@ try {
     fullHeight,
     "full folded height stays fixed when bytes drop",
   );
-  assert.equal(
-    await scroller.evaluate((node) => node.scrollHeight),
-    beforeLive.height,
-  );
+  assert.equal(await rowsHeight(), beforeRows);
   const liveToggle = page
     .locator("[data-parakeet-call] button[aria-expanded]")
     .first();
@@ -692,6 +699,36 @@ try {
   await tail.getByText(/^build step 61:/u).waitFor();
   await jump.waitFor({ state: "hidden" });
   await frame("unpaged-after-end");
+  // At the end Jump to bottom is hidden, so the last output sits one gap
+  // above the composer edge instead of reserving the control's room too.
+  const gapBelowTail = await scroller.evaluate((node) => {
+    const output = node.querySelector('pre[aria-label="Live tool output"]');
+    return (
+      node.getBoundingClientRect().bottom -
+      output.getBoundingClientRect().bottom
+    );
+  });
+  assert.ok(
+    gapBelowTail >= 6 && gapBelowTail <= 10,
+    `no spare room under the last message at the end: ${String(gapBelowTail)}px`,
+  );
+  // Tool output fades at its scroll edges, and the turn's accent rail runs
+  // through the tool row.
+  assert.equal(
+    await tail.evaluate(
+      (node) => globalThis.getComputedStyle(node).animationName,
+    ),
+    "parakeet-edge-fade",
+  );
+  assert.equal(
+    await page
+      .locator('[data-parakeet-entry="tool_group"]')
+      .last()
+      .evaluate(
+        (node) => globalThis.getComputedStyle(node).borderInlineStartWidth,
+      ),
+    "3px",
+  );
   await page.waitForFunction(() => {
     const node = globalThis.document.querySelector("[data-chat-scroller]");
     return (

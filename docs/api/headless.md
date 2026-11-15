@@ -1832,7 +1832,23 @@ shortens paths inside it to `~`; `now` dates the expiry.
 ### approvalRefusal()
 
 ```ts
-function approvalRefusal(reason, decision): string;
+function approvalRefusal(
+  reason,
+  decision,
+):
+  | "This request changed. Look again before answering."
+  | "This request expired. Nothing ran."
+  | "This request is gone. Nothing ran. Ask the Agent to try again."
+  | "This request was already denied. Nothing ran."
+  | "Always allow isn't available for this command. Approve once or deny."
+  | "You can't answer this request. Nothing ran. Ask whoever owns it."
+  | "You aren't allowed to answer this request. Nothing ran. Ask whoever owns it."
+  | "This request no longer matches what you saw. Nothing ran. Refresh and look again."
+  | "This request hasn't been answered yet. Answer it first."
+  | "This is already running. Wait for it to finish."
+  | "We can't tell whether this ran. Check before trying again."
+  | "This session isn't connected anymore. Reconnect and try again. Nothing ran."
+  | "Couldn't answer this request. Nothing ran. Try again.";
 ```
 
 What an answer was refused for, in words for the person.
@@ -1846,7 +1862,20 @@ What an answer was refused for, in words for the person.
 
 #### Returns
 
-`string`
+\| `"This request changed. Look again before answering."` \|
+`"This request expired. Nothing ran."` \|
+`"This request is gone. Nothing ran. Ask the Agent to try again."` \|
+`"This request was already denied. Nothing ran."` \|
+`"Always allow isn't available for this command. Approve once or deny."` \|
+`"You can't answer this request. Nothing ran. Ask whoever owns it."` \|
+`"You aren't allowed to answer this request. Nothing ran. Ask whoever owns it."`
+\|
+`"This request no longer matches what you saw. Nothing ran. Refresh and look again."`
+\| `"This request hasn't been answered yet. Answer it first."` \|
+`"This is already running. Wait for it to finish."` \|
+`"We can't tell whether this ran. Check before trying again."` \|
+`"This session isn't connected anymore. Reconnect and try again. Nothing ran."`
+\| `"Couldn't answer this request. Nothing ran. Try again."`
 
 ---
 

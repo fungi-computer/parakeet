@@ -306,17 +306,35 @@ export function approvalRefusal(
   switch (reason) {
     case "stale-revision":
     case "already-answered":
+    case "not-pending":
       return "This request changed. Look again before answering.";
     case "expired":
       return "This request expired. Nothing ran.";
+    case "not-found":
+      return "This request is gone. Nothing ran. Ask the Agent to try again.";
+    case "declined":
+      return "This request was already denied. Nothing ran.";
     case "not-eligible":
-      if (decision === "always-allow")
-        return "Always allow isn't available for this command. Approve once or deny.";
-      break;
+      return decision === "always-allow"
+        ? "Always allow isn't available for this command. Approve once or deny."
+        : "You can't answer this request. Nothing ran. Ask whoever owns it.";
+    case "not-granted":
+    case "read-only":
+      return "You aren't allowed to answer this request. Nothing ran. Ask whoever owns it.";
+    case "fenced":
+    case "identity-conflict":
+      return "This request no longer matches what you saw. Nothing ran. Refresh and look again.";
+    case "pending":
+      return "This request hasn't been answered yet. Answer it first.";
+    case "in-flight":
+      return "This is already running. Wait for it to finish.";
+    case "outcome-unknown":
+      return "We can't tell whether this ran. Check before trying again.";
+    case "not-attached":
+      return "This session isn't connected anymore. Reconnect and try again. Nothing ran.";
     default:
-      break;
+      return "Couldn't answer this request. Nothing ran. Try again.";
   }
-  return `Couldn't answer (${reason}). Nothing ran.`;
 }
 
 /** What the person decided. */

@@ -1,5 +1,17 @@
 # @fungi.computer/parakeet
 
+## 0.11.37
+
+### Patch Changes
+
+- Changes since 0.11.36:
+
+  - fix(parakeet): keep the output box whole, fade only the scroller, leave the
+    composer inset
+  - fix(approvals): word every refused approval in plain language
+  - fix(parakeet): fade tool output edges, continue the turn rail, close the end
+    gap
+
 ## 0.11.36
 
 ### Patch Changes

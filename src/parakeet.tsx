@@ -547,7 +547,12 @@ function ConversationTimeline({
         {count > 0 ? (
           <div
             className="relative w-full"
-            style={{ height: `${String(timeline.getTotalSize())}px` }}
+            style={{
+              // Room under the last row for the jump-to-bottom control
+              // (2rem plus its 1rem offset), so the row can scroll clear of
+              // it. At the end the control is hidden: one gap (the 8px composer inset), not two.
+              height: `${String(timeline.getTotalSize() + (atBottom ? 8 : 48))}px`,
+            }}
           >
             {virtualItems.map((virtualItem) => {
               const item = itemAt(virtualItem.index);
@@ -578,10 +583,6 @@ function ConversationTimeline({
                   ref={timeline.measureElement}
                   style={{
                     left: 0,
-                    // The last row keeps room for the jump-to-bottom control
-                    // (2rem plus its 1rem offset) so it can scroll clear of it.
-                    paddingBottom:
-                      virtualItem.index === count - 1 ? 48 : undefined,
                     position: "absolute",
                     top: 0,
                     transform: `translateY(${String(virtualItem.start)}px)`,

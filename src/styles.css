@@ -29,6 +29,56 @@
   max-width: none;
 }
 
+/* Long tool output scrolls sideways; where it runs past an edge it fades out
+ * instead of hard-clipping. Scroll-driven, so a block that fits, or a browser
+ * without scroll timelines, keeps the plain edge. */
+@property --edge-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0rem;
+}
+
+@property --edge-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0rem;
+}
+
+@keyframes parakeet-edge-fade {
+  0% {
+    --edge-start: 0rem;
+    --edge-end: 2.5rem;
+  }
+  4% {
+    --edge-start: 2.5rem;
+  }
+  96% {
+    --edge-end: 2.5rem;
+  }
+  100% {
+    --edge-start: 2.5rem;
+    --edge-end: 0rem;
+  }
+}
+
+.parakeet-edge-fade {
+  animation: parakeet-edge-fade linear both;
+  animation-timeline: scroll(self inline);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--edge-start),
+    #000 calc(100% - var(--edge-end)),
+    transparent
+  );
+}
+
+/* The turn's accent rail (the prompt's primary bar) continues through its
+ * tool rows instead of stopping at the prompt. */
+[data-parakeet-entry="tool_group"] {
+  border-inline-start: 3px solid var(--color-primary);
+}
+
 .text-dim {
   color: var(--stipe-fg-muted);
 }

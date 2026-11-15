@@ -253,3 +253,32 @@ it("a command review keeps its title within a prompt's sixty characters and shor
     "Always allow isn't available",
   );
 });
+
+it("words every refusal reason without showing its code", () => {
+  for (const reason of [
+    "not-found",
+    "not-eligible",
+    "already-answered",
+    "stale-revision",
+    "expired",
+    "declined",
+    "fenced",
+    "not-granted",
+    "read-only",
+    "pending",
+    "in-flight",
+    "outcome-unknown",
+    "identity-conflict",
+    "not-attached",
+    "not-pending",
+    "something-new",
+  ]) {
+    const words = approvalRefusal(reason, "approve");
+    expect(words).not.toContain(`(${reason})`);
+    expect(words).not.toMatch(/[a-z]+-[a-z]+/);
+    expect(words).not.toMatch(/\(|\)/);
+  }
+  expect(approvalRefusal("not-found", "deny")).toBe(
+    "This request is gone. Nothing ran. Ask the Agent to try again.",
+  );
+});

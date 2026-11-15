@@ -3,7 +3,7 @@ import { DiffView } from "@fungi.computer/caps/components/diff-view";
 import { Disclosure } from "@fungi.computer/caps/components/disclosure";
 import { Status } from "@fungi.computer/caps/components/status";
 import { Sigil } from "@fungi.computer/sigils";
-import { memo, type ReactNode } from "react";
+import { memo, type ComponentPropsWithoutRef, type ReactNode } from "react";
 
 import {
   disclosureOpen,
@@ -53,8 +53,22 @@ function ShowMore({
   );
 }
 
-const monoBlock =
-  "not-prose m-0 overflow-x-auto rounded-lg border border-base-300 bg-base-200 px-sm py-xs font-mono text-[10px] leading-relaxed";
+/** A bordered, rounded output box; only the inner pre scrolls and fades. */
+function MonoBlock({
+  children,
+  ...props
+}: Readonly<ComponentPropsWithoutRef<"pre">>) {
+  return (
+    <div className="not-prose overflow-hidden rounded-lg border border-base-300 bg-base-200">
+      <pre
+        {...props}
+        className="parakeet-edge-fade m-0 overflow-x-auto px-sm py-xs font-mono text-[10px] leading-relaxed"
+      >
+        {children}
+      </pre>
+    </div>
+  );
+}
 
 function SectionView({
   section,
@@ -79,7 +93,7 @@ function SectionView({
       const { shown, hidden } = visible(section.lines, section.preview, full);
       return (
         <div>
-          <pre className={monoBlock} data-parakeet-section="excerpt">
+          <MonoBlock data-parakeet-section="excerpt">
             {shown.map((line, index) => (
               <span className="block whitespace-pre" key={String(index)}>
                 {line.number === undefined ? null : (
@@ -90,7 +104,7 @@ function SectionView({
                 {line.text}
               </span>
             ))}
-          </pre>
+          </MonoBlock>
           <ShowMore hidden={hidden} onShowAll={onShowAll} />
         </div>
       );
@@ -99,7 +113,7 @@ function SectionView({
       const { shown, hidden } = visible(section.matches, section.preview, full);
       return (
         <div>
-          <pre className={monoBlock} data-parakeet-section="matches">
+          <MonoBlock data-parakeet-section="matches">
             {shown.map((match, index) => (
               <span className="block whitespace-pre" key={String(index)}>
                 {match.location === "" ? null : (
@@ -108,7 +122,7 @@ function SectionView({
                 {match.text}
               </span>
             ))}
-          </pre>
+          </MonoBlock>
           <ShowMore hidden={hidden} onShowAll={onShowAll} />
         </div>
       );
@@ -118,7 +132,7 @@ function SectionView({
       const { shown, hidden } = visible(section.lines, section.preview, full);
       return (
         <div>
-          <pre className={monoBlock} data-parakeet-section={section.kind}>
+          <MonoBlock data-parakeet-section={section.kind}>
             {shown.map((line, index) => (
               <span className="block whitespace-pre" key={String(index)}>
                 {section.kind === "command" && index === 0 ? (
@@ -127,7 +141,7 @@ function SectionView({
                 {line}
               </span>
             ))}
-          </pre>
+          </MonoBlock>
           <ShowMore hidden={hidden} onShowAll={onShowAll} />
         </div>
       );
@@ -136,7 +150,7 @@ function SectionView({
       const { shown, hidden } = visible(section.lines, section.preview, full);
       return (
         <div>
-          <pre className={monoBlock} data-parakeet-section="output">
+          <MonoBlock data-parakeet-section="output">
             {shown.map((line, index) => (
               <span
                 className={
@@ -153,7 +167,7 @@ function SectionView({
                 {line.text}
               </span>
             ))}
-          </pre>
+          </MonoBlock>
           <ShowMore hidden={hidden} onShowAll={onShowAll} />
         </div>
       );
@@ -311,13 +325,13 @@ function CallRow({
         />
       </Disclosure>
       {call.live === undefined ? null : (
-        <pre className={monoBlock} aria-label="Live tool output">
+        <MonoBlock aria-label="Live tool output">
           {toolLiveLines(call, open).map((line, index) => (
             <span className="block whitespace-pre" key={String(index)}>
               {line || "\u00a0"}
             </span>
           ))}
-        </pre>
+        </MonoBlock>
       )}
       {call.status === "completed" && tool?.result !== undefined
         ? renderToolActions?.(tool)
