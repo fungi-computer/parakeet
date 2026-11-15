@@ -1,9 +1,21 @@
 import type { AppRoot } from "@fungi.computer/agar";
 import { openAppAgent } from "@fungi.computer/agar/agents";
 import { seedSessionQuery, type ParakeetSession } from "./headless.js";
+import type { ParakeetPromptResult } from "./session.js";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   createShiitakeClient,
+  type AbortCommand,
+  type BranchCommand,
+  type CancelCommand,
+  type CancelResult,
+  type CompactCommand,
+  type ForkCommand,
+  type ForkedSession,
+  type OperatorCommand,
+  type PromptCommand,
+  type SessionCommand,
+  type TitleCommand,
   type ShiitakeAgent,
   type ShiitakeEventSourceConstructor,
   type ShiitakeSession,
@@ -55,6 +67,72 @@ export type Services = Readonly<{
     options: Parameters<typeof createShiitakeClient>[0],
   ) => InboxClient;
 }>;
+
+/** How long a closing conversation waits for its sends to settle. */
+const sendSettleLimitMs = 30_000;
+
+/** A Session whose wire calls are counted, and the wait for them to end. */
+type SendTracking<Session extends ParakeetSession> = {
+  session: Session;
+  settled: () => Promise<void>;
+};
+
+/**
+ * Track the sends a conversation's Session has in flight, so closing it never
+ * aborts one: its client and transport close only once those have settled.
+ * Every call is forwarded unchanged; a hung send is given up on after a limit.
+ */
+function trackSends<Session extends ParakeetSession>(
+  session: Session,
+): SendTracking<Session> {
+  const inFlight = new Set<Promise<void>>();
+  const note = (sent: Promise<unknown>): void => {
+    const ended: Promise<void> = sent.then(
+      () => {
+        inFlight.delete(ended);
+      },
+      () => {
+        inFlight.delete(ended);
+      },
+    );
+    inFlight.add(ended);
+  };
+  function command(
+    input: PromptCommand | CompactCommand,
+  ): Promise<ParakeetPromptResult>;
+  function command(input: CancelCommand): Promise<CancelResult>;
+  function command(
+    input: AbortCommand | BranchCommand | OperatorCommand | TitleCommand,
+  ): Promise<undefined>;
+  function command(input: ForkCommand): Promise<ForkedSession>;
+  function command(
+    input: SessionCommand,
+  ): Promise<ParakeetPromptResult | CancelResult | ForkedSession | undefined>;
+  function command(input: SessionCommand) {
+    const sent = session.command(input);
+    note(sent);
+    return sent;
+  }
+  return {
+    session: {
+      ...session,
+      command,
+      withdraw: (requestId) => {
+        const sent = session.withdraw(requestId);
+        note(sent);
+        return sent;
+      },
+    },
+    settled: async () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const limit = new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, sendSettleLimitMs);
+      });
+      await Promise.race([Promise.all(inFlight), limit]);
+      clearTimeout(timer);
+    },
+  };
+}
 
 /** Seed Parakeet's shared query with the bounded read before mounting its watch. */
 function prepareConversation(
@@ -198,11 +276,17 @@ export function createConversationOpeningOwner<
           eventSource: eventSourceFor(transport.fetch),
           fetch: transport.fetch,
         });
-        const session = client.session(sessionId);
+        const tracking = trackSends(client.session(sessionId));
+        const session = tracking.session;
         const observation = prepareConversation(queryClient, session);
         openedClose = () => {
           observation.close();
-          void Promise.allSettled([client.close(), transport.close()]);
+          // A send in flight is never aborted by a view change.
+          void tracking
+            .settled()
+            .then(() =>
+              Promise.allSettled([client.close(), transport.close()]),
+            );
         };
         await observation.ready;
         if (options.reportsSelection !== false) {

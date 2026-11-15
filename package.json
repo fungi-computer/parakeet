@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/parakeet",
-  "version": "0.11.38",
+  "version": "0.12.0",
   "author": "Levi <levi@technomancy.dev>",
   "private": false,
   "description": "Standalone React composer for a typed Shiitake Session",
@@ -18,6 +18,10 @@
     "./headless": {
       "types": "./dist/headless.d.ts",
       "import": "./dist/headless.js"
+    },
+    "./conversation-view": {
+      "types": "./dist/conversation-view.d.ts",
+      "import": "./dist/conversation-view.js"
     },
     "./conversation-opening": {
       "types": "./dist/conversation-opening.d.ts",

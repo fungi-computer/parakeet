@@ -1102,3 +1102,205 @@ it("labels each compaction notice result, stale and insufficient as skipped", ()
     "· compaction skipped: the summary would not fit",
   ]);
 });
+
+const viewportHeight = 400;
+
+/**
+ * A scroller with real clamping: scrollTop can never pass the sizer the
+ * component has rendered so far, as in a browser. Rows are 100px tall unless
+ * `heights` overrides their id.
+ */
+function mockScrollGeometry(heights: Map<string, number>) {
+  const offsets = new WeakMap<Element, number>();
+  const isScroller = (element: Element) =>
+    element.hasAttribute("data-chat-scroller");
+  const sizerHeight = (element: Element) => {
+    const sizer = element.firstElementChild;
+    return sizer instanceof HTMLElement
+      ? Number.parseFloat(sizer.style.height) || 0
+      : 0;
+  };
+  const maxTop = (element: Element) =>
+    Math.max(0, sizerHeight(element) - viewportHeight);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return isScroller(this)
+        ? viewportHeight
+        : (heights.get(this.dataset.parakeetId ?? "") ?? 100);
+    },
+  );
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: Element) {
+      const height = isScroller(this) ? viewportHeight : 100;
+      return new DOMRect(0, 0, 800, height);
+    },
+  );
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return isScroller(this) ? viewportHeight : 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return isScroller(this) ? sizerHeight(this) : 0;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollTop", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return offsets.get(this) ?? 0;
+    },
+    set(this: HTMLElement, value: number) {
+      offsets.set(this, Math.min(Math.max(0, value), maxTop(this)));
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+    configurable: true,
+    value(this: HTMLElement, options: ScrollToOptions) {
+      this.scrollTop = options.top ?? 0;
+      this.dispatchEvent(new Event("scroll"));
+    },
+  });
+  return {
+    distanceFromEnd: (scroller: HTMLElement) =>
+      sizerHeight(scroller) - viewportHeight - scroller.scrollTop,
+    scrollerTo: (scroller: HTMLElement, top: number) => {
+      scroller.scrollTop = top;
+      scroller.dispatchEvent(new Event("scroll"));
+    },
+  };
+}
+
+function userRow(index: number) {
+  return {
+    id: `row-${String(index)}`,
+    sequence: index + 1,
+    commandId: null,
+    value: {
+      role: "user" as const,
+      content: `Row ${String(index)}`,
+      timestamp: index + 1,
+    },
+  };
+}
+
+async function mountTimeline(initialRows: number) {
+  const snapshot = sessionSnapshot({
+    messages: Array.from({ length: initialRows }, (_, index) => userRow(index)),
+    status: "idle",
+  });
+  let receive: ((result: IteratorResult<SessionFrame>) => void) | undefined;
+  const session: ParakeetSession = {
+    latestPending: () => Promise.resolve(null),
+    withdraw: () => Promise.resolve({ status: "unknown" }),
+    address: "test://parakeet/timeline-follow",
+    command: commandHandler(commandResult),
+    extension: noExtension,
+    read: () => Promise.resolve(snapshot),
+    watch: () =>
+      Promise.resolve({
+        snapshot,
+        changes: {
+          [Symbol.asyncIterator]: () => ({
+            next: () =>
+              new Promise((resolve) => {
+                receive = resolve;
+              }),
+          }),
+        },
+        close: () => {
+          receive?.({ done: true, value: undefined });
+          return Promise.resolve();
+        },
+      }),
+  };
+  const client = new QueryClient();
+  clients.add(client);
+  const { container, root } = mount();
+  await settle(() => {
+    root.render(
+      <QueryClientProvider client={client}>
+        <Parakeet session={session} />
+      </QueryClientProvider>,
+    );
+  });
+  await vi.waitFor(async () => {
+    await settle();
+    expect(receive).toBeDefined();
+    expect(container.textContent).toContain(`Row ${String(initialRows - 1)}`);
+  });
+  const append = async (from: number, to: number) => {
+    await settle(() =>
+      receive?.({
+        done: false,
+        value: sessionFrame({
+          kind: "update",
+          delivery: "live",
+          cursor: `cursor-${String(to)}`,
+          messages: Array.from({ length: to - from }, (_, index) =>
+            userRow(from + index),
+          ),
+          terminals: [],
+          pending: { total: 0, prompts: [], hasMore: false },
+          status: "idle",
+        }),
+      }),
+    );
+    await settle();
+  };
+  const scroller = container.querySelector<HTMLElement>("[data-chat-scroller]");
+  if (scroller === null) throw new Error("No chat scroller");
+  return { append, container, root, scroller };
+}
+
+const renderedIds = (container: HTMLElement) =>
+  [...container.querySelectorAll("[data-parakeet-id]")].map((element) =>
+    element.getAttribute("data-parakeet-id"),
+  );
+
+it("keeps following the latest output after the last row grows", async () => {
+  const heights = new Map<string, number>();
+  const geometry = mockScrollGeometry(heights);
+  const { append, container, scroller } = await mountTimeline(8);
+  await settle();
+  expect(geometry.distanceFromEnd(scroller)).toBeLessThanOrEqual(1);
+
+  // The last row grows by 2px and the scroller is left 2px from the end, as a
+  // clamped scroll correction leaves it before the sizer has grown.
+  heights.set("row-7", 102);
+  await append(8, 9);
+  geometry.scrollerTo(scroller, scroller.scrollTop - 2);
+  await settle();
+  expect(geometry.distanceFromEnd(scroller)).toBeGreaterThan(1);
+
+  await append(9, 19);
+  await vi.waitFor(async () => {
+    await settle();
+    expect(renderedIds(container)).toContain("row-18");
+  });
+  expect(geometry.distanceFromEnd(scroller)).toBeLessThanOrEqual(1);
+});
+
+it("leaves a reader who scrolled up where they are when output arrives", async () => {
+  const geometry = mockScrollGeometry(new Map());
+  const { append, container, scroller } = await mountTimeline(20);
+  await vi.waitFor(async () => {
+    await settle();
+    expect(geometry.distanceFromEnd(scroller)).toBeLessThanOrEqual(1);
+  });
+  await settle(() => {
+    scroller.dispatchEvent(
+      new WheelEvent("wheel", { bubbles: true, deltaY: -120 }),
+    );
+    geometry.scrollerTo(scroller, 300);
+  });
+  await settle();
+
+  await append(20, 30);
+  await settle();
+  expect(scroller.scrollTop).toBe(300);
+  expect(renderedIds(container)).not.toContain("row-29");
+});

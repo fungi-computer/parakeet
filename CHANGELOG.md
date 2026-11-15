@@ -1,5 +1,15 @@
 # @fungi.computer/parakeet
 
+## 0.12.0
+
+### Minor Changes
+
+- Changes since 0.11.38:
+
+  - fix(parakeet): render the transcript as a column-reverse scroller
+  - fix(parakeet): keep the timeline following the latest output
+  - feat(parakeet): own the in-view conversation and its opening in one place
+
 ## 0.11.38
 
 ### Patch Changes

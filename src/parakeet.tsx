@@ -421,6 +421,9 @@ function ConversationTimeline({
     getScrollElement: () => scrollerRef.current,
     initialRect: { height: 800, width: 800 },
     overscan: 6,
+    // A last row that grows can leave the scroller a few pixels short of the
+    // end before the container catches up; that is still the end.
+    scrollEndThreshold: 32,
     useFlushSync: false,
   });
   const virtualItems = timeline.getVirtualItems();
@@ -455,20 +458,18 @@ function ConversationTimeline({
     }
   }, [hasMoreHistory, loadOlderHistory, loadingOlderHistory, nearTop]);
 
-  // The end of a pinned window is the reader's intent to continue toward the
-  // latest output, however they got there: wheel, scrollbar drag or End key.
-  // Each newer page lands below the viewport, and the live tail's rows measure
-  // after the window resets, so keep scrolling to the end until the reader
-  // takes the scroller back (wheel up, pointer or a key other than End).
+  // Reaching the end of the timeline, however the reader got there (wheel,
+  // scrollbar drag or End key), is the choice to follow the latest output:
+  // newer pages land below the viewport and the live tail's rows measure
+  // after the window resets. Only the reader ends it (wheel up, pointer or a
+  // key other than End), never a measurement or a clamped scroll correction.
   const followingToLatest = useRef(false);
+  const totalSize = timeline.getTotalSize();
   useEffect(() => {
     if (loadingOlderHistory) return;
-    if (atBottom && hasNewerHistory) {
-      followingToLatest.current = true;
-      loadNewerHistory();
-    } else if (followingToLatest.current && !atBottom) {
-      timeline.scrollToEnd({ behavior: "smooth" });
-    }
+    if (atBottom) followingToLatest.current = true;
+    if (atBottom && hasNewerHistory) loadNewerHistory();
+    else if (followingToLatest.current) timeline.scrollToEnd();
   }, [
     atBottom,
     count,
@@ -476,6 +477,7 @@ function ConversationTimeline({
     loadNewerHistory,
     loadingOlderHistory,
     timeline,
+    totalSize,
   ]);
 
   const jumpToBottom = useCallback(() => {
@@ -512,7 +514,10 @@ function ConversationTimeline({
         ref={scrollerRef}
         onScroll={(event) => {
           const top = event.currentTarget.scrollTop;
+          // Scrolling up is the reader's only while they are not following:
+          // a correction the library makes while following is not.
           if (
+            !followingToLatest.current &&
             previousScrollTop.current !== undefined &&
             top < previousScrollTop.current
           )
@@ -548,10 +553,10 @@ function ConversationTimeline({
           <div
             className="relative w-full"
             style={{
-              // Room under the last row for the jump-to-bottom control
-              // (2rem plus its 1rem offset), so the row can scroll clear of
-              // it. At the end the control is hidden: one gap (the 8px composer inset), not two.
-              height: `${String(timeline.getTotalSize() + (atBottom ? 8 : 48))}px`,
+              // One gap: the 8px composer inset. It must not depend on whether
+              // the scroller is at the end, or following would move the end
+              // away from the reader.
+              height: `${String(totalSize + 8)}px`,
             }}
           >
             {virtualItems.map((virtualItem) => {
