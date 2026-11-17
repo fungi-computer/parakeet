@@ -1,4 +1,5 @@
 import type { ParakeetAuthor } from "../core/author-labels.js";
+import type { ModelFailure } from "@fungi.computer/mule";
 import type {
   PromptDelivery,
   PromptCommand,
@@ -84,6 +85,8 @@ export type AssistantMessageItem = Readonly<{
   text: string;
   /** Pi's private failed-turn error text; never a terminal or delegation diagnostic. */
   providerError?: string;
+  /** Provider identity and typed failure cause from the stored assistant turn. */
+  modelFailure?: ModelFailure;
   /** Short assistant output retained before a provider failure, not provider prose. */
   errorDetail?: string;
   /** Consecutive failures with the same visible headline and detail. */

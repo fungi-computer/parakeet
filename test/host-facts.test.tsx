@@ -9,6 +9,7 @@ import {
   type ParakeetHostFacts,
 } from "../src/host-facts.js";
 import type { TimelineItem as Row } from "../src/store/types.js";
+import type { ModelFailure } from "@fungi.computer/mule";
 
 Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", {
   configurable: true,
@@ -44,29 +45,137 @@ const failedRun: Row = {
   pending: false,
   at: 1,
   text: failedText,
+  modelFailure: { provider: "openai", cause: { code: "provider_unavailable" } },
   usage: { cost: 0, tokens: 0 },
   providerError: "diagnostic",
   repeatCount: 4,
 };
 
 it("names the cause of a model failure in plain words and never shows the code", () => {
-  expect(plainModelFailure(failedText)).toEqual({
+  expect(plainModelFailure(failedRun.modelFailure, failedText)).toEqual({
     unreachable: true,
     setup: false,
     toolsUnsupported: false,
+    usageLimit: false,
     message: "Couldn’t reach the model",
     detail: failedText,
   });
   expect(
-    plainModelFailure("Model request failed (provider_rejected)."),
+    plainModelFailure(
+      { provider: "openai", cause: { code: "provider_rejected", status: 400 } },
+      "Model request failed (provider_rejected).",
+    ),
   ).toEqual({
     unreachable: false,
     setup: false,
     toolsUnsupported: false,
-    message: "The model request failed",
+    usageLimit: false,
+    message: "The model provider refused the request",
     detail: "Model request failed (provider_rejected).",
   });
-  expect(plainModelFailure("Something else broke.")).toBeUndefined();
+  expect(plainModelFailure(undefined, failedText)).toBeUndefined();
+});
+
+it.each([
+  ["rate-limit", "The model provider is receiving too many requests"],
+  ["overloaded", "The model provider is overloaded"],
+  ["usage-limit-reached", "OpenAI usage limit reached."],
+] as const)(
+  "names the typed %s cause instead of a generic failure",
+  (code, message) => {
+    expect(
+      plainModelFailure(
+        { provider: "openai", cause: { code } },
+        "Arbitrary display text, not a protocol.",
+      ),
+    ).toEqual({
+      unreachable: false,
+      setup: false,
+      toolsUnsupported: false,
+      usageLimit: code === "usage-limit-reached",
+      message,
+      detail: "Arbitrary display text, not a protocol.",
+    });
+  },
+);
+
+it.each([
+  ["openai", "OpenAI"],
+  ["anthropic", "Anthropic"],
+  ["openai-codex", "OpenAI"],
+  ["cloudflare-workers-ai", "Cloudflare Workers AI"],
+  ["custom-ai", "custom-ai"],
+])(
+  "names the %s provider for a typed usage limit without offering Retry",
+  (provider, name) => {
+    const retry = vi.fn();
+    const text = `${name} usage limit reached.`;
+    const modelFailure: ModelFailure = {
+      provider,
+      cause: { code: "usage-limit-reached", cause: "quota" },
+    };
+    const container = render(
+      {},
+      <TimelineItem
+        item={{ ...failedRun, text, modelFailure, repeatCount: 1 }}
+        onRetry={retry}
+      />,
+    );
+    expect(container.querySelector(".caps-failure-line")?.textContent).toBe(
+      `${name} usage limit reached.`,
+    );
+    expect(container.querySelector("button")).toBeNull();
+    expect(container.textContent).not.toMatch(/retry|try again/iu);
+    expect(retry).not.toHaveBeenCalled();
+  },
+);
+
+it("uses the typed cause, not provider prose, to decide whether Retry is offered", () => {
+  const retry = vi.fn();
+  const text = "Anthropic usage limit reached";
+  const container = render(
+    {},
+    <TimelineItem
+      item={{
+        ...failedRun,
+        text,
+        modelFailure: {
+          provider: "openai",
+          cause: { code: "provider_rejected", status: 400 },
+        },
+        repeatCount: 1,
+      }}
+      onRetry={retry}
+    />,
+  );
+  expect(container.querySelector(".caps-failure-line")?.textContent).toContain(
+    "The model provider refused the request",
+  );
+  act(() => container.querySelector("button")?.click());
+  expect(retry).toHaveBeenCalledOnce();
+});
+
+it("does not let retry prose change a typed usage-limit decision", () => {
+  const text = "Anthropic says: Retry the request.";
+  const container = render(
+    {},
+    <TimelineItem
+      item={{
+        ...failedRun,
+        text,
+        modelFailure: {
+          provider: "openai",
+          cause: { code: "usage-limit-reached" },
+        },
+        repeatCount: 1,
+      }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(container.querySelector(".caps-failure-line")?.textContent).toBe(
+    "OpenAI usage limit reached.",
+  );
+  expect(container.querySelector("button")).toBeNull();
 });
 
 it("folds four identical failures into one line with a count and no raw code", () => {
@@ -111,6 +220,7 @@ it("turns a setup_required run into the Connect a model fix, never a Retry", () 
       item={{
         ...failedRun,
         text: "Model request failed (setup_required). Connect a model first.",
+        modelFailure: { provider: "openai", cause: { code: "setup_required" } },
         repeatCount: 1,
       }}
       onRetry={vi.fn()}
@@ -131,6 +241,10 @@ it("explains a model's tool limitation instead of a generic model failure", () =
       item={{
         ...failedRun,
         text: "Model request failed (tools_unsupported). Pick a model marked tools.",
+        modelFailure: {
+          provider: "openai",
+          cause: { code: "tools_unsupported" },
+        },
         repeatCount: 1,
       }}
     />,
@@ -154,6 +268,10 @@ it("opens model settings for a tool limitation instead of retrying the same mode
       item={{
         ...failedRun,
         text: "Model request failed (tools_unsupported). Pick a model marked tools.",
+        modelFailure: {
+          provider: "openai",
+          cause: { code: "tools_unsupported" },
+        },
         repeatCount: 1,
       }}
       onRetry={retry}

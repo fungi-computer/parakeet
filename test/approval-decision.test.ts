@@ -27,7 +27,11 @@ const view: ApprovalFacts = {
     module: "linear",
     operation: "create_issue",
     access: "external",
-    description: { inputBytes: 10, inputSha256: "0123456789abcdef".repeat(4) },
+    description: {
+      app: { displayName: "Notes", operationLabel: "Save a note" },
+      inputBytes: 10,
+      inputSha256: "0123456789abcdef".repeat(4),
+    },
     reversibility: "irreversible-external",
     expiresAt: 10_000,
   },
@@ -85,7 +89,7 @@ it("a connected tool is asked as Approve once, Deny and a Deny-and-say-why line"
   });
   expect(asked[0]).toMatchObject({
     type: "decision",
-    message: "Allow linear · create_issue?",
+    message: "Allow Notes to save a note?",
     options: [
       { value: "approve", label: "Approve once" },
       { value: "deny", label: "Deny" },
@@ -95,6 +99,35 @@ it("a connected tool is asked as Approve once, Deny and a Deny-and-say-why line"
   expect(owner.sent).toEqual([
     { recordId: "record-1", decision: "approve", expectedRevision: 7 },
   ]);
+});
+
+it("uses catalog labels without deriving names from IDs and keeps prose as a label", () => {
+  const prose = {
+    ...view,
+    record: {
+      ...view.record,
+      description: {
+        ...view.record.description,
+        app: {
+          displayName: "Field Notes",
+          operationLabel: "Save a note. Replaces the existing text.",
+        },
+      },
+    },
+  };
+  expect(approvalCardCopy(prose, undefined, options).content.title).toBe(
+    "Allow Field Notes · Save a note. Replaces the existing text.?",
+  );
+  const unlabelled = {
+    ...view,
+    record: {
+      ...view.record,
+      description: { inputBytes: 10, inputSha256: "a".repeat(64) },
+    },
+  };
+  expect(approvalCardCopy(unlabelled, undefined, options).content.title).toBe(
+    "Allow linear · create_issue?",
+  );
 });
 
 it("a written reason denies with that note and a blank line is a plain Deny", async () => {
@@ -188,7 +221,7 @@ it("a refusal and a lost response both reach the person in words", async () => {
 it("the family choice turns the rule on, then asks again without offering it twice", async () => {
   const enable = vi.fn(() => Promise.resolve(true));
   const owner = source({
-    family: { label: "Always approve this family", enable },
+    family: { label: "Always allow Notes to change data", enable },
   });
   const { interaction, asked } = person([
     { selected: ["family"] },
@@ -201,7 +234,7 @@ it("the family choice turns the rule on, then asks again without offering it twi
     options: [{ value: "approve" }, { value: "family" }, { value: "deny" }],
   });
   expect(asked[2]).toMatchObject({
-    summary: "Automatic approval is on for this family.",
+    summary: "Automatic approval is on for Notes.",
     options: [{ value: "approve" }, { value: "deny" }],
   });
 });
@@ -209,7 +242,7 @@ it("the family choice turns the rule on, then asks again without offering it twi
 it("the family rule needs its own confirmation, whose default and Esc are Back", async () => {
   const enable = vi.fn(() => Promise.resolve(true));
   const owner = source({
-    family: { label: "Always approve this family", enable },
+    family: { label: "Always allow Notes to change data", enable },
   });
   const { interaction, asked } = person([
     { selected: ["family"] },
@@ -220,7 +253,7 @@ it("the family rule needs its own confirmation, whose default and Esc are Back",
   expect(enable).not.toHaveBeenCalled();
   expect(asked[1]).toMatchObject({
     type: "decision",
-    message: "Always approve this family?",
+    message: "Always allow Notes to change data?",
     options: [{ value: "back" }, { value: "family" }],
     escape: "back",
   });

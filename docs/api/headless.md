@@ -474,6 +474,10 @@ type ApprovalFacts = Readonly<{
     operation: string;
     access: string;
     description: Readonly<{
+      app?: Readonly<{
+        displayName: string;
+        operationLabel: string;
+      }>;
       inputBytes: number;
       inputSha256: string;
     }>;

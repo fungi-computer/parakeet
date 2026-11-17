@@ -27,6 +27,13 @@ export type ApprovalFacts = Readonly<{
     access: string;
     /** What the tool would be given, as the ledger describes it. */
     description: Readonly<{
+      /** Display words supplied by the admitted App catalog, never derived from IDs. */
+      app?: Readonly<{
+        /** The App's published display name. */
+        displayName: string;
+        /** The operation's published human description. */
+        operationLabel: string;
+      }>;
       /** Size of the input in bytes. */
       inputBytes: number;
       /** Digest of the input. */
@@ -159,11 +166,25 @@ function undoDetail(view: ApprovalFacts): readonly [string, string] {
   ];
 }
 
+function appApprovalTitle(
+  app: NonNullable<ApprovalFacts["record"]["description"]["app"]>,
+): string {
+  // A short catalog action can be embedded in a question. Prose stays a label;
+  // never attempt to turn a module/operation identifier into display words.
+  const action = app.operationLabel.trim().replace(/\.$/, "");
+  if (action.length === 0 || /[.!?\n]/.test(action))
+    return `Allow ${app.displayName} · ${app.operationLabel}?`;
+  return `Allow ${app.displayName} to ${action.charAt(0).toLowerCase()}${action.slice(1)}?`;
+}
+
 function connectedToolCard(view: ApprovalFacts, now: number): ApprovalCard {
   const { record } = view;
   return {
     content: {
-      title: `Allow ${record.module} · ${record.operation}?`,
+      title:
+        record.description.app === undefined
+          ? `Allow ${record.module} · ${record.operation}?`
+          : appApprovalTitle(record.description.app),
       summary: `${record.requester.displayName} wants to use a connected tool.`,
       facts: [
         {
@@ -447,7 +468,7 @@ export async function askApproval(
         type: "decision",
         message: card.content.title,
         summary: familyOn
-          ? "Automatic approval is on for this family."
+          ? `Automatic approval is on for ${record.description.app?.displayName ?? "this tool"}.`
           : card.content.summary,
         facts: card.content.facts?.map((fact) => ({ ...fact })),
         body: card.content.body,
@@ -497,7 +518,7 @@ export async function askApproval(
         const confirmed = await interaction.prompt({
           type: "decision",
           message: `${source.family.label}?`,
-          summary: `Later ${record.module} requests that ${record.access === "write" ? "change data in Fungi" : "reach outside Fungi"} will run without asking.`,
+          summary: `All ${record.description.app?.displayName ?? "this tool"} requests that ${record.access === "write" ? "change data in Fungi" : "reach outside Fungi"} will run without asking, not just this action.`,
           options: [
             { value: "back", label: "Back" },
             { value: "family", label: source.family.label },

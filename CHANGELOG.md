@@ -1,5 +1,25 @@
 # @fungi.computer/parakeet
 
+## 0.12.2
+
+### Patch Changes
+
+- Changes since 0.12.1:
+
+  - fix(approvals): isolate waiting calls and name App write permissions
+  - fix(agents): explain typed quota limits without retry advice
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.18.2
+  - @fungi.computer/caps@0.12.0
+  - @fungi.computer/mule@0.2.4
+  - @fungi.computer/shiitake@0.19.0
+  - @fungi.computer/knapsack@0.4.14
+  - @fungi.computer/bird-dog@0.3.7
+
 ## 0.12.1
 
 ### Patch Changes

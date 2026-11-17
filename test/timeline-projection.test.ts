@@ -3,6 +3,7 @@ import type {
   SessionTerminal,
 } from "@fungi.computer/shiitake/client";
 import { describe, expect, it } from "vitest";
+import type { ModelFailure } from "@fungi.computer/mule";
 
 import {
   buildDurableTimeline,
@@ -698,6 +699,11 @@ it("shows the safe provider headline, keeping raw provider text separate", () =>
           stopReason: "error",
           errorMessage: "Safe model failure",
           providerError: "provider diagnostic fixture",
+          provider: "openai-codex",
+          modelFailure: {
+            provider: "openai-codex",
+            cause: { code: "usage-limit-reached", cause: "quota" },
+          },
         },
       },
     ],
@@ -712,7 +718,39 @@ it("shows the safe provider headline, keeping raw provider text separate", () =>
     isError: true,
     text: "Safe model failure",
     providerError: "provider diagnostic fixture",
+    modelFailure: {
+      provider: "openai-codex",
+      cause: { code: "usage-limit-reached", cause: "quota" },
+    },
   });
+});
+
+it("does not fold different typed causes or providers even when display text matches", () => {
+  const assistant = messages.find(
+    (message) => message.value.role === "assistant",
+  );
+  if (assistant?.value.role !== "assistant")
+    throw new Error("Missing assistant fixture");
+  const failures: SessionMessage[] = (
+    [
+      { provider: "openai", cause: { code: "usage-limit-reached" } },
+      { provider: "anthropic", cause: { code: "usage-limit-reached" } },
+      { provider: "anthropic", cause: { code: "overloaded" } },
+    ] satisfies ModelFailure[]
+  ).map((modelFailure, index) => ({
+    ...assistant,
+    id: `failure-${String(index)}`,
+    sequence: index + 1,
+    value: {
+      ...assistant.value,
+      content: [],
+      stopReason: "error",
+      errorMessage: "Identical display text",
+      provider: modelFailure.provider,
+      modelFailure,
+    },
+  }));
+  expect(buildDurableTimeline(failures).items).toHaveLength(3);
 });
 
 it("folds consecutive matching provider errors without losing command or committed-position anchors", () => {
@@ -726,6 +764,10 @@ it("folds consecutive matching provider errors without losing command or committ
     content: [],
     stopReason: "error" as const,
     errorMessage: "Anthropic is overloaded.",
+    modelFailure: {
+      provider: "anthropic",
+      cause: { code: "overloaded" as const },
+    },
   };
   const failures = Array.from({ length: 7 }, (_, index): SessionMessage => ({
     ...assistant,

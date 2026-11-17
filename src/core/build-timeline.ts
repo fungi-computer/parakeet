@@ -209,6 +209,8 @@ function assistantMessageItem(
             ? "The run was cancelled."
             : ""
         : blocks.text.join(""),
+    ...(value.stopReason === "error" &&
+      value.modelFailure !== undefined && { modelFailure: value.modelFailure }),
     usage: {
       cost: value.usage.cost.total,
       tokens: value.usage.totalTokens,
@@ -254,6 +256,8 @@ function collapseProviderErrors(
       // Error-only turns repeat too: a provider detail is not required to fold.
       (row.providerError === undefined) ===
         (prior.providerError === undefined) &&
+      row.modelFailure?.provider === prior.modelFailure?.provider &&
+      row.modelFailure?.cause.code === prior.modelFailure?.cause.code &&
       row.text === prior.text &&
       row.errorDetail === prior.errorDetail &&
       row.thinking === prior.thinking &&
@@ -266,6 +270,9 @@ function collapseProviderErrors(
         // Details show the latest response, including its request id.
         ...(row.providerError !== undefined && {
           providerError: row.providerError,
+        }),
+        ...(row.modelFailure !== undefined && {
+          modelFailure: row.modelFailure,
         }),
       };
       aliases.set(row.id, prior.id);

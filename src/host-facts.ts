@@ -1,4 +1,5 @@
 import { createContext } from "react";
+import { providerDisplayNames, type ModelFailure } from "@fungi.computer/mule";
 
 /** Whether a model is connected, with the one fix the host offers. */
 export type ParakeetModelSetup = Readonly<{
@@ -26,8 +27,19 @@ export type ParakeetHostFacts = Readonly<{
 /** Provided by the conversation view; read by the failure and empty states. */
 export const ParakeetHostFactsContext = createContext<ParakeetHostFacts>({});
 
-const modelFailure = /^Model request failed \(([a-z_]+)\)\./u;
-const unfinishedRun = "This run couldn’t finish.";
+const failureMessages: ReadonlyMap<ModelFailure["cause"]["code"], string> =
+  new Map([
+    ["setup_required", "No model is connected"],
+    [
+      "tools_unsupported",
+      "This model can’t use tools here. Pick one marked tools.",
+    ],
+    ["provider_unavailable", "Couldn’t reach the model"],
+    ["rate-limit", "The model provider is receiving too many requests"],
+    ["overloaded", "The model provider is overloaded"],
+    ["provider_rejected", "The model provider refused the request"],
+    ["request_failed", "The model request failed"],
+  ]);
 
 /** A failed model run in plain words; `detail` is the stored text, kept for a details disclosure. */
 export type PlainModelFailure = Readonly<{
@@ -36,51 +48,39 @@ export type PlainModelFailure = Readonly<{
   setup: boolean;
   /** The saved choice cannot run Agent tools; changing models is the fix. */
   toolsUnsupported: boolean;
+  /** Exhausted usage or account quota cannot be fixed by retrying this request. */
+  usageLimit: boolean;
   message: string;
   detail: string;
 }>;
 
-/** A run that failed, with the plain sentence for its cause; undefined for any other text. */
-export function plainModelFailure(text: string): PlainModelFailure | undefined {
-  if (text === unfinishedRun)
+/** Describe typed failure facts; display text alone never supplies a cause or provider. */
+export function plainModelFailure(
+  failure: ModelFailure | undefined,
+  text: string,
+): PlainModelFailure | undefined {
+  if (failure === undefined) return undefined;
+  const base = {
+    unreachable: false,
+    setup: false,
+    toolsUnsupported: false,
+    usageLimit: false,
+    detail: text,
+  };
+  const code = failure.cause.code;
+  if (code === "usage-limit-reached") {
+    const name = providerDisplayNames.get(failure.provider) ?? failure.provider;
     return {
-      unreachable: false,
-      setup: false,
-      toolsUnsupported: false,
-      message: "The run couldn’t finish",
-      detail: text,
+      ...base,
+      usageLimit: true,
+      message: `${name} usage limit reached.`,
     };
-  const code = modelFailure.exec(text)?.[1];
-  if (code === undefined) return undefined;
-  if (code === "setup_required")
-    return {
-      unreachable: false,
-      setup: true,
-      toolsUnsupported: false,
-      message: "No model is connected",
-      detail: text,
-    };
-  if (code === "tools_unsupported")
-    return {
-      unreachable: false,
-      setup: false,
-      toolsUnsupported: true,
-      message: "This model can’t use tools here. Pick one marked tools.",
-      detail: text,
-    };
-  return code === "provider_unavailable"
-    ? {
-        unreachable: true,
-        setup: false,
-        toolsUnsupported: false,
-        message: "Couldn’t reach the model",
-        detail: text,
-      }
-    : {
-        unreachable: false,
-        setup: false,
-        toolsUnsupported: false,
-        message: "The model request failed",
-        detail: text,
-      };
+  }
+  return {
+    ...base,
+    unreachable: code === "provider_unavailable",
+    setup: code === "setup_required",
+    toolsUnsupported: code === "tools_unsupported",
+    message: failureMessages.get(code) ?? "The model request failed",
+  };
 }

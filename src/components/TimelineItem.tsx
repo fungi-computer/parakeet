@@ -178,7 +178,7 @@ export const TimelineItem = memo(function TimelineItem({
     case "assistant_message": {
       if (!assistantMessageVisible(item)) return null;
       const modelFailure = item.isError
-        ? plainModelFailure(item.text)
+        ? plainModelFailure(item.modelFailure, item.text)
         : undefined;
       if (modelFailure !== undefined) {
         // One line per run of identical failures, never the raw code.
@@ -215,7 +215,9 @@ export const TimelineItem = memo(function TimelineItem({
                       retryLabel: "Choose model",
                       retryAriaLabel: "Choose model",
                     }
-                : onRetry === undefined || modelFailure.setup
+                : onRetry === undefined ||
+                    modelFailure.setup ||
+                    modelFailure.usageLimit
                   ? {}
                   : { onRetry, retryAriaLabel: "Retry prompt" })}
             />

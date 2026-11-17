@@ -17,6 +17,7 @@ const modelFailure: Row = {
   pending: false,
   at: 1,
   text: "Model request failed (provider_unavailable). Retry the request.",
+  modelFailure: { provider: "openai", cause: { code: "provider_unavailable" } },
   usage: { cost: 0, tokens: 0 },
   providerError: "request_id: req_1",
   repeatCount: 4,

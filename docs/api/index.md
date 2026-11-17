@@ -849,6 +849,7 @@ type ParakeetAssistantMessageItem = Readonly<{
   at?: number;
   text: string;
   providerError?: string;
+  modelFailure?: ModelFailure;
   errorDetail?: string;
   repeatCount?: number;
   thinking?: string;
