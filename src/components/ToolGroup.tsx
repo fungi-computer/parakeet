@@ -21,6 +21,7 @@ import {
   toolLiveLines,
 } from "../core/tool-view.js";
 import type { ToolGroupItem, ToolItem } from "../store/types.js";
+import { AgentHead } from "./AgentHead.js";
 import { CodeBlock } from "./CodeBlock.js";
 
 /** Flip one group or call; the caller owns the view-only disclosure state. */
@@ -269,7 +270,18 @@ function CallRow({
   return (
     <div data-parakeet-call={call.kind} data-status={call.status}>
       <Disclosure
-        leading={<Sigil name={toolKindSigils[call.kind]} size={16} />}
+        leading={
+          call.identity === undefined ? (
+            <Sigil name={toolKindSigils[call.kind]} size={16} />
+          ) : (
+            // A call that renamed the Agent shows the Agent's own head.
+            <AgentHead
+              avatar={call.identity.avatar}
+              name={call.identity.name}
+              size={16}
+            />
+          )
+        }
         onOpenChange={() => {
           onToggle(disclosureId, defaultOpen);
         }}

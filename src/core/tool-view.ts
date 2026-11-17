@@ -1,4 +1,9 @@
 import { executeCall } from "./execute-call.js";
+import { parse } from "acorn";
+import {
+  avatarEnvelopeSchema,
+  type Avatar,
+} from "@fungi.computer/sprite/avatar";
 import type { SigilName } from "@fungi.computer/sigils";
 import {
   parseCodexPatch,
@@ -216,6 +221,8 @@ export type ToolCallView = Readonly<{
   error?: string | undefined;
   /** A failed call that a later completed call in its run recovered from. */
   recovered?: boolean | undefined;
+  /** Set when this call renamed the Agent itself; the row draws its live head. */
+  identity?: ToolIdentity | undefined;
   /** Expanded body sections, in display order. */
   sections: readonly ToolCallSection[];
   /** Replaceable output while the call runs. */
@@ -873,10 +880,85 @@ function callTarget(item: ToolItem, kind: ToolKind): CallTarget {
   }
 }
 
+/**
+ * The Agent a successful self.rename call names, with the avatar it now wears.
+ * @inline
+ */
+export type ToolIdentity = Readonly<{
+  /** The Agent's new display name. */
+  name: string;
+  /** The avatar the Agent wears, from its Agent record. */
+  avatar: Avatar;
+}>;
+
+/** Only a returned self.rename call can lend its result the identity label. */
+function selfRename(item: ToolItem): ToolIdentity | undefined {
+  if (item.status !== "completed") return undefined;
+  const result = resultValue(item.result);
+  if (result.kind !== "json") return undefined;
+  const renamed = z
+    .strictObject({
+      name: z.string().min(1).max(256),
+      avatar: avatarEnvelopeSchema,
+    })
+    .safeParse(result.value);
+  if (!renamed.success) return undefined;
+  if (item.name === "self.rename") return renamed.data;
+  if (item.name !== "execute") return undefined;
+  const code = codeArgs.safeParse(item.args);
+  if (!code.success) return undefined;
+  try {
+    const program = parse(code.data.code, {
+      ecmaVersion: "latest",
+      allowAwaitOutsideFunction: true,
+      allowReturnOutsideFunction: true,
+    });
+    if (program.body.length !== 1) return undefined;
+    const statement = program.body[0];
+    if (statement?.type !== "ReturnStatement") return undefined;
+    const call =
+      statement.argument?.type === "AwaitExpression"
+        ? statement.argument.argument
+        : statement.argument;
+    if (call?.type !== "CallExpression") return undefined;
+    const method = call.callee;
+    if (
+      method.type !== "MemberExpression" ||
+      method.computed ||
+      method.property.type !== "Identifier" ||
+      method.property.name !== "rename"
+    )
+      return undefined;
+    const module = method.object;
+    if (
+      module.type !== "MemberExpression" ||
+      module.computed ||
+      module.property.type !== "Identifier" ||
+      module.property.name !== "self" ||
+      module.object.type !== "Identifier" ||
+      module.object.name !== "env"
+    )
+      return undefined;
+    return renamed.data;
+  } catch (cause) {
+    if (cause instanceof SyntaxError) return undefined;
+    throw cause;
+  }
+}
+
 /** Build the renderer-neutral view of one call. */
 export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
   const kind = toolKind(item.name);
-  const target = callTarget(item, kind);
+  const ordinaryTarget = callTarget(item, kind);
+  const identity = selfRename(item);
+  const target: CallTarget =
+    identity === undefined
+      ? ordinaryTarget
+      : {
+          ...ordinaryTarget,
+          label: firstLine(identity.name),
+          verbs: ["Renamed itself to", "Renaming itself to"],
+        };
   const [verb, activeVerb] = target.verbs ?? verbs[kind];
   // A Files edit refusal can arrive inside a successful execute result and
   // must set the group status before its body is opened.
@@ -951,6 +1033,7 @@ export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
       return getDetails().exitCode;
     },
     id: item.id,
+    identity,
     kind,
     label: target.label,
     name: item.name,

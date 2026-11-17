@@ -1,4 +1,5 @@
 import { createPatch, parsePatch } from "diff";
+import { seededAvatar } from "@fungi.computer/sprite/avatar";
 import { expect, it } from "vitest";
 
 import {
@@ -40,6 +41,24 @@ function call(
 function kinds(sections: readonly ToolCallSection[]) {
   return sections.map((section) => section.kind);
 }
+
+it("names a successful self rename without claiming a refused rename succeeded", () => {
+  const args = { code: 'return await env.self.rename({name: "Crumb"});' };
+  const avatar = seededAvatar("crumb");
+  const result = JSON.stringify({ name: "Crumb", avatar });
+  const renamed = toolCallView(call("execute", args, result));
+  expect(renamed.label).toBe("Crumb");
+  // The row draws the Agent's live head from the avatar the tool returned.
+  expect(renamed.identity).toEqual({ name: "Crumb", avatar });
+  expect(renamed.verb).toBe("Renamed itself to");
+  const refused = toolCallView(call("execute", args, '{"error":"name_taken"}'));
+  expect(refused.verb).not.toBe("Renamed itself to");
+  const unrelated = toolCallView(
+    call("execute", { code: "return await env.apps.read({});" }, result),
+  );
+  expect(unrelated.verb).not.toBe("Renamed itself to");
+  expect(unrelated.identity).toBeUndefined();
+});
 
 it("shows a read as a numbered excerpt and nothing else", () => {
   const content = "first\nsecond\n";

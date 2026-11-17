@@ -523,6 +523,10 @@ type ParakeetToolCallView = Readonly<{
   exitCode?: number;
   error?: string;
   recovered?: boolean;
+  identity?: {
+    name: string;
+    avatar: Avatar;
+  };
   sections: readonly ParakeetToolCallSection[];
   live?: ParakeetToolItem["live"];
 }>;
@@ -1348,10 +1352,7 @@ Active and failed groups show every call; clean history retains a visible tail.
 ### visibleToolCalls()
 
 ```ts
-function visibleToolCalls(
-  group,
-  open,
-): readonly Readonly<{
+function visibleToolCalls(group, open): readonly Readonly<{
   id: string;
   kind: ParakeetToolKind;
   name: string;
@@ -1364,11 +1365,28 @@ function visibleToolCalls(
   exitCode?: number;
   error?: string;
   recovered?: boolean;
+  identity?: Readonly<{
+     name: string;
+     avatar: {
+        v: 1;
+        character: "mushroom" | "cat" | "burger";
+        appearance: z.ZodRecord<z.ZodString, z.ZodUnion<readonly [..., ..., ...]>>;
+        expression: string;
+        renderStyle:   | "plain"
+           | "pencil"
+           | "manga"
+           | "riso"
+           | "halftone"
+           | "blueprint"
+           | "crt"
+           | "watercolor";
+     };
+  }>;
   sections: readonly ParakeetToolCallSection[];
   live?: Readonly<{
-    lines: readonly string[];
-    droppedBytes: number;
-    revision: number;
+     lines: readonly string[];
+     droppedBytes: number;
+     revision: number;
   }>;
 }>[];
 ```
@@ -1389,7 +1407,12 @@ readonly `Readonly`\<\{ `id`: `string`; `kind`:
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
 `status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
 `durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`;
-`recovered?`: `boolean`; `sections`: readonly
+`recovered?`: `boolean`; `identity?`: `Readonly`\<\{ `name`: `string`; `avatar`:
+\{ `v`: `1`; `character`: `"mushroom"` \| `"cat"` \| `"burger"`; `appearance`:
+`z.ZodRecord`\<`z.ZodString`, `z.ZodUnion`\<readonly \[..., ..., ...\]\>\>;
+`expression`: `string`; `renderStyle`: \| `"plain"` \| `"pencil"` \| `"manga"`
+\| `"riso"` \| `"halftone"` \| `"blueprint"` \| `"crt"` \| `"watercolor"`; \};
+\}\>; `sections`: readonly
 [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`: `Readonly`\<\{
 `lines`: readonly `string`[]; `droppedBytes`: `number`; `revision`: `number`;
 \}\>; \}\>[]

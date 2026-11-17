@@ -1,5 +1,24 @@
 # @fungi.computer/parakeet
 
+## 0.13.0
+
+### Minor Changes
+
+- Changes since 0.12.5:
+
+  - fix(agents): keep the self source off the head of the Oyster tool roster
+  - feat(parakeet): show the Agent's own head on its rename row
+  - feat(agents): let an Agent rename itself and change its own avatar
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.21.0
+  - @fungi.computer/gills@0.4.0
+  - @fungi.computer/shiitake@0.20.1
+  - @fungi.computer/knapsack@0.4.17
+
 ## 0.12.5
 
 ### Patch Changes
