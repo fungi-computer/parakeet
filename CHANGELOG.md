@@ -1,5 +1,11 @@
 # @fungi.computer/parakeet
 
+## 0.14.1
+
+### Patch Changes
+
+- @fungi.computer/shiitake@0.21.1
+
 ## 0.14.0
 
 ### Minor Changes
