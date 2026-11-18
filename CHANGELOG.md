@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.14.5
+
+### Patch Changes
+
+- Changes since 0.14.4:
+
+  - fix(hub): say what to do when a model needs more credit than the Team has
+
 ## 0.14.4
 
 ### Patch Changes

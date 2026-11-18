@@ -809,7 +809,7 @@ it("shows safe refusal content and its Billing link in saved history", () => {
   if (assistant?.value.role !== "assistant")
     throw new Error("Missing assistant fixture");
   const notice =
-    "Your Team is out of credit. Add credit in [Billing](https://hub.example.com/teams/team_zero/billing).";
+    "This model needs more credit than your Team has. Add credit or start Pro in [Billing](https://hub.example.com/teams/team_zero/billing), or pick a smaller model such as Luna.";
   const projection = buildDurableTimeline([
     {
       ...assistant,
