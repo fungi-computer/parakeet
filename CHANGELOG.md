@@ -1,5 +1,14 @@
 # @fungi.computer/parakeet
 
+## 0.13.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/mule@0.2.6
+  - @fungi.computer/knapsack@0.4.18
+  - @fungi.computer/shiitake@0.20.2
+
 ## 0.13.0
 
 ### Minor Changes

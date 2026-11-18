@@ -1291,6 +1291,18 @@ it("leaves a reader who scrolled up where they are when output arrives", async (
     await settle();
     expect(geometry.distanceFromEnd(scroller)).toBeLessThanOrEqual(1);
   });
+  // The virtualizer confirms its pin to the end on the next animation frame
+  // and, until it has, re-pins when rows are appended. Reaching the end is not
+  // that confirmation, so let the frame run before the reader scrolls away;
+  // otherwise whether the frame lands before or after the scroll depends on
+  // machine load.
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        resolve();
+      });
+    });
+  });
   await settle(() => {
     scroller.dispatchEvent(
       new WheelEvent("wheel", { bubbles: true, deltaY: -120 }),
