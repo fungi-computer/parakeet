@@ -20,7 +20,7 @@ import {
   type ShiitakeEventSourceConstructor,
   type ShiitakeSession,
 } from "@fungi.computer/shiitake/client";
-import { ShiitakeError } from "@fungi.computer/shiitake";
+import { ShiitakeError } from "@fungi.computer/shiitake/client";
 import {
   EventSource as EventSourceImplementation,
   type EventSourceFetchInit,

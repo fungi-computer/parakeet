@@ -1,6 +1,7 @@
 export {
   ParakeetProvider,
   useComposer,
+  useParakeetKeySettings,
   useStatus,
   useTimeline,
   useMarkdown,

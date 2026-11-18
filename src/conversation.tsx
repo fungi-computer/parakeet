@@ -1,5 +1,6 @@
 import { noAuthor, type ParakeetAuthorOf } from "./core/author-labels.js";
 import { nanoid } from "@fungi.computer/cairn";
+import { ShiitakeError } from "@fungi.computer/shiitake/client";
 import {
   type PromptDelivery,
   type PromptCommand,
@@ -22,6 +23,7 @@ import {
   createParakeetInteractions,
   type ParakeetInteractions,
   type ParakeetToast,
+  type ParakeetToastAction,
 } from "./commands/interactions.js";
 import type { WhistleExecutionOutcome } from "@fungi.computer/whistle";
 import {
@@ -422,6 +424,8 @@ function createConversationAtoms(
   draftScope: string,
   contributions: Atom<readonly ClientContribution[]>,
   shown: (item: TimelineItem) => boolean,
+  /** Where the host lets a person add a key safely, when it has a place. */
+  keySettings: () => ParakeetToastAction | undefined,
 ) {
   const journal = draftJournal(
     draftScope,
@@ -1183,9 +1187,69 @@ function createConversationAtoms(
         })
         .catch((cause: unknown) => {
           if (!mounted) return;
+          if (
+            cause instanceof ShiitakeError &&
+            cause.cause === "secret_in_prompt"
+          ) {
+            set(refuseSecretAtom, admission);
+            return;
+          }
           recoveryReasons.set(admission.requestId, errorMessage(cause));
           set(recoverAdmissionsAtom);
         });
+    },
+  );
+  /**
+   * The owner refused the prompt because it holds a key or password, before
+   * admitting anything. There is nothing to withdraw or retry: the text goes
+   * back to the draft so the person can take the secret out, and a toast
+   * (never inline text) links to the host's key settings.
+   */
+  const refuseSecretAtom = atom(
+    null,
+    (get, set, admission: SubmittedPromptAdmission) => {
+      const admissions = get(rawAdmissionsAtom);
+      if (
+        !admissions.some(
+          ({ requestId, status }) =>
+            requestId === admission.requestId && status === "admitting",
+        )
+      )
+        return;
+      const remaining = admissions.filter(
+        ({ requestId }) => requestId !== admission.requestId,
+      );
+      const currentDraft = get(draftAtom);
+      const restored = !admission.restoreDraft
+        ? currentDraft
+        : currentDraft === ""
+          ? admission.submittedDraft
+          : `${currentDraft}\n\n${admission.submittedDraft}`;
+      const restoredImages = admission.restoreDraft
+        ? [...(get(draftImagesAtom) ?? []), ...(admission.images ?? [])]
+        : get(draftImagesAtom);
+      try {
+        set(persistAtom, {
+          draft: restored,
+          draftPayload: {
+            images: restoredImages,
+            delivery: get(draftDeliveryAtom),
+          },
+          admissions: remaining,
+        });
+      } catch (cause) {
+        reportFailure("restore draft after secret refusal", cause);
+      }
+      set(draftImagesAtom, restoredImages);
+      set(rawAdmissionsAtom, remaining);
+      set(setDraftAtom, restored);
+      const toast: ParakeetToast = {
+        variant: "error",
+        message:
+          "Not sent: this message contains a key or password. Nothing was saved.",
+      };
+      const action = keySettings();
+      interactions.toast(action === undefined ? toast : { ...toast, action });
     },
   );
   const recoverAdmissionsAtom = atom(null, (get, set) => {
@@ -1623,6 +1687,8 @@ type ConversationScope = Readonly<{
   interactions: ParakeetInteractions;
   /** One visibility policy shared by timeline rows and their fixed anchors. */
   shown: (item: TimelineItem) => boolean;
+  /** The key settings a mounted view registered with `useParakeetKeySettings`. */
+  keySettings: { current: ParakeetToastAction | undefined };
 }>;
 const ConversationContext = createContext<ConversationScope | null>(null);
 
@@ -1631,6 +1697,24 @@ function useConversationScope(): ConversationScope {
   if (scope === null)
     throw new Error("Parakeet hooks require a ParakeetProvider");
   return scope;
+}
+
+/**
+ * Register where this host lets a person add a key safely: its Model keys or
+ * Connections settings today. A prompt refused for holding a key or password
+ * links here from its toast. Absent, the toast carries no action.
+ */
+export function useParakeetKeySettings(
+  action: ParakeetToastAction | undefined,
+): void {
+  const { keySettings } = useConversationScope();
+  useEffect(() => {
+    if (action === undefined) return undefined;
+    keySettings.current = action;
+    return () => {
+      if (keySettings.current === action) keySettings.current = undefined;
+    };
+  }, [keySettings, action]);
 }
 
 function useStoreAtom<Value>(atom: Atom<Value>): Value {
@@ -1708,6 +1792,9 @@ export function ParakeetProvider({
   const scope = useMemo(() => {
     const interactions = interactionStore ?? createParakeetInteractions();
     const contributions = atom(noContributions);
+    const keySettings: ConversationScope["keySettings"] = {
+      current: undefined,
+    };
     const shown = (item: TimelineItem) =>
       item.kind !== "user_message" ||
       item.origin === undefined ||
@@ -1722,12 +1809,14 @@ export function ParakeetProvider({
         draftScope,
         contributions,
         shown,
+        () => keySettings.current,
       ),
       session,
       store: createStore(),
       contributions,
       interactions,
       shown,
+      keySettings,
     };
   }, [
     queryClient,

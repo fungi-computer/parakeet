@@ -17,6 +17,7 @@ import {
   useClientActions,
   useSlashCommands,
   useComposer,
+  useParakeetKeySettings,
   useStatus,
   useTimeline,
 } from "../src/headless.js";
@@ -24,8 +25,10 @@ import type {
   ParakeetReconnectOutcome,
   ParakeetDraftStorage,
   ParakeetToast,
+  ParakeetToastAction,
   ComposerController,
 } from "../src/headless.js";
+import { ShiitakeError } from "@fungi.computer/shiitake/client";
 import type { TimelineController } from "../src/conversation.js";
 import { ClientRows } from "../src/components/ClientRows.js";
 import { useState } from "react";
@@ -220,6 +223,13 @@ function ControllerProbe({
       })}
     </div>
   );
+}
+
+function KeySettingsProbe({
+  action,
+}: Readonly<{ action: ParakeetToastAction | undefined }>): null {
+  useParakeetKeySettings(action);
+  return null;
 }
 
 type SubscriptionCounts = {
@@ -503,6 +513,69 @@ for (const mode of ["timeout", "service loss", "disconnect", "refusal"]) {
     ).toHaveLength(0);
   });
 }
+
+it("refuses a prompt holding a secret with a settings toast, never a failed row or retry", async () => {
+  const withdraw = vi.fn<ParakeetSession["withdraw"]>(() =>
+    Promise.resolve({ status: "unknown" }),
+  );
+  const session: ParakeetSession = {
+    address: "test://parakeet/secret-in-prompt",
+    latestPending: () => Promise.resolve(null),
+    withdraw,
+    command: commandHandler(() =>
+      Promise.reject(
+        new ShiitakeError(
+          "contract",
+          "secret_in_prompt",
+          "This message contains a key or password",
+        ),
+      ),
+    ),
+    extension: noExtension,
+    read: () => Promise.resolve(sessionSnapshot()),
+    watch: () => watch(frameQueue()),
+  };
+  const toasts: ParakeetToast[] = [];
+  const openSettings = vi.fn();
+  const view = mount(session, new QueryClient(), undefined, undefined, {
+    onToast: (toast) => {
+      toasts.push(toast);
+    },
+    keySettings: { label: "Add it in settings", onSelect: openSettings },
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const input = view.container.querySelector("input");
+  const send = view.container.querySelector("button");
+  if (!input || !send) throw new Error("Composer unavailable");
+  const pasted = "deploy with sk_live_pasted";
+  act(() => {
+    change(input, pasted);
+  });
+  await act(async () => {
+    send.click();
+    await Promise.resolve();
+  });
+  await vi.waitFor(() => {
+    expect(toasts).toHaveLength(1);
+  });
+  const [toast] = toasts;
+  expect(toast).toMatchObject({
+    variant: "error",
+    message:
+      "Not sent: this message contains a key or password. Nothing was saved.",
+    action: { label: "Add it in settings" },
+  });
+  toast?.action?.onSelect();
+  expect(openSettings).toHaveBeenCalledOnce();
+  // The text comes back to edit; nothing was admitted, so nothing is withdrawn.
+  const probe = view.container.firstElementChild;
+  expect(probe?.getAttribute("data-draft")).toBe(pasted);
+  expect(probe?.getAttribute("data-admission-error")).toBeNull();
+  expect(withdraw).not.toHaveBeenCalled();
+  expect(view.container.querySelectorAll("[data-state]")).toHaveLength(0);
+});
 
 it.each(["unknown", "accepted", "unavailable"] as const)(
   "settles held admission after watch loss without reconnect or elapsed time (%s)",
@@ -806,9 +879,10 @@ function mount(
     draftStorage?: ParakeetDraftStorage;
     onToast?: (toast: ParakeetToast) => void;
     onComposer?: (composer: ComposerController) => void;
+    keySettings?: ParakeetToastAction;
   }>,
 ) {
-  const { onComposer, ...providerOptions } = options ?? {};
+  const { onComposer, keySettings, ...providerOptions } = options ?? {};
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -826,6 +900,7 @@ function mount(
             onReconnect={onReconnect}
             onComposer={onComposer}
           />
+          <KeySettingsProbe action={keySettings} />
         </ParakeetProvider>
       </QueryClientProvider>,
     );

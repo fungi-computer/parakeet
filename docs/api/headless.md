@@ -261,11 +261,25 @@ failed or waits on the person. Everything else is a toast.
 type ParakeetToast = Readonly<{
   variant: "info" | "warning" | "error";
   message: string;
+  action?: ParakeetToastAction;
 }>;
 ```
 
 A transient message a renderer shows as a toast. A command's confirmation of
 what the person just did is never one: it is an echo and is not announced.
+
+---
+
+### ParakeetToastAction
+
+```ts
+type ParakeetToastAction = Readonly<{
+  label: string;
+  onSelect: () => void;
+}>;
+```
+
+A toast's way forward, such as opening the host's key settings.
 
 ---
 
@@ -3420,6 +3434,12 @@ Re-exports [ParakeetProvider](index.md#parakeetprovider)
 ### useComposer
 
 Re-exports [useComposer](index.md#usecomposer)
+
+---
+
+### useParakeetKeySettings
+
+Re-exports [useParakeetKeySettings](index.md#useparakeetkeysettings)
 
 ---
 

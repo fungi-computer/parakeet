@@ -1183,6 +1183,28 @@ the terminal draws; the command, not the page, defines the steps.
 
 ---
 
+### useParakeetKeySettings()
+
+```ts
+function useParakeetKeySettings(action): void;
+```
+
+Register where this host lets a person add a key safely: its Model keys or
+Connections settings today. A prompt refused for holding a key or password links
+here from its toast. Absent, the toast carries no action.
+
+#### Parameters
+
+| Parameter | Type                                                                               |
+| --------- | ---------------------------------------------------------------------------------- |
+| `action`  | \| `Readonly`\<\{ `label`: `string`; `onSelect`: () => `void`; \}\> \| `undefined` |
+
+#### Returns
+
+`void`
+
+---
+
 ### ParakeetProvider()
 
 ```ts

@@ -1,10 +1,12 @@
 import { createRoot } from "react-dom/client";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type {
-  PromptCommand,
-  SessionFrame,
-  SessionSnapshot,
-  SessionWatch,
+import {
+  ShiitakeError,
+  type PromptCommand,
+  type SessionFrame,
+  type SessionSnapshot,
+  type SessionWatch,
 } from "@fungi.computer/shiitake/client";
 import { z } from "zod";
 import type { ParakeetSession } from "../../src/session.js";
@@ -15,6 +17,7 @@ import {
   useStatus,
   useTimeline,
 } from "../../src/index.js";
+import type { ParakeetToast } from "../../src/headless.js";
 import {
   commandHandler,
   commandResult,
@@ -62,6 +65,13 @@ const changes = frameQueue();
 let liveBaseline: SessionSnapshot | undefined;
 const commands: PromptCommand[] = [];
 let attempts = 0;
+/** Times the person chose the key settings link from a refusal toast. */
+let settingsOpened = 0;
+/**
+ * The owner's refusal of a prompt holding a secret. Shiitake's own tests
+ * prove the refusal; this contract proves how Parakeet shows it.
+ */
+const refusedSecret = "VAULTCANARY";
 let aborts = 0;
 let goal: FixtureGoal = {
   revision: "browser-goal-revision",
@@ -261,6 +271,14 @@ const session: ParakeetSession = {
   address: "test://parakeet/browser-session",
   command: commandHandler(
     (input) => {
+      if (input.text.includes(refusedSecret))
+        return Promise.reject(
+          new ShiitakeError(
+            "contract",
+            "secret_in_prompt",
+            "This message contains a key or password, so it was not sent or saved.",
+          ),
+        );
       commands.push(input);
       attempts += 1;
       if (attempts === 1)
@@ -508,6 +526,9 @@ Object.assign(window, {
     get attempts() {
       return attempts;
     },
+    get settingsOpened() {
+      return settingsOpened;
+    },
     commands,
   },
 });
@@ -531,11 +552,68 @@ function LiveRevision() {
     </output>
   );
 }
+/**
+ * The proof's toast surface, standing in for a host's. It draws a toast that
+ * offers an action, so the refusal's settings link is clickable; others are
+ * not part of this contract.
+ */
+const toastListeners = new Set<(toast: ParakeetToast) => void>();
+function showToast(toast: ParakeetToast): void {
+  for (const listener of toastListeners) listener(toast);
+}
+function ProofToasts() {
+  const [toast, setToast] = useState<ParakeetToast>();
+  useEffect(() => {
+    const listener = (next: ParakeetToast) => {
+      if (next.action !== undefined) setToast(next);
+    };
+    toastListeners.add(listener);
+    return () => {
+      toastListeners.delete(listener);
+    };
+  }, []);
+  if (toast?.action === undefined) return null;
+  const { action } = toast;
+  return (
+    <div
+      role="status"
+      data-proof-toast={toast.variant}
+      style={{ position: "fixed", top: 8, right: 8, zIndex: 10 }}
+    >
+      {toast.message}
+      <button
+        type="button"
+        onClick={() => {
+          action.onSelect();
+          setToast(undefined);
+        }}
+      >
+        {action.label}
+      </button>
+    </div>
+  );
+}
+const hostFacts = {
+  modelSetup: {
+    state: "ready",
+    fix: {
+      label: "Add a model key",
+      onSelect: () => {
+        settingsOpened += 1;
+      },
+    },
+  },
+} as const;
 createRoot(root).render(
   <QueryClientProvider client={queryClient}>
-    <ParakeetProvider session={session} clients={probeClients}>
-      <ParakeetView />
+    <ParakeetProvider
+      session={session}
+      clients={probeClients}
+      onToast={showToast}
+    >
+      <ParakeetView hostFacts={hostFacts} />
       <LiveRevision />
     </ParakeetProvider>
+    <ProofToasts />
   </QueryClientProvider>,
 );

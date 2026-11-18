@@ -17,6 +17,7 @@ export { providerChoices } from "./provider-choices.js";
 export {
   ParakeetProvider,
   useComposer,
+  useParakeetKeySettings,
   useClientContributions,
   useParakeetInteractions,
   useExtensionSlots,
@@ -122,6 +123,7 @@ export {
   type ParakeetNotice,
   type ParakeetOpenInteraction,
   type ParakeetToast,
+  type ParakeetToastAction,
 } from "./commands/interactions.js";
 export {
   parakeetBuiltinCommands,

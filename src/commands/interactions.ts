@@ -38,6 +38,16 @@ export type ParakeetToast = Readonly<{
   variant: "info" | "warning" | "error";
   /** What happened. */
   message: string;
+  /** The one thing to do about it, when the host offers a place to do it. */
+  action?: ParakeetToastAction | undefined;
+}>;
+
+/** A toast's way forward, such as opening the host's key settings. */
+export type ParakeetToastAction = Readonly<{
+  /** The button or link text. */
+  label: string;
+  /** Called when the person chooses it. */
+  onSelect: () => void;
 }>;
 
 /** The decisions waiting on the person, which the composer takes over for. */

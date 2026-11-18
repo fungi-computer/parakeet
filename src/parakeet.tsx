@@ -27,6 +27,7 @@ import {
 import {
   ParakeetProvider,
   useComposer,
+  useParakeetKeySettings,
   useClientContributions,
   useDismissFailedPrompt,
   useStatus,
@@ -839,6 +840,18 @@ function ConversationComposer({
   const abort = useCallback(() => {
     void composer.cancel();
   }, [composer.cancel]);
+  // A prompt refused for holding a key links to the host's existing key
+  // settings (Model keys); the Vault page takes this over when it exists.
+  const openKeySettings = hostFacts.modelSetup?.fix.onSelect;
+  useParakeetKeySettings(
+    useMemo(
+      () =>
+        openKeySettings === undefined
+          ? undefined
+          : { label: "Add it in settings", onSelect: openKeySettings },
+      [openKeySettings],
+    ),
+  );
   if (hostFacts.modelSetup?.state === "missing") return null;
   const composerProps: ChatComposerProps = {
     queuedRecall: visitor === undefined ? composer : undefined,

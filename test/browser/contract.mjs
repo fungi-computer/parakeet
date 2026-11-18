@@ -511,6 +511,43 @@ try {
   assert.equal(retried.commands[4].text, retried.commands[3].text);
   assert.equal(retried.commands[4].delivery, "followUp");
   assert.equal(await textarea.inputValue(), "A newer unsent draft");
+  // A prompt the owner refuses for holding a key is a toast with a link to
+  // the host's key settings: never inline text above the composer, never a
+  // failed row to retry. The text comes back to edit.
+  const pasted = "deploy with sk_live_VAULTCANARY_browser";
+  const attemptsBeforeRefusal = await page.evaluate(
+    () => globalThis.__parakeetBrowserProof.attempts,
+  );
+  await textarea.fill(pasted);
+  await textarea.press("Enter");
+  const refusal = page.locator("[data-proof-toast]");
+  await refusal
+    .getByText(
+      "Not sent: this message contains a key or password. Nothing was saved.",
+    )
+    .waitFor();
+  assert.equal(await refusal.getAttribute("data-proof-toast"), "error");
+  assert.equal(await page.locator(".chat-composer [role=alert]").count(), 0);
+  assert.equal(
+    await page.locator('[data-status="failed"]').count(),
+    0,
+    "a refused secret must not leave a failed prompt to retry",
+  );
+  await page.waitForFunction(
+    (text) => globalThis.document.querySelector("textarea")?.value === text,
+    pasted,
+  );
+  await refusal.getByRole("button", { name: "Add it in settings" }).click();
+  assert.equal(
+    await page.evaluate(() => globalThis.__parakeetBrowserProof.settingsOpened),
+    1,
+  );
+  assert.equal(
+    await page.evaluate(() => globalThis.__parakeetBrowserProof.attempts),
+    attemptsBeforeRefusal,
+    "a refused secret is not admitted",
+  );
+  await textarea.fill("");
   if (pageErrors.length > 0)
     throw new Error(`browser page errors: ${JSON.stringify(pageErrors)}`);
 

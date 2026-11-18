@@ -1,5 +1,21 @@
 # @fungi.computer/parakeet
 
+## 0.14.0
+
+### Minor Changes
+
+- Changes since 0.13.3:
+
+  - feat(parakeet): show a refused secret as a toast with a key settings link
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/mule@0.3.0
+  - @fungi.computer/shiitake@0.21.0
+  - @fungi.computer/knapsack@0.4.20
+
 ## 0.13.3
 
 ### Patch Changes

@@ -1,5 +1,5 @@
 import { nanoid } from "@fungi.computer/cairn";
-import { ShiitakeError } from "@fungi.computer/shiitake";
+import { ShiitakeError } from "@fungi.computer/shiitake/client";
 import type { ParakeetSessionCommand } from "./session.js";
 import type {
   WhistleContribution,
