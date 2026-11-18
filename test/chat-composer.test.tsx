@@ -259,6 +259,7 @@ it.each([
       <ChatComposer
         queuedRecall={undefined}
         viewState={viewState}
+        waitingOnYou
         status="sending"
         draft=""
         onAbort={vi.fn()}
@@ -551,3 +552,36 @@ it.each([false, true])("routes the model key (%s)", (available) => {
   expect(key?.getAttribute("aria-expanded")).toBe("false");
   expect(container.querySelector("textarea")?.value).toBe("Keep this draft");
 });
+
+it.each([
+  [false, ""],
+  [true, "waiting for you"],
+] as const)(
+  "a turn that simply ended reads waiting for you only while a person's item is open (open item: %s)",
+  (waitingOnYou, label) => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    roots.add(root);
+    act(() => {
+      root.render(
+        <ChatComposer
+          queuedRecall={undefined}
+          viewState={{ kind: "waiting_for_you" }}
+          waitingOnYou={waitingOnYou}
+          status="idle"
+          draft=""
+          onAbort={vi.fn()}
+          onChange={vi.fn()}
+          onSend={vi.fn()}
+          textareaRef={createRef<HTMLTextAreaElement>()}
+        />,
+      );
+    });
+    expect(
+      container.querySelector(".composer-attention-label")?.textContent ?? "",
+    ).toBe(label);
+    expect(container.textContent).not.toContain(
+      waitingOnYou ? "idle" : "waiting for you",
+    );
+  },
+);

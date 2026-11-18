@@ -859,6 +859,14 @@ function ConversationComposer({
     showFooter: visitor === undefined,
     status: sessionStatus.status,
     viewState: sessionStatus.viewState,
+    // Only an open item a person must answer waits on you, as in the TUI.
+    waitingOnYou:
+      slash.awaiting.total > 0 ||
+      contributions.some(({ value }) =>
+        value.panel.some(
+          (row) => row.tone === "attention" && (row.actions?.length ?? 0) > 0,
+        ),
+      ),
     textareaRef,
     model: timeline.model,
     usage: timeline.usage,

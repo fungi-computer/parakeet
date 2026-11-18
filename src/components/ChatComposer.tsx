@@ -108,6 +108,11 @@ type ComposerFooterProps = {
   status: ParakeetStatus;
   /** Session owner readout, separate from local prompt admission. */
   viewState: ParakeetSessionViewState;
+  /**
+   * An open item waits on the person, such as an unanswered question. A turn
+   * that simply ended waits on no one and reads "waiting for you" only then.
+   */
+  waitingOnYou?: boolean | undefined;
   usage?: ChatComposerUsage;
   context?: SessionContext;
 };
@@ -133,6 +138,8 @@ export type ChatComposerProps = {
   status: ParakeetStatus;
   /** Session owner readout, separate from local prompt admission. */
   viewState: ParakeetSessionViewState;
+  /** An open item waits on the person; an ended turn alone does not. */
+  waitingOnYou?: boolean | undefined;
   textareaRef: RefObject<HTMLTextAreaElement>;
   usage?: ChatComposerUsage | undefined;
   /** Context use the Session's compaction measures, once known. */
@@ -419,6 +426,7 @@ function useComposerRow({
   model,
   status,
   viewState,
+  waitingOnYou,
   usage,
   context,
   slash,
@@ -439,7 +447,8 @@ function useComposerRow({
   // Admission must not replace an outstanding owner attention readout.
   const label = sessionReadout("idle", viewState);
   const needsAttention =
-    viewState.kind === "waiting_for_you" || viewState.kind === "error";
+    (viewState.kind === "waiting_for_you" && waitingOnYou === true) ||
+    viewState.kind === "error";
   const modelName = model === undefined ? undefined : composerModelName(model);
   const canPickModel = slash?.available("model") === true;
   const contextText =
@@ -619,6 +628,7 @@ export const ChatComposer = memo(function ChatComposer({
   onSend,
   status,
   viewState,
+  waitingOnYou,
   textareaRef,
   usage,
   context,
@@ -709,7 +719,7 @@ export const ChatComposer = memo(function ChatComposer({
       </>
     );
   // Visitors see only the field and the send key, never internal readouts.
-  const footerProps: ComposerFooterProps = { status, viewState };
+  const footerProps: ComposerFooterProps = { status, viewState, waitingOnYou };
   footerProps.statusChips = statusChips;
   if (model) footerProps.model = model;
   if (usage) footerProps.usage = usage;

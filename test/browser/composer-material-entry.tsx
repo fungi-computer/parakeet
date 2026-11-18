@@ -60,6 +60,7 @@ createRoot(root).render(
         onChange={() => undefined}
         onSend={() => undefined}
         viewState={{ kind: "waiting_for_you" }}
+        waitingOnYou
         status="thinking"
         textareaRef={createRef<HTMLTextAreaElement>()}
         usage={{ cost: 0, tokens: 300 }}

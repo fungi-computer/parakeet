@@ -1,8 +1,85 @@
 # Parakeet (`@fungi.computer/parakeet`)
 
-Parakeet renders an Agent conversation from a typed Shiitake Session. Browser
-hosts use its React view; terminal hosts use its headless hooks to render the
-same history, composer and status through their own UI.
+Parakeet shows a conversation with an AI agent: the messages, the box you type
+in, and the status. Browsers get a React view, and terminals get the same pieces
+as hooks.
+
+![A Parakeet conversation: turns, a tool call and the composer in the Ladle workbench](docs/media/readme-transcript.png)
+
+## Quick start
+
+Install it:
+
+```sh
+npm install @fungi.computer/parakeet
+```
+
+Illustrative: your host supplies the authorized `ParakeetSession` and a browser
+bundler that handles CSS. This component owns its query cache and clears it on
+unmount. It does not create an Agent, sign in or grant tools.
+
+```tsx
+import { useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Parakeet, type ParakeetSession } from "@fungi.computer/parakeet";
+import "@fungi.computer/parakeet/styles.css";
+
+export function Conversation({ session }: { session: ParakeetSession }) {
+  const [queryClient] = useState(() => new QueryClient());
+  useEffect(() => () => queryClient.clear(), [queryClient]);
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Parakeet session={session} />
+    </QueryClientProvider>
+  );
+}
+```
+
+Parakeet never reads a message's host metadata itself. To show who wrote a line,
+pass `authorOf`: your reading of that metadata into a `ParakeetAuthor`
+(`{ id, name }`). Without it, lines show no author.
+
+The view presents the Session's observed history, live work, composer and
+errors. Screen readers receive the same Session status as the composer footer
+through a hidden polite live region; streamed transcript tokens are outside that
+region. The Session transport stays owned by the caller. Releasing observation
+does not cancel accepted work or close a borrowed Agent. When replacing a
+Session, provide its new handle rather than copying a snapshot into another
+writable store.
+
+On touch-primary devices, Enter inserts a newline and the Send button submits
+the draft. On desktop, Enter submits and Shift+Enter inserts a newline.
+
+The [standalone composer tests](test/standalone-composer.test.tsx) exercise the
+provider, query cache, observations and prompt admission with typed fixtures.
+The browser contract uses the real component with a fixture Session. A fake
+Session checks the component, not hosted authentication or a model provider.
+
+## Common tasks
+
+### Show a conversation in a browser
+
+Mount `Parakeet` with an authorized session, as in the Quick start.
+
+### Add the shared composer
+
+See [Shared composer](#shared-composer).
+
+### Render it in a terminal
+
+Terminal hosts use the headless hooks. See [Core concepts](#core-concepts).
+
+### Handle slash commands and errors
+
+See [Commands and errors](#commands-and-errors).
+
+## Reference
+
+### Overview
+
+Parakeet shows a conversation with an AI agent. Browser hosts use its React
+view; terminal hosts use its headless hooks to show the same history, composer
+and status in their own UI.
 
 Website hosts mount the same `Parakeet` component inside an isolated iframe. A
 visitor-session adapter supplies the visitor's scoped Session read, watch and
@@ -32,50 +109,6 @@ separately when using its bundled fonts, with font URLs handled by your bundler.
 A host compiling its own Tailwind utilities uses the `/tailwind.css` source
 instead and supplies its own `@source`. The built stylesheet cannot scan your
 host's additional classes.
-
-## Quick start in a browser
-
-Illustrative: your host supplies the authorized `ParakeetSession` and a browser
-bundler that handles CSS. This component owns its query cache and clears it on
-unmount. It does not create an Agent, sign in or grant tools.
-
-```tsx
-import { useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Parakeet, type ParakeetSession } from "@fungi.computer/parakeet";
-import "@fungi.computer/parakeet/styles.css";
-
-export function Conversation({ session }: { session: ParakeetSession }) {
-  const [queryClient] = useState(() => new QueryClient());
-  useEffect(() => () => queryClient.clear(), [queryClient]);
-  return (
-    <QueryClientProvider client={queryClient}>
-      <Parakeet session={session} />
-    </QueryClientProvider>
-  );
-}
-```
-
-Parakeet never reads a message's host metadata itself. To show who wrote a line,
-pass `authorOf`: your reading of that metadata into a `ParakeetAuthor`
-(`{ id, name }`). A Fungi app passes `messageAuthor` from
-`@fungi.computer/agar/agents`; without it, lines show no author.
-
-The view presents the Session's observed history, live work, composer and
-errors. Screen readers receive the same Session status as the composer footer
-through a hidden polite live region; streamed transcript tokens are outside that
-region. The Session transport stays owned by the caller. Releasing observation
-does not cancel accepted work or close a borrowed Agent. When replacing a
-Session, provide its new handle rather than copying a snapshot into another
-writable store.
-
-On touch-primary devices, Enter inserts a newline and the Send button submits
-the draft. On desktop, Enter submits and Shift+Enter inserts a newline.
-
-The [standalone composer tests](test/standalone-composer.test.tsx) exercise the
-provider, query cache, observations and prompt admission with typed fixtures.
-The browser contract uses the real component with a fixture Session. A fake
-Session checks the component, not hosted authentication or a model provider.
 
 ## Shared composer
 

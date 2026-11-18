@@ -1,5 +1,23 @@
 # @fungi.computer/parakeet
 
+## 0.13.2
+
+### Patch Changes
+
+- Changes since 0.13.1:
+
+  - fix(parakeet): show waiting for you in the composer only for an open item
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.22.0
+  - @fungi.computer/caps@0.12.1
+  - @fungi.computer/mule@0.2.7
+  - @fungi.computer/shiitake@0.20.3
+  - @fungi.computer/knapsack@0.4.19
+
 ## 0.13.1
 
 ### Patch Changes
