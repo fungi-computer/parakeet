@@ -166,6 +166,7 @@ async function chooseProviderModels(
             method: candidate.type === "oauth" ? "subscription" : "api_key",
             host: account.host,
             scope: account.scope,
+            source: "builtin",
           }),
       )
     )

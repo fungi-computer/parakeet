@@ -50,6 +50,8 @@ export type LoginPolicy = Readonly<{
       method: LoginMethodKind;
       host: LoginHost;
       scope: LoginScope;
+      /** The registry lists Fungi's own methods; an extension never asks here. */
+      source: "builtin" | "extension";
     }>,
   ) => boolean;
 }>;
@@ -72,6 +74,7 @@ export function loginRegistry(
           method: method.kind,
           host: options.host,
           scope: options.scope,
+          source: "builtin",
         }),
       ),
     }))
