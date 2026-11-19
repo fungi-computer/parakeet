@@ -1,5 +1,26 @@
 # @fungi.computer/parakeet
 
+## 0.16.0
+
+### Minor Changes
+
+- Changes since 0.15.0:
+
+  - fix(hub): keep the curtain proof, API docs and Desktop tests green
+  - fix(hub): satisfy anti-slop in the boot failure screen
+  - fix(hub): show a boot failure with its real cause
+  - fix(hub): draw the curtain's stand-in face closer to the live mascot
+  - fix(hub): never leave a boot failure under the curtain
+  - feat(hub): one boot curtain and a Team name at sign-up
+
+### Patch Changes
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.23.1
+  - @fungi.computer/knapsack@0.4.21
+  - @fungi.computer/shiitake@0.21.9
+
 ## 0.15.0
 
 ### Minor Changes

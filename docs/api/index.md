@@ -1076,6 +1076,7 @@ const ShiitakeAvatar: NamedExoticComponent<{
       | "watercolor";
   } | null;
   className?: string;
+  onState?: (state) => void;
   service?: SpriteService;
   state: AvatarState;
 }>;
@@ -1097,6 +1098,61 @@ const initialToolDisclosure: ToolDisclosureState;
 Defaults only, with no reader choices.
 
 ## Functions
+
+### BootCurtain()
+
+```ts
+function BootCurtain(__namedParameters): Element;
+```
+
+The one full-viewport wait a person sees between signing in and a ready desktop.
+Every pre-ready state of that journey renders this component at this fixed
+position, so the Hub's separate documents read as one loader. It shows the
+Shiitake mascot thinking and one line of copy, never a spinner; Sprite holds the
+face still under reduced motion, so the copy alone carries the state. Until the
+live face is drawn, the same SVG face the Hub's static first-frame markup
+carries stands in for it. Only a state that cannot fail, or one that lifts the
+curtain on its own error, may render it: the curtain sits above toasts.
+
+#### Parameters
+
+| Parameter                   | Type                       |
+| --------------------------- | -------------------------- |
+| `__namedParameters`         | \{ `message`: `string`; \} |
+| `__namedParameters.message` | `string`                   |
+
+#### Returns
+
+`Element`
+
+---
+
+### BootFailure()
+
+```ts
+function BootFailure(__namedParameters): Element;
+```
+
+A boot wait that failed, in the curtain's own centered layout: the mascot
+looking concerned, one plain line naming the real cause, a short reference when
+the failure carries one, and the host's actions (a compact Reload). It replaces
+the curtain, so a failure is never left underneath it.
+
+#### Parameters
+
+| Parameter                      | Type                                                                                            | Description                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `__namedParameters`            | \{ `children?`: `ReactNode`; `message`: `string`; `note?`: `string`; `reference?`: `string`; \} | -                                                                |
+| `__namedParameters.children?`  | `ReactNode`                                                                                     | The recovery actions, such as a Caps Button that reloads.        |
+| `__namedParameters.message`    | `string`                                                                                        | One plain sentence naming the real cause.                        |
+| `__namedParameters.note?`      | `string`                                                                                        | A second plain line, such as why a recovery attempt also failed. |
+| `__namedParameters.reference?` | `string`                                                                                        | A short request id or code the person can quote.                 |
+
+#### Returns
+
+`Element`
+
+---
 
 ### composerSendState()
 

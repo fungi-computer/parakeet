@@ -15,6 +15,54 @@
 
 @plugin "@tailwindcss/typography";
 
+/* The boot curtain: one fixed, full-viewport wait for the whole sign-in to
+ * desktop journey. The Hub document carries the same classes as static markup
+ * so a page that has not run its script yet already shows it. */
+.boot-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--color-base-100, #eff1f5);
+  color: var(--color-base-content, #4c4f69);
+  font-family: system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  .boot-curtain {
+    background: var(--color-base-100, #1e1e2e);
+    color: var(--color-base-content, #cdd6f4);
+  }
+}
+.boot-curtain-stage {
+  position: relative;
+  display: block;
+  width: 6rem;
+  height: 6rem;
+}
+.boot-curtain-stage > * {
+  position: absolute;
+  inset: 0;
+}
+.boot-curtain-standin svg {
+  display: block;
+}
+.boot-curtain-face {
+  width: 6rem;
+  height: 6rem;
+}
+.boot-curtain-copy {
+  margin: 0;
+  min-height: 1.5rem;
+  max-width: 32rem;
+  padding-inline: 1rem;
+  font-size: 0.9375rem;
+  text-align: center;
+}
+
 :root {
   --prose-max-width: 80ch;
   --tool-error-rail: #fff7a0;

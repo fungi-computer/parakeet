@@ -1,6 +1,7 @@
 import type { Avatar } from "@fungi.computer/sprite/avatar";
 import {
   type AvatarPresentation,
+  type PlayerState,
   type SpriteService,
 } from "@fungi.computer/sprite";
 import { Sprite } from "@fungi.computer/sprite/react";
@@ -24,6 +25,7 @@ export type AvatarState = Readonly<
 export const ShiitakeAvatar = memo(function ShiitakeAvatar({
   avatar,
   className = "h-12 w-12 shrink-0",
+  onState,
   service = shiitakeSprite,
   state,
 }: {
@@ -31,6 +33,8 @@ export const ShiitakeAvatar = memo(function ShiitakeAvatar({
   avatar?: Avatar | null;
   /** Replaces the default 3rem size, for a host that sizes the head itself. */
   className?: string;
+  /** Called as the player loads, draws and fails; a host can show a stand-in until it is ready. */
+  onState?: (state: PlayerState) => void;
   /** Replaces the shared Shiitake service; a faithful fake for tests. */
   service?: SpriteService;
   /** Activity and expression presented by the avatar. */
@@ -45,6 +49,7 @@ export const ShiitakeAvatar = memo(function ShiitakeAvatar({
       aria-hidden="true"
       className={className}
       service={service}
+      {...(onState ? { onState } : {})}
       src={presentation?.src ?? { local: "mushroom" }}
       {...(presentation
         ? {
