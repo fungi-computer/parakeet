@@ -1,5 +1,14 @@
 # @fungi.computer/parakeet
 
+## 0.15.0
+
+### Minor Changes
+
+- Changes since 0.14.9:
+
+  - feat(parakeet): hide the prompt author line while one person wrote every
+    prompt
+
 ## 0.14.9
 
 ### Patch Changes

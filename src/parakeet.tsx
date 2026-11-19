@@ -68,6 +68,11 @@ export type ParakeetVisitor = Readonly<{
 
 /** Props for the standalone retained conversation surface. */
 export type ParakeetProps = Readonly<{
+  /**
+   * Show no author line on prompts while one human has written them all, so a
+   * solo chat carries no label; it appears once a second person writes.
+   */
+  hideSoleAuthor?: boolean | undefined;
   /** Show short identity suffixes for same-named authors; never in visitor mode. */
   disambiguateAuthors?: boolean | undefined;
   /**
@@ -107,6 +112,8 @@ export type ParakeetProps = Readonly<{
 
 /** Props for the reusable retained conversation view. */
 export type ParakeetViewProps = Readonly<{
+  /** Hide the prompt author line while one human has written every prompt. */
+  hideSoleAuthor?: boolean | undefined;
   /** Show short identity suffixes for same-named authors; never in visitor mode. */
   disambiguateAuthors?: boolean | undefined;
   /** Visitor mode hides internal readouts and disables slash commands. */
@@ -141,6 +148,7 @@ export type ParakeetViewProps = Readonly<{
 
 /** Render the retained conversation surface within one Parakeet provider. */
 export function ParakeetView({
+  hideSoleAuthor,
   disambiguateAuthors,
   visitor,
   composerActionVariant,
@@ -204,6 +212,7 @@ export function ParakeetView({
       >
         <div className="flex h-full w-full flex-col border-r border-base-300">
           <ConversationTimeline
+            hideSoleAuthor={hideSoleAuthor === true}
             disambiguateAuthors={
               visitor === undefined && disambiguateAuthors === true
             }
@@ -334,6 +343,7 @@ function ConversationInteraction({
 }
 
 function ConversationTimeline({
+  hideSoleAuthor,
   disambiguateAuthors,
   clientActions,
   onOpen,
@@ -352,6 +362,7 @@ function ConversationTimeline({
   | "formatAssistantText"
   | "disambiguateAuthors"
 > & {
+  hideSoleAuthor: boolean;
   focusAfterJump: RefObject<HTMLTextAreaElement>;
   clientActions: ReturnType<typeof useClientActions>;
   onOpen: ParakeetViewProps["onOpen"];
@@ -377,6 +388,22 @@ function ConversationTimeline({
       ),
     [disambiguateAuthors, timelineController.settled, timelineController.tail],
   );
+  // One human wrote every prompt: the label would only name the reader.
+  const soleAuthor = useMemo(() => {
+    if (!hideSoleAuthor) return false;
+    const humans = new Set<string>();
+    for (const item of [
+      ...timelineController.settled,
+      ...timelineController.tail,
+    ])
+      if (
+        item.kind === "user_message" &&
+        item.author !== undefined &&
+        item.author.kind !== "agent"
+      )
+        humans.add(item.author.id);
+    return humans.size <= 1;
+  }, [hideSoleAuthor, timelineController.settled, timelineController.tail]);
   const contributions = useClientContributions();
   const placed = placeClientTimeline(
     contributions,
@@ -598,19 +625,23 @@ function ConversationTimeline({
                   {virtualItem.index === 0 ? before : null}
                   <TimelineItem
                     item={
-                      "author" in item &&
-                      item.author &&
-                      authorNames.has(item.author.id)
-                        ? {
-                            ...item,
-                            author: {
-                              ...item.author,
-                              name:
-                                authorNames.get(item.author.id) ??
-                                item.author.name,
-                            },
-                          }
-                        : item
+                      soleAuthor &&
+                      item.kind === "user_message" &&
+                      item.author?.kind !== "agent"
+                        ? { ...item, author: undefined }
+                        : "author" in item &&
+                            item.author &&
+                            authorNames.has(item.author.id)
+                          ? {
+                              ...item,
+                              author: {
+                                ...item.author,
+                                name:
+                                  authorNames.get(item.author.id) ??
+                                  item.author.name,
+                              },
+                            }
+                          : item
                     }
                     onDismissFailed={dismissFailed}
                     onRetry={
@@ -891,6 +922,7 @@ function ConversationComposer({
 /** Standalone typed composer and exact-message timeline. */
 export function Parakeet({
   authorOf,
+  hideSoleAuthor,
   disambiguateAuthors,
   visitor,
   markdownPolicy = "session",
@@ -911,6 +943,7 @@ export function Parakeet({
     <MarkdownPolicyContext.Provider value={markdownPolicy}>
       <ParakeetProvider session={session} clients={clients} authorOf={authorOf}>
         <ParakeetView
+          hideSoleAuthor={hideSoleAuthor}
           disambiguateAuthors={disambiguateAuthors}
           visitor={visitor}
           composerActionVariant={composerActionVariant}

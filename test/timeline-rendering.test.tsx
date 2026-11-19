@@ -150,6 +150,63 @@ it.each([false, true])(
   },
 );
 
+it("hides the prompt author line while one human wrote every prompt, and shows it once a second writes", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(800);
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+  const prompt = (who: string, author: string, sequence: number) => ({
+    id: `message-${String(sequence)}`,
+    sequence,
+    commandId: null,
+    meta: { author: { id: `member:${who}`, name: author } },
+    value: { role: "user" as const, content: "Hi", timestamp: sequence },
+  });
+  async function authorLines(messages: ReturnType<typeof prompt>[]) {
+    const snapshot = sessionSnapshot({ messages, status: "idle" });
+    const session: ParakeetSession = {
+      latestPending: () => Promise.resolve(null),
+      withdraw: () => Promise.resolve({ status: "unknown" }),
+      address: "test://parakeet/sole-author",
+      command: commandHandler(commandResult),
+      extension: noExtension,
+      read: () => Promise.resolve(snapshot),
+      watch: () =>
+        Promise.resolve({
+          snapshot,
+          changes: {
+            [Symbol.asyncIterator]: () => ({
+              next: () =>
+                new Promise<IteratorResult<SessionFrame>>(() => undefined),
+            }),
+          },
+          close: () => Promise.resolve(),
+        }),
+    };
+    const client = new QueryClient();
+    clients.add(client);
+    const { container, root } = mount();
+    await settle(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Parakeet session={session} authorOf={readAuthor} hideSoleAuthor />
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(async () => {
+      await settle();
+      expect(container.textContent).toContain("Hi");
+    });
+    return [...container.querySelectorAll("[data-author]")].map(
+      (element) => element.textContent,
+    );
+  }
+  expect(
+    await authorLines([prompt("ada", "Ada", 1), prompt("ada", "Ada", 2)]),
+  ).toEqual([]);
+  expect(
+    await authorLines([prompt("ada", "Ada", 1), prompt("grace", "Grace", 2)]),
+  ).toEqual(["Ada", "Grace"]);
+});
+
 const AuthorMeta = Schema.Struct({
   author: Schema.Struct({ id: Schema.String, name: Schema.String }),
 });

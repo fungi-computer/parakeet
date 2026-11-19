@@ -582,6 +582,7 @@ Public composer options for an anonymous visitor conversation.
 
 ```ts
 type ParakeetProps = Readonly<{
+  hideSoleAuthor?: boolean;
   disambiguateAuthors?: boolean;
   authorOf?: ParakeetAuthorOf;
   visitor?: ParakeetVisitor;
@@ -609,6 +610,7 @@ Props for the standalone retained conversation surface.
 
 ```ts
 type ParakeetViewProps = Readonly<{
+  hideSoleAuthor?: boolean;
   disambiguateAuthors?: boolean;
   visitor?: ParakeetVisitor;
   composerActionVariant?: "primary" | "outline";
