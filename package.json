@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/parakeet",
-  "version": "0.16.4",
+  "version": "0.16.5",
   "author": "Levi <levi@technomancy.dev>",
   "private": false,
   "description": "Standalone React composer for a typed Shiitake Session",
@@ -78,7 +78,7 @@
     "react-dom": "^18.2.0 || ^19.2.0"
   },
   "devDependencies": {
-    "@fungi.computer/parakeet-testing": "0.2.49",
+    "@fungi.computer/parakeet-testing": "0.2.50",
     "@ladle/react": "5.1.1",
     "@tailwindcss/cli": "4.2.1",
     "@tailwindcss/typography": "0.5.19",
@@ -100,9 +100,9 @@
     "@fungi.computer/cairn": "0.1.0",
     "@fungi.computer/caps": "0.12.3",
     "@fungi.computer/gills": "0.4.0",
-    "@fungi.computer/knapsack": "0.4.21",
+    "@fungi.computer/knapsack": "0.4.22",
     "@fungi.computer/mule": "0.3.0",
-    "@fungi.computer/shiitake": "0.21.12",
+    "@fungi.computer/shiitake": "0.21.13",
     "@fungi.computer/sigils": "0.3.2",
     "@fungi.computer/sprite": "0.2.2",
     "@fungi.computer/sprite-zdog": "0.3.2",
