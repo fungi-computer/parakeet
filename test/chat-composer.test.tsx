@@ -114,6 +114,32 @@ function enter(textarea: HTMLTextAreaElement, init: KeyboardEventInit = {}) {
   return event;
 }
 
+it("says Message in the empty composer, names the Agent when told, and keeps the slash hint out of the placeholder", () => {
+  const placeholderOf = (placeholder?: string) => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    roots.add(root);
+    act(() => {
+      root.render(
+        <ChatComposer
+          queuedRecall={undefined}
+          draft=""
+          onAbort={vi.fn()}
+          onChange={vi.fn()}
+          onSend={vi.fn()}
+          placeholder={placeholder}
+          status="idle"
+          viewState={{ kind: "idle" }}
+          textareaRef={createRef<HTMLTextAreaElement>()}
+        />,
+      );
+    });
+    return container.querySelector("textarea")?.placeholder;
+  };
+  expect(placeholderOf()).toBe("Message agent…");
+  expect(placeholderOf("Message Moss…")).toBe("Message Moss…");
+});
+
 it("keeps IME, normal Enter, and Shift+Enter submission semantics", () => {
   const idle = renderComposer();
   const nativeComposing = enter(idle.textarea, { isComposing: true });

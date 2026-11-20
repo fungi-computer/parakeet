@@ -614,6 +614,7 @@ type ParakeetViewProps = Readonly<{
   disambiguateAuthors?: boolean;
   visitor?: ParakeetVisitor;
   composerActionVariant?: "primary" | "outline";
+  placeholder?: string;
   renderToolActions?: (item) => ReactNode;
   claimsToolMedia?: (item) => boolean;
   renderAssistantAttachment?: (text) => ReactNode;

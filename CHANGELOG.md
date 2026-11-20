@@ -1,5 +1,16 @@
 # @fungi.computer/parakeet
 
+## 0.16.3
+
+### Patch Changes
+
+- Changes since 0.16.2:
+
+  - fix(grove): the chat box says Message and the Agent's live name
+
+- Updated dependencies
+  - @fungi.computer/caps@0.12.3
+
 ## 0.16.2
 
 ### Patch Changes

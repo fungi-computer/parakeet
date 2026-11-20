@@ -345,10 +345,7 @@ function HostComposerTextarea({
           setHistoryIndex(-1);
         }}
         onKeyDown={onKeyDown}
-        placeholder={
-          placeholder ??
-          (slash === undefined ? "Ask agent..." : "Ask agent… (/ for commands)")
-        }
+        placeholder={placeholder ?? "Message agent…"}
         ref={textareaRef}
         rows={1}
         value={value}

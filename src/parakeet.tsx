@@ -120,6 +120,11 @@ export type ParakeetViewProps = Readonly<{
   visitor?: ParakeetVisitor | undefined;
   /** Optional Caps action style for a host-specific quieter composer. */
   composerActionVariant?: "primary" | "outline" | undefined;
+  /**
+   * What the empty composer says, such as "Message Moss…". Absent, the composer
+   * says "Message agent…"; a visitor conversation always names its Agent.
+   */
+  placeholder?: string | undefined;
   /** Optional caller-owned actions for a completed tool result. */
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
   /** Optional host claim: true hides this item's image parts from the tool body because the host shows them. */
@@ -152,6 +157,7 @@ export function ParakeetView({
   disambiguateAuthors,
   visitor,
   composerActionVariant,
+  placeholder,
   empty,
   hostFacts,
   autoFocus,
@@ -288,6 +294,7 @@ export function ParakeetView({
             visitor={visitor}
             textareaRef={textareaRef}
             composerActionVariant={composerActionVariant}
+            placeholder={placeholder}
             slash={slash}
           />
         </div>
@@ -854,8 +861,12 @@ function ConversationComposer({
   visitor,
   textareaRef,
   composerActionVariant,
+  placeholder,
   slash,
-}: Pick<ParakeetViewProps, "visitor" | "composerActionVariant"> &
+}: Pick<
+  ParakeetViewProps,
+  "visitor" | "composerActionVariant" | "placeholder"
+> &
   Readonly<{
     slash: SlashCommandController;
     textareaRef: RefObject<HTMLTextAreaElement>;
@@ -899,7 +910,7 @@ function ConversationComposer({
     onSend: slash.submit,
     slash: visitor === undefined ? slash : undefined,
     placeholder:
-      visitor === undefined ? undefined : `Ask ${visitor.agentName}…`,
+      visitor === undefined ? placeholder : `Ask ${visitor.agentName}…`,
     showFooter: visitor === undefined,
     status: sessionStatus.status,
     viewState: sessionStatus.viewState,
