@@ -1,5 +1,20 @@
 # @fungi.computer/parakeet
 
+## 0.17.1
+
+### Patch Changes
+
+- Changes since 0.17.0:
+
+  - fix(agar): end a failure message with a period
+  - fix(agar): one source of failure wording that punctuates once and names a
+    dropped request
+  - fix(grove): every launch App failure toast names its real cause
+
+- Updated dependencies
+  - @fungi.computer/agar@0.27.1
+  - @fungi.computer/shiitake@0.22.3
+
 ## 0.17.0
 
 ### Minor Changes

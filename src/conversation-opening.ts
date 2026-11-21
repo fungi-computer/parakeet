@@ -1,3 +1,4 @@
+import { failureMessage } from "@fungi.computer/agar/errors";
 import type { AppRoot } from "@fungi.computer/agar";
 import { openAppAgent } from "@fungi.computer/agar/agents";
 import { seedSessionQuery, type ParakeetSession } from "./headless.js";
@@ -312,9 +313,15 @@ export function createConversationOpeningOwner<
           pending = null;
           options.onPending(null);
           options.onError(
-            fromOpenRequest
-              ? `That Session could not be opened. ${current ? "The current conversation remains open." : "Choose another Session from the list."}`
-              : `Could not open this Session${cause instanceof Error ? `: ${cause.message}` : ""}. ${current ? "The previous conversation remains open." : "Try opening it again."}`,
+            `${failureMessage("Could not open this Session", cause)} ${
+              current
+                ? fromOpenRequest
+                  ? "The current conversation remains open."
+                  : "The previous conversation remains open."
+                : fromOpenRequest
+                  ? "Choose another Session from the list."
+                  : "Try opening it again."
+            }`,
           );
         }
       }

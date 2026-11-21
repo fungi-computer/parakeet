@@ -35,7 +35,9 @@ function visibleState(
     ? {
         ...held,
         phase: "refused",
-        refusal: snapshot.failure ?? "Something went wrong.",
+        refusal:
+          snapshot.failure ??
+          "The host marked the answer failed and gave no reason.",
       }
     : { ...held, phase: "sending" };
 }

@@ -185,8 +185,8 @@ describe("conversation opening owner", () => {
 
     harness.owner.select("agent-1", "broken");
     await vi.waitFor(() => {
-      expect(harness.state().error).toContain(
-        "The previous conversation remains open.",
+      expect(harness.state().error).toBe(
+        "Could not open this Session: the read failed. The previous conversation remains open.",
       );
     });
 
@@ -200,7 +200,9 @@ describe("conversation opening owner", () => {
     const harness = setup(new Set(["broken"]));
     harness.owner.select("agent-1", "broken");
     await vi.waitFor(() => {
-      expect(harness.state().error).toContain("Try opening it again.");
+      expect(harness.state().error).toBe(
+        "Could not open this Session: the read failed. Try opening it again.",
+      );
     });
     expect(harness.state().open).toBeNull();
   });
