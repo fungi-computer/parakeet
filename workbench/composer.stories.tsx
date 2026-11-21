@@ -16,6 +16,7 @@ import {
   type AwaitingItem,
 } from "../src/core/awaiting-answer.js";
 import type { TimelineItem as TimelineRow } from "../src/store/types.js";
+import { approvalCardCopy } from "../src/core/approval-decision.js";
 import "@fungi.computer/parakeet/styles.css";
 
 export default { title: "Parakeet / Composer" } satisfies StoryDefault;
@@ -66,8 +67,67 @@ function swatches(): NonNullable<PromptCommand["images"]> {
 }
 
 /** A real Whistle host holding one fixture decision, as the composer receives it. */
+/** An App's write card, worded by the real approval copy from the method's own label. */
+function appWriteApproval(): Pick<
+  (typeof awaitingFixtures)[number],
+  "kind" | "prompt"
+> {
+  const card = approvalCardCopy(
+    {
+      record: {
+        recordId: "approval-1",
+        revision: 1,
+        requester: {
+          displayName: "Shiitake",
+          agentId: "agent-1",
+          sessionId: "session-1",
+          principalId: "agent-1",
+        },
+        module: "attachment-1",
+        operation: "writeFile",
+        access: "write",
+        description: {
+          app: {
+            displayName: "Inkcap",
+            operationLabel: "Save a file on your Computer",
+          },
+          inputBytes: 412,
+          inputSha256: "0".repeat(64),
+        },
+        reversibility: "reversible",
+        expiresAt: start + 600_000,
+      },
+      canAnswer: true,
+    },
+    undefined,
+    { width: 60, home: "/home/you", now: start },
+  );
+  return {
+    kind: "approval",
+    prompt: {
+      type: "decision",
+      message: card.content.title,
+      summary: card.content.summary ?? "",
+      facts: [...(card.content.facts ?? [])],
+      options: [
+        { value: "approve", label: "Approve once" },
+        { value: "deny", label: "Deny" },
+      ],
+      other: {
+        label: "Deny and say why…",
+        placeholder: "A short reason for the Agent (optional)",
+        maxLength: 512,
+        blank: "deny",
+      },
+    },
+  };
+}
+
 function waitingDecision(name: string): AwaitingItem {
-  const fixture = awaitingFixtures.find((entry) => entry.name === name);
+  const fixture =
+    name === "approval app write"
+      ? appWriteApproval()
+      : awaitingFixtures.find((entry) => entry.name === name);
   if (fixture === undefined) throw new Error(`No awaiting fixture ${name}`);
   const host = createWhistleInteractionHost({ title: fixture.prompt.message });
   void host.begin().interaction.prompt(fixture.prompt);
@@ -186,3 +246,4 @@ export const QuestionTakeover = page({ decision: "single" });
 export const ApprovalTakeover = page({
   decision: "approval",
 });
+export const ApprovalAppWrite = page({ decision: "approval app write" });

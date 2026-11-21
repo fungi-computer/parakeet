@@ -550,3 +550,14 @@ it("words every refusal reason without showing its code", () => {
     "This request is gone. Nothing ran. Ask the Agent to try again.",
   );
 });
+
+it("says nothing about undo for a reversible App write, and warns for an irreversible one", () => {
+  const detail = (reversibility: string) =>
+    approvalCardCopy(
+      { ...view, record: { ...view.record, reversibility } },
+      undefined,
+      options,
+    ).content.details?.map((entry) => entry.label) ?? [];
+  expect(detail("reversible")).not.toContain("Undo");
+  expect(detail("irreversible-external")).toContain("Undo");
+});

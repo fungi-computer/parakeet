@@ -219,7 +219,13 @@ function connectedToolCard(view: ApprovalFacts, now: number): ApprovalCard {
               : ""),
         },
       ],
-      details: entries([undoDetail(view), ...recordDetails(view, now)]),
+      // Nothing backs "can be undone" for an App write, so only a warning shows.
+      details: entries([
+        ...(record.reversibility === "irreversible-external"
+          ? [undoDetail(view)]
+          : []),
+        ...recordDetails(view, now),
+      ]),
     },
   };
 }

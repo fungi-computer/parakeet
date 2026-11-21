@@ -1,5 +1,22 @@
 # @fungi.computer/parakeet
 
+## 0.17.0
+
+### Minor Changes
+
+- Changes since 0.16.12:
+
+  - fix(agar): reject invisible label characters and drop the unbacked undo
+    claim
+  - feat(agar): approval cards read a method's own short label
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/agar@0.27.0
+  - @fungi.computer/shiitake@0.22.2
+  - @fungi.computer/knapsack@0.4.26
+
 ## 0.16.12
 
 ### Patch Changes
