@@ -132,3 +132,34 @@
     max-width: none;
   }
 }
+
+/* A split phone pane has room for the model menu key, not a partial name.
+   Keep its accessible model label and the ordinary picker action. */
+@container (max-width: 16rem) {
+  .parakeet-composer-row:has(.composer-settings-chip)
+    .parakeet-composer-model-key {
+    --caps-keycap-justify: center;
+    --caps-keycap-padding: var(--spacing-xs);
+    flex: none;
+    width: var(--caps-status-tray-key-height);
+    min-width: var(--caps-status-tray-key-height);
+  }
+
+  .parakeet-composer-row:has(.composer-settings-chip)
+    .parakeet-composer-model-key
+    .caps-keycap-button-label,
+  .parakeet-composer-row .composer-settings-label {
+    display: none;
+  }
+}
+
+/* Touch keys need more room in a phone's beside pane. Settings already
+   contains the same model picker, so keep that route instead of a fourth key. */
+@media (pointer: coarse) {
+  @container (max-width: 16rem) {
+    .parakeet-composer-row:has(.composer-settings-chip)
+      .parakeet-composer-model-key {
+      display: none;
+    }
+  }
+}

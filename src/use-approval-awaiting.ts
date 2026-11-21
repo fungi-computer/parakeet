@@ -56,10 +56,33 @@ export function useApprovalAwaiting(
           view.record.revision,
           view.canAnswer,
         ]);
+  // One record revision owns its draft in the session's store, through any
+  // loss of capability metadata and any unmount of this hook. A different
+  // revision starts a new choice; rights stay live in source.
+  const draftOwner =
+    view === undefined
+      ? undefined
+      : `${JSON.stringify(["approval", view.record.recordId]).slice(0, -1)},`;
+  const draftKey =
+    view === undefined || draftOwner === undefined
+      ? undefined
+      : JSON.stringify([
+          "approval",
+          view.record.recordId,
+          view.record.revision,
+        ]);
   useEffect(() => {
     const view = shown.current;
     if (!enabled || source === undefined || view === undefined) return;
-    if (!view.canAnswer || key === undefined) return;
+    if (
+      !view.canAnswer ||
+      key === undefined ||
+      draftOwner === undefined ||
+      draftKey === undefined
+    )
+      return;
+    store.drafts.supersede(draftOwner, draftKey);
+    const retained = store.drafts.claim(draftKey);
     const { home, width, noteLimit } = layout.current;
     const host = createWhistleInteractionHost({ title: "Approval" });
     const session = host.begin();
@@ -77,6 +100,7 @@ export function useApprovalAwaiting(
       kind: "approval",
       arrivedAt: Date.now(),
       host,
+      draft: retained,
     });
     void askApproval(session.interaction, {
       view,
@@ -98,6 +122,7 @@ export function useApprovalAwaiting(
         session.settle({ status: "failed", message: outcome.message });
       else {
         leave();
+        if (outcome.kind === "answered") store.drafts.release(draftKey);
         session.settle(
           outcome.kind === "answered"
             ? { status: "handled" }
@@ -109,5 +134,5 @@ export function useApprovalAwaiting(
       leave();
       host.cancel();
     };
-  }, [source, key, enabled, store]);
+  }, [source, key, draftOwner, draftKey, enabled, store]);
 }

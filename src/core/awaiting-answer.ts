@@ -19,6 +19,19 @@ export type AwaitingItem = Readonly<{
   arrivedAt: number;
   /** The conversation to draw and answer. */
   host: WhistleInteractionHost;
+  /** A draft owned by the pending record, retained while its host reconnects. */
+  draft?: DecisionDraft;
+}>;
+
+/** A person's unfinished choice, without display metadata or answering authority. */
+type SavedDecisionDraft = Readonly<{
+  multiple: boolean;
+  escape: DecisionPrompt["escape"];
+  other: Readonly<{ blank: string | undefined }> | undefined;
+  choice:
+    Readonly<{ kind: "option"; value: string }> | Readonly<{ kind: "other" }>;
+  toggled: readonly string[];
+  text: string;
 }>;
 
 /** Which item the composer shows and where it stands among all of them. */
@@ -77,7 +90,7 @@ export type DecisionPhase =
 
 /** Everything the reducer remembers about one decision prompt. */
 export type DecisionState = Readonly<{
-  /** Highlighted row: an option, or the Other row after the last option. */
+  /** Highlighted row, or -1 when a retained choice is no longer available. */
   highlight: number;
   /** Option values toggled so far (multiple decisions only). */
   toggled: ReadonlySet<string>;
@@ -178,6 +191,84 @@ export function initialDecisionState(): DecisionState {
   };
 }
 
+/** The state of an approval: nothing selected, so Send and Enter wait for a pick. */
+export function unselectedDecisionState(): DecisionState {
+  return { ...initialDecisionState(), highlight: -1 };
+}
+
+/** One pending choice, retaining no display metadata or answering authority. */
+export class DecisionDraft {
+  #current: SavedDecisionDraft | undefined;
+
+  /** Start without a remembered choice. */
+  constructor() {
+    this.#current = undefined;
+  }
+
+  /** Remember option values, which policy rows may move, and unfinished text. */
+  remember(state: DecisionState, prompt: DecisionPrompt): void {
+    const option = prompt.options[state.highlight];
+    if (
+      option === undefined &&
+      (state.highlight !== prompt.options.length || prompt.other === undefined)
+    )
+      return;
+    this.#current = {
+      multiple: prompt.multiple === true,
+      escape: prompt.escape,
+      other:
+        prompt.other === undefined ? undefined : { blank: prompt.other.blank },
+      choice:
+        option === undefined
+          ? { kind: "other" }
+          : { kind: "option", value: option.value },
+      toggled: [...state.toggled],
+      text: state.other,
+    };
+  }
+
+  /**
+   * Redraw a compatible choice without replaying any submitted answer. With
+   * nothing remembered, an approval has nothing selected: the person may have
+   * chosen something this draft lost, and Send must not guess for them.
+   */
+  restore(prompt: DecisionPrompt): DecisionState {
+    const initial = unselectedDecisionState();
+    const draft = this.#current;
+    if (draft === undefined) return initial;
+    const choice = draft.choice;
+    const highlight =
+      choice.kind === "other"
+        ? prompt.other === undefined
+          ? -1
+          : prompt.options.length
+        : prompt.options.findIndex((option) => option.value === choice.value);
+    if (
+      draft.multiple !== (prompt.multiple === true) ||
+      draft.escape !== prompt.escape ||
+      (draft.other === undefined) !== (prompt.other === undefined) ||
+      draft.other?.blank !== prompt.other?.blank ||
+      highlight < 0 ||
+      draft.toggled.some(
+        (value) => !prompt.options.some((option) => option.value === value),
+      )
+    )
+      return {
+        ...initial,
+        highlight: -1,
+        phase: "refused",
+        refusal: "This choice changed. Choose again before sending.",
+      };
+    return {
+      ...initial,
+      highlight,
+      phase: highlight === prompt.options.length ? "other" : "choose",
+      toggled: new Set(draft.toggled),
+      other: draft.text,
+    };
+  }
+}
+
 const unchanged = (state: DecisionState): DecisionOutcome => ({ state });
 
 function onRow(
@@ -219,7 +310,11 @@ export function reduceDecision(
         state: onRow(
           state,
           prompt,
-          (state.highlight + intent.delta + rows) % rows,
+          state.highlight < 0
+            ? intent.delta === 1
+              ? 0
+              : rows - 1
+            : (state.highlight + intent.delta + rows) % rows,
         ),
       };
     case "pick":
@@ -254,6 +349,8 @@ export function reduceDecision(
     case "details":
       return { state: { ...state, details: !state.details } };
     case "enter": {
+      if (state.highlight < 0 || state.highlight >= rows)
+        return unchanged(state);
       const text = state.other.trim();
       const answerText = text === "" ? {} : { text };
       if (prompt.multiple === true) {
@@ -531,6 +628,8 @@ export function decisionView(
     canSend:
       !sending &&
       !state.details &&
+      state.highlight >= 0 &&
+      state.highlight < rows.length &&
       (multiple
         ? state.toggled.size > 0 || otherText !== ""
         : state.highlight < optionCount ||

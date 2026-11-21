@@ -1,5 +1,25 @@
 # @fungi.computer/parakeet
 
+## 0.17.3
+
+### Patch Changes
+
+- Changes since 0.17.2:
+
+  - fix(parakeet): no approval card preselects a choice
+  - fix(parakeet): keep an approval choice across a hidden card and start blank
+    after a gap
+  - fix(grove): retain approval choices when the App connection changes
+  - fix(parakeet): scope compact controls to chat composers
+  - fix(parakeet): retain disclosure for rows without status
+  - fix(grove): keep footer markers and narrow composer controls clear
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.28.0
+  - @fungi.computer/caps@0.13.0
+  - @fungi.computer/shiitake@0.22.5
+
 ## 0.17.2
 
 ### Patch Changes

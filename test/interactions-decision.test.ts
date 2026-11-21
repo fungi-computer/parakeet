@@ -61,3 +61,14 @@ it("a decision reached through a dialog moves to the composer queue", async () =
   expect(answers).toEqual([{ selected: ["main"] }]);
   expect(store.snapshot().awaiting.items).toEqual([]);
 });
+
+it("keeps one draft per record revision for the session and forgets superseded ones", () => {
+  const store = createParakeetInteractions();
+  const first = store.drafts.claim('["approval","r",1]');
+  expect(store.drafts.claim('["approval","r",1]')).toBe(first);
+  store.drafts.supersede('["approval","r",', '["approval","r",2]');
+  expect(store.drafts.claim('["approval","r",1]')).not.toBe(first);
+  const kept = store.drafts.claim('["approval","r",2]');
+  store.drafts.release('["approval","r",2]');
+  expect(store.drafts.claim('["approval","r",2]')).not.toBe(kept);
+});

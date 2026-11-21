@@ -205,6 +205,7 @@ export {
   type DecisionPrompt,
   type DecisionRowView,
   type DecisionState,
+  DecisionDraft,
   type DecisionView,
 } from "./core/awaiting-answer.js";
 export { useDecision, type DecisionController } from "./use-decision.js";

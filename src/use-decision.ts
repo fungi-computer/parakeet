@@ -5,6 +5,7 @@ import type { WhistleInteractionSnapshot } from "@fungi.computer/whistle/interac
 import {
   decisionView,
   initialDecisionState,
+  unselectedDecisionState,
   reduceDecision,
   type AwaitingItem,
   type DecisionIntent,
@@ -23,7 +24,11 @@ export type DecisionController = Readonly<{
   later: () => void;
 }>;
 
-type Held = Readonly<{ sequence: number; state: DecisionState }>;
+type Held = Readonly<{
+  host: AwaitingItem["host"];
+  sequence: number;
+  state: DecisionState;
+}>;
 
 /** The state as the person sees it: the reducer's, over what the host reports. */
 function visibleState(
@@ -53,21 +58,46 @@ export function useDecision(
 ): DecisionController {
   const { host } = item;
   const snapshot = useSyncExternalStore(host.subscribe, host.snapshot);
-  const shown = useRef<{ sequence: number; prompt: DecisionPrompt }>();
+  const shown = useRef<{
+    host: AwaitingItem["host"];
+    sequence: number;
+    prompt: DecisionPrompt;
+  }>();
+  if (shown.current?.host !== host) shown.current = undefined;
   const pending = snapshot.prompt;
   if (pending?.request.type === "decision")
-    shown.current = { sequence: pending.sequence, prompt: pending.request };
+    shown.current = {
+      host,
+      sequence: pending.sequence,
+      prompt: pending.request,
+    };
   const [, setHeld] = useState<Held>();
   // Several keys can arrive before React renders; each must see the last one.
   const latest = useRef<Held>();
   const prompt = shown.current;
-  const held = (): DecisionState =>
-    prompt !== undefined && latest.current?.sequence === prompt.sequence
-      ? latest.current.state
+  // An approval never preselects a choice, however it came to be drawn.
+  const start = () =>
+    item.kind === "approval"
+      ? unselectedDecisionState()
       : initialDecisionState();
+  const held = (): DecisionState => {
+    if (prompt === undefined) return start();
+    if (
+      latest.current?.host !== host ||
+      latest.current.sequence !== prompt.sequence
+    ) {
+      const state =
+        latest.current?.host === host
+          ? start()
+          : (item.draft?.restore(prompt.prompt) ?? start());
+      latest.current = { host, sequence: prompt.sequence, state };
+    }
+    return latest.current.state;
+  };
   const remember = (next: DecisionState) => {
     if (prompt === undefined) return;
-    latest.current = { sequence: prompt.sequence, state: next };
+    latest.current = { host, sequence: prompt.sequence, state: next };
+    item.draft?.remember(next, prompt.prompt);
     setHeld(latest.current);
   };
   return {
@@ -94,8 +124,13 @@ export function useDecision(
         intent,
         prompt.prompt,
       );
-      remember(outcome.state);
       const effect = outcome.effect;
+      // Backing out of a second question returns to nothing selected.
+      remember(
+        item.kind === "approval" && effect?.type === "back"
+          ? { ...outcome.state, highlight: -1 }
+          : outcome.state,
+      );
       if (effect?.type === "later") context.later();
       else if (effect?.type === "answer") {
         const answer: WhistleDecisionAnswer = { selected: effect.selected };

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   awaitingQueue,
   decisionView,
+  DecisionDraft,
   decisionViewText,
   initialDecisionState,
   reduceDecision,
@@ -51,6 +52,84 @@ const item = (key: string, arrivedAt: number): AwaitingItem => ({
   kind: "question",
   arrivedAt,
   host: createWhistleInteractionHost({ title: key }),
+});
+
+describe("a pending approval's retained choice", () => {
+  const approval: DecisionPrompt = {
+    type: "decision",
+    message: "Allow Tourtois to add a widget to your dashboard?",
+    options: [
+      { value: "approve", label: "Approve once" },
+      { value: "family", label: "Always allow Tourtois to change data" },
+      { value: "deny", label: "Deny" },
+    ],
+    other: { label: "Deny and say why…", blank: "deny", maxLength: 512 },
+  };
+  const withoutFamily = {
+    ...approval,
+    options: approval.options.filter((option) => option.value !== "family"),
+  };
+  const context = { kind: "approval" as const, position: 1, total: 1 };
+
+  it("keeps Deny by value when policy options move and does not replay a sending state", () => {
+    const sent = run(
+      [{ type: "pick", number: 3 }, { type: "enter" }],
+      approval,
+    ).state;
+    const draft = new DecisionDraft();
+    draft.remember(sent, approval);
+    const restored = draft.restore(withoutFamily);
+    expect(restored.phase).toBe("choose");
+    expect(run([{ type: "enter" }], withoutFamily, restored).effects).toEqual([
+      { type: "answer", selected: ["deny"] },
+    ]);
+  });
+
+  it("opens an approval with nothing selected and Enter inert when nothing is remembered", () => {
+    const draft = new DecisionDraft();
+    for (let drawn = 0; drawn < 2; drawn += 1) {
+      const state = draft.restore(approval);
+      expect(state.highlight).toBe(-1);
+      expect(decisionView(state, approval, context).canSend).toBe(false);
+      expect(run([{ type: "enter" }], approval, state).effects).toEqual([]);
+    }
+  });
+
+  it("blocks a removed choice, including keyboard Enter, until the person chooses again", () => {
+    const picked = run([{ type: "pick", number: 2 }], approval).state;
+    const draft = new DecisionDraft();
+    draft.remember(picked, approval);
+    const restored = draft.restore(withoutFamily);
+    expect(decisionView(restored, withoutFamily, context).canSend).toBe(false);
+    expect(run([{ type: "enter" }], withoutFamily, restored).effects).toEqual(
+      [],
+    );
+    expect(
+      run(
+        [{ type: "pick", number: 2 }, { type: "enter" }],
+        withoutFamily,
+        restored,
+      ).effects,
+    ).toEqual([{ type: "answer", selected: ["deny"] }]);
+  });
+
+  it("does not reuse a family confirmation as the reconstructed main approval", () => {
+    const confirmation: DecisionPrompt = {
+      type: "decision",
+      message: "Always allow Tourtois to change data?",
+      options: [
+        { value: "back", label: "Back" },
+        { value: "family", label: "Always allow Tourtois to change data" },
+      ],
+      escape: "back",
+    };
+    const picked = run([{ type: "pick", number: 2 }], confirmation).state;
+    const draft = new DecisionDraft();
+    draft.remember(picked, confirmation);
+    const restored = draft.restore(approval);
+    expect(decisionView(restored, approval, context).canSend).toBe(false);
+    expect(run([{ type: "enter" }], approval, restored).effects).toEqual([]);
+  });
 });
 
 describe("the decision reducer", () => {

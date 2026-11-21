@@ -8,6 +8,67 @@
 
 # headless
 
+## Classes
+
+### DecisionDraft
+
+One pending choice, retaining no display metadata or answering authority.
+
+#### Constructors
+
+##### Constructor
+
+```ts
+new DecisionDraft(): DecisionDraft;
+```
+
+Start without a remembered choice.
+
+###### Returns
+
+[`DecisionDraft`](#decisiondraft)
+
+#### Methods
+
+##### remember()
+
+```ts
+remember(state, prompt): void;
+```
+
+Remember option values, which policy rows may move, and unfinished text.
+
+###### Parameters
+
+| Parameter | Type                              |
+| --------- | --------------------------------- |
+| `state`   | [`DecisionState`](#decisionstate) |
+| `prompt`  | `object` & `object`               |
+
+###### Returns
+
+`void`
+
+##### restore()
+
+```ts
+restore(prompt): DecisionState;
+```
+
+Redraw a compatible choice without replaying any submitted answer. With nothing
+remembered, an approval has nothing selected: the person may have chosen
+something this draft lost, and Send must not guess for them.
+
+###### Parameters
+
+| Parameter | Type                |
+| --------- | ------------------- |
+| `prompt`  | `object` & `object` |
+
+###### Returns
+
+[`DecisionState`](#decisionstate)
+
 ## Type Aliases
 
 ### LoginMethodKind
@@ -334,6 +395,11 @@ type ParakeetInteractions = Readonly<{
     remove: (key) => void;
     later: (key) => void;
     focus: () => void;
+  }>;
+  drafts: Readonly<{
+    claim: (key) => DecisionDraft;
+    release: (key) => void;
+    supersede: (prefix, keep) => void;
   }>;
 }>;
 ```
@@ -699,6 +765,7 @@ type AwaitingItem = Readonly<{
   kind: AwaitingKind;
   arrivedAt: number;
   host: WhistleInteractionHost;
+  draft?: DecisionDraft;
 }>;
 ```
 
@@ -1952,10 +2019,10 @@ leaves the composer but stays counted: it is the footer row.
 
 #### Parameters
 
-| Parameter | Type                                                                                                                                              |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `items`   | readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\>[] |
-| `later`   | `ReadonlySet`\<`string`\>                                                                                                                         |
+| Parameter | Type                                                                                                                                                                                           |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `items`   | readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `draft?`: [`DecisionDraft`](#decisiondraft); \}\>[] |
+| `later`   | `ReadonlySet`\<`string`\>                                                                                                                                                                      |
 
 #### Returns
 
@@ -1975,6 +2042,7 @@ function awaitingTakeover(
       kind: AwaitingKind;
       arrivedAt: number;
       host: WhistleInteractionHost;
+      draft?: DecisionDraft;
     }>
   | undefined;
 ```
@@ -1984,15 +2052,16 @@ with text is never, unless the person asked for the decision.
 
 #### Parameters
 
-| Parameter  | Type                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `awaiting` | `Readonly`\<\{ `items`: readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\>[]; `current?`: `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\>; `position`: `number`; `total`: `number`; \}\> & `Readonly`\<\{ `forced`: `boolean`; \}\> |
-| `draft`    | `string`                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Parameter  | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `awaiting` | `Readonly`\<\{ `items`: readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `draft?`: [`DecisionDraft`](#decisiondraft); \}\>[]; `current?`: `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `draft?`: [`DecisionDraft`](#decisiondraft); \}\>; `position`: `number`; `total`: `number`; \}\> & `Readonly`\<\{ `forced`: `boolean`; \}\> |
+| `draft`    | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 #### Returns
 
 \| `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind);
-`arrivedAt`: `number`; `host`: `WhistleInteractionHost`; \}\> \| `undefined`
+`arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `draft?`:
+[`DecisionDraft`](#decisiondraft); \}\> \| `undefined`
 
 ---
 

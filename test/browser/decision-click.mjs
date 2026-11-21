@@ -80,37 +80,149 @@ try {
     .parse(server.address());
 
   browser = await launchIsolatedChromium(chromium, [address.port]);
-  const page = await browser.newPage({
-    viewport: { height: 900, width: 1440 },
-  });
-  await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: "load" });
-  const card = page.getByRole("group", { name: /Agent approval/u });
-  await card.waitFor();
-  const options = await card.getByRole("option").allInnerTexts();
-  assert.equal(options.length, 4, `four rows, got ${JSON.stringify(options)}`);
-  assert.match(options[2] ?? "", /Deny$/u, "the third row is Deny");
-  // A person clicks "3. Deny" with the mouse, then presses Send.
-  await card.getByRole("option", { name: /Deny$/u }).first().click();
-  // The same record is refreshed between the click and Send.
-  await page.evaluate(() => {
-    globalThis.refreshCard();
-    globalThis.refreshCard();
-  });
-  await page.waitForFunction(
-    () => globalThis.document.querySelector("[data-renders='2']") !== null,
-  );
-  const selected = await card
-    .locator('[role="option"][aria-selected="true"]')
-    .allInnerTexts();
-  await card.getByRole("button", { name: "Send", exact: true }).click();
-  await page.waitForFunction(() => globalThis.decisionAnswers.length > 0);
-  const [answer] = await page.evaluate(() => globalThis.decisionAnswers);
-  assert.deepEqual(
-    answer.selected,
-    ["deny"],
-    `clicking Deny answers deny (selected before Send: ${JSON.stringify(selected)})`,
-  );
-  log("decision click proof passed: Deny answers deny");
+  const gaps = {
+    "an unmounted owner": async (page) => {
+      await page.evaluate(() => globalThis.setOwned(false));
+      await page.evaluate(() => globalThis.setOwned(true));
+    },
+    "a right that flips off then on": async (page) => {
+      await page.evaluate(() => globalThis.setAnswerable(false));
+      await page.evaluate(() => globalThis.setAnswerable(true));
+    },
+    "access revoked then restored": async (page) => {
+      await page.evaluate(() => {
+        globalThis.setAnswerable(false);
+        globalThis.setOwned(false);
+      });
+      await page.evaluate(() => {
+        globalThis.setOwned(true);
+        globalThis.setAnswerable(true);
+      });
+    },
+  };
+  for (const width of [1280, 390]) {
+    for (const input of ["pointer", "keyboard"]) {
+      const open = async () => {
+        const page = await browser.newPage({
+          viewport: { height: 900, width },
+        });
+        await page.goto(`http://127.0.0.1:${address.port}/`, {
+          waitUntil: "load",
+        });
+        const card = page.getByRole("group", { name: /Agent approval/u });
+        await card.waitFor();
+        return { page, card };
+      };
+      const send = async (page, card) => {
+        if (input === "pointer")
+          await card.getByRole("button", { name: "Send", exact: true }).click();
+        else {
+          await card.getByRole("listbox").focus();
+          await page.keyboard.press("Enter");
+        }
+      };
+      const selected = (card) =>
+        card.locator('[role="option"][aria-selected="true"]').allInnerTexts();
+
+      // No card, fresh or redrawn, preselects a choice.
+      {
+        const { page, card } = await open();
+        const options = await card.getByRole("option").allInnerTexts();
+        assert.equal(
+          options.length,
+          4,
+          `four rows, got ${JSON.stringify(options)}`,
+        );
+        assert.match(options[2] ?? "", /Deny$/u, "the third row is Deny");
+        assert.match(options[0] ?? "", /Approve once \(recommended\)/u);
+        assert.deepEqual(
+          await selected(card),
+          [],
+          `${width} ${input}: a fresh card has nothing selected`,
+        );
+        assert.equal(
+          await card
+            .getByRole("button", { name: "Send", exact: true })
+            .isDisabled(),
+          true,
+          `${width} ${input}: Send is disabled on a fresh card`,
+        );
+        await card.getByRole("listbox").focus();
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(150);
+        assert.equal(
+          (await page.evaluate(() => globalThis.decisionAnswers)).length,
+          0,
+          `${width} ${input}: Enter answers nothing on a fresh card`,
+        );
+        await page.close();
+      }
+
+      for (const [gap, cross] of Object.entries(gaps)) {
+        const { page, card } = await open();
+        const deny = card.getByRole("option", { name: /Deny$/u });
+        if (input === "pointer") await deny.click();
+        else {
+          await card.getByRole("listbox").focus();
+          await page.keyboard.press("3");
+        }
+        await page.evaluate(() => {
+          globalThis.refreshCard();
+          globalThis.refreshCard();
+        });
+        await cross(page);
+        await card.waitFor();
+        const after = await selected(card);
+        assert.ok(
+          after.length === 1 && (after[0] ?? "").endsWith("Deny"),
+          `${width} ${input} ${gap}: Deny survives, got ${JSON.stringify(after)}`,
+        );
+        await send(page, card);
+        await page.waitForFunction(() => globalThis.decisionAnswers.length > 0);
+        const [answer] = await page.evaluate(() => globalThis.decisionAnswers);
+        assert.equal(answer.decision, "deny", `${width} ${input} ${gap}`);
+        log(
+          `decision proof passed: ${width} ${input} records deny after ${gap}`,
+        );
+        await page.close();
+      }
+
+      // A gap with no remembered choice starts with nothing selected.
+      for (const [gap, cross] of Object.entries(gaps)) {
+        const { page, card } = await open();
+        await cross(page);
+        await card.waitFor();
+        assert.deepEqual(
+          await selected(card),
+          [],
+          `${width} ${input} ${gap}: nothing is preselected`,
+        );
+        assert.equal(
+          await card
+            .getByRole("button", { name: "Send", exact: true })
+            .isDisabled(),
+          true,
+          `${width} ${input} ${gap}: Send is disabled`,
+        );
+        await card.getByRole("listbox").focus();
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(150);
+        assert.equal(
+          (await page.evaluate(() => globalThis.decisionAnswers)).length,
+          0,
+          `${width} ${input} ${gap}: Enter answers nothing`,
+        );
+        // An explicit choice is then answerable.
+        await card.getByRole("option", { name: /Deny$/u }).click();
+        await send(page, card);
+        await page.waitForFunction(() => globalThis.decisionAnswers.length > 0);
+        log(
+          `decision proof passed: ${width} ${input} nothing selected after ${gap}`,
+        );
+        await page.close();
+      }
+    }
+  }
 } finally {
   await browser?.close();
   server?.close();

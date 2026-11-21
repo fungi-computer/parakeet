@@ -101,7 +101,7 @@ export function ClientRows({
               <details className="min-w-0 flex-1">
                 <summary
                   title={row.title}
-                  className={`cursor-pointer truncate leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
+                  className={`cursor-pointer truncate leading-4 ${row.tone === undefined ? "" : `list-none [&::-webkit-details-marker]:hidden ${rowColors[row.tone]}`}`}
                 >
                   {row.title}
                   {row.inspection === undefined || row.detail === undefined

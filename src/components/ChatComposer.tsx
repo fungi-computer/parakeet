@@ -470,7 +470,7 @@ function useComposerRow({
             label: (
               <span className="composer-settings-chip">
                 <SlidersHorizontal aria-hidden="true" />
-                Settings
+                <span className="composer-settings-label">Settings</span>
               </span>
             ),
             accessibleLabel: "Session settings",

@@ -8,7 +8,7 @@ import {
   type WhistleInteractionHost,
   type WhistleMessageNotice,
 } from "@fungi.computer/whistle/interaction";
-import type { AwaitingItem } from "../core/awaiting-answer.js";
+import { DecisionDraft, type AwaitingItem } from "../core/awaiting-answer.js";
 
 /** One interaction a renderer should draw as a dialog or panel. */
 export type ParakeetOpenInteraction = Readonly<{
@@ -112,6 +112,19 @@ export type ParakeetInteractions = Readonly<{
     /** Bring back the earliest postponed decision, even over a draft. */
     focus: () => void;
   }>;
+  /**
+   * Unfinished approval choices, in memory for this session only. They outlive
+   * the card that drew them, so a card that is hidden and drawn again resumes
+   * the person's choice instead of starting on the first row.
+   */
+  drafts: Readonly<{
+    /** The draft for one record revision, created on first use. */
+    claim: (key: string) => DecisionDraft;
+    /** Forget one draft: its record was answered or postponed for good. */
+    release: (key: string) => void;
+    /** Forget every draft whose key starts with the prefix but is not `keep`. */
+    supersede: (prefix: string, keep: string) => void;
+  }>;
 }>;
 
 /**
@@ -130,6 +143,7 @@ export function createParakeetInteractions(): ParakeetInteractions {
   };
   let sequence = 0;
   let lastEnd: WhistleInteractionEnd["status"] | undefined;
+  const drafts = new Map<string, DecisionDraft>();
   const listeners = new Set<() => void>();
   const toastListeners = new Set<(toast: ParakeetToast) => void>();
   const toast = (next: ParakeetToast) => {
@@ -279,6 +293,22 @@ export function createParakeetInteractions(): ParakeetInteractions {
       return () => {
         toastListeners.delete(listener);
       };
+    },
+    drafts: {
+      claim: (key) => {
+        const held = drafts.get(key);
+        if (held !== undefined) return held;
+        const created = new DecisionDraft();
+        drafts.set(key, created);
+        return created;
+      },
+      release: (key) => {
+        drafts.delete(key);
+      },
+      supersede: (prefix, keep) => {
+        for (const key of drafts.keys())
+          if (key !== keep && key.startsWith(prefix)) drafts.delete(key);
+      },
     },
     attach: (present) => present(presenter),
     lastEnd: () => lastEnd,
