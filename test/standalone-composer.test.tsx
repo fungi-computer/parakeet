@@ -3181,23 +3181,33 @@ it("waits for observed goal changes, never infers completion from idle or aborts
   ).toBeNull();
 });
 
-it("shows a rejected action without changing the goal and permits retry", async () => {
+it("toasts a rejected action without changing the goal and permits retry", async () => {
   const target = goalSession("test://parakeet/rejected-goal", {
     revision: "goal-revision",
     objective: "Keep working",
     state: "active",
   });
   target.pause.mockRejectedValueOnce(new Error("Goal pause was rejected"));
-  const container = render(target.session);
+  const toasts: ParakeetToast[] = [];
+  const { container } = mount(
+    target.session,
+    new QueryClient(),
+    undefined,
+    undefined,
+    {
+      onToast: (toast) => toasts.push(toast),
+    },
+  );
   await settle();
   await settle();
   await settle(() => {
     goalButton(container).click();
   });
   await settle();
-  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-    "Goal pause was rejected",
-  );
+  expect(toasts).toEqual([
+    { variant: "error", message: "Goal pause was rejected" },
+  ]);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(goalButton(container).disabled).toBe(false);
   expect(goalButton(container).textContent).toContain("Pause goal");
   await settle(() => {

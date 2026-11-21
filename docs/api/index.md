@@ -595,6 +595,7 @@ type ParakeetProps = Readonly<{
   renderAssistantAttachment?: (text) => ReactNode;
   formatAssistantText?: (text) => string;
   onLink?: (href) => boolean;
+  onToast?: (toast) => void;
   onOpen?: (target) => void;
   empty?: ReactNode;
   hostFacts?: ParakeetHostFacts;

@@ -1,5 +1,21 @@
 # @fungi.computer/parakeet
 
+## 0.17.2
+
+### Patch Changes
+
+- Changes since 0.17.1:
+
+  - fix(grove): keep agent status rows compact and failures in toasts
+
+- Updated dependencies
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.27.2
+  - @fungi.computer/caps@0.12.9
+  - @fungi.computer/shiitake@0.22.4
+  - @fungi.computer/knapsack@0.4.27
+
 ## 0.17.1
 
 ### Patch Changes

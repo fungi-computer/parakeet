@@ -13,8 +13,6 @@ import type { ClientContribution } from "./client-contributions.js";
 export type ClientActionState = Readonly<{
   /** The same advertised intent is already in flight. */
   pending: boolean;
-  /** Visible execution failure; cleared when this intent is retried. */
-  error?: string;
 }>;
 
 function advertisedActions(
@@ -131,8 +129,11 @@ export function createClientActions(
           cause instanceof Error
             ? cause
             : new Error("Client row command failed", { cause });
-        publish(intent, { pending: false, error: error.message });
-        options.interactions.report({ tone: "error", message: error.message });
+        publish(intent, { pending: false });
+        options.interactions.toast({
+          variant: "error",
+          message: error.message,
+        });
         return;
       }
       if (retired()) return;
@@ -144,12 +145,15 @@ export function createClientActions(
             : outcome.status === "unavailable"
               ? outcome.reason
               : `Client row command ${outcome.status}`;
-      publish(
-        intent,
-        error === undefined ? { pending: false } : { pending: false, error },
-      );
-      if (error !== undefined)
-        options.interactions.report({ tone: "error", message: error });
+      publish(intent, { pending: false });
+      if (error !== undefined) {
+        // Whistle may already have reported this command's failure. Move that
+        // notice to the toast surface without clearing another command's notice.
+        const notice = options.interactions.snapshot().notice;
+        if (notice?.tone === "error" && notice.message === error)
+          options.interactions.report(undefined);
+        options.interactions.toast({ variant: "error", message: error });
+      }
     },
     dispose: () => {
       controller.abort();

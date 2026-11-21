@@ -144,6 +144,7 @@ it("renders generic placements, opens typed targets, dispatches actions and reti
     watch: () => Promise.resolve({ snapshot, changes, close }),
   };
   const opened = vi.fn();
+  const onToast = vi.fn();
   const query = new QueryClient();
   const container = document.createElement("div");
   document.body.append(container);
@@ -157,7 +158,12 @@ it("renders generic placements, opens typed targets, dispatches actions and reti
     await settle(() => {
       root.render(
         <QueryClientProvider client={query}>
-          <Parakeet session={session} clients={[entry]} onOpen={opened} />
+          <Parakeet
+            session={session}
+            clients={[entry]}
+            onOpen={opened}
+            onToast={onToast}
+          />
         </QueryClientProvider>,
       );
     });
@@ -189,6 +195,20 @@ it("renders generic placements, opens typed targets, dispatches actions and reti
       button("Change").click();
     });
     expect(call).toHaveBeenCalledWith("change", { text: "first" });
+    call.mockRejectedValueOnce(new Error("The Agent is unavailable."));
+    await settle(() => {
+      button("Change").click();
+    });
+    await vi.waitFor(() => {
+      expect(call).toHaveBeenCalledTimes(2);
+      expect(button("Change").disabled).toBe(false);
+    });
+    expect(onToast).toHaveBeenCalledWith({
+      variant: "error",
+      message: "The Agent is unavailable.",
+    });
+    expect(controls?.querySelector('[role="alert"]')).toBeNull();
+    expect(controls?.textContent).not.toContain("The Agent is unavailable.");
     await settle(() => {
       push(slots("second"));
     });

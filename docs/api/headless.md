@@ -1361,11 +1361,11 @@ Ordinary advertised actions over the current admitted rows and observation.
 
 #### Returns
 
-| Name        | Type                                                                                                                                                                                              | Description                                                       |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `state`     | `ReadonlyMap`\<\{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; `awaiting?`: `"question"`; \}, `Readonly`\<\{ `pending`: `boolean`; `error?`: `string`; \}\>\> | Current Session-owned state of admitted action intents.           |
-| `enabled`   | `boolean`                                                                                                                                                                                         | Observation is live and this Session's action owner is attached.  |
-| `execute()` | (`entryId`, `action`, `waiting`) => `Promise`\<`void`\>                                                                                                                                           | Execute an admitted intent through its owning advertised command. |
+| Name        | Type                                                                                                                                                                          | Description                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `state`     | `ReadonlyMap`\<\{ `id`: `string`; `label`: `string`; `input?`: \{ \[`key`: `string`\]: `Json`; \}; `awaiting?`: `"question"`; \}, `Readonly`\<\{ `pending`: `boolean`; \}\>\> | Current Session-owned state of admitted action intents.           |
+| `enabled`   | `boolean`                                                                                                                                                                     | Observation is live and this Session's action owner is attached.  |
+| `execute()` | (`entryId`, `action`, `waiting`) => `Promise`\<`void`\>                                                                                                                       | Execute an admitted intent through its owning advertised command. |
 
 ---
 

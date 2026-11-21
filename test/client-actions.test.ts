@@ -115,6 +115,24 @@ it("waiting cancellation toasts an advertised info notice and never echoes a suc
   f.actions.dispose();
 });
 
+it("toasts a failed advertised row command without a persistent notice", async () => {
+  const f = fixture(() =>
+    Promise.reject(new Error("The Agent is unavailable.")),
+  );
+  const toasts: unknown[] = [];
+  f.interactions.subscribeToasts((toast) => toasts.push(toast));
+  try {
+    await f.actions.execute("probe", f.action, true);
+    expect(toasts).toEqual([
+      { variant: "error", message: "The Agent is unavailable." },
+    ]);
+    expect(f.interactions.snapshot().notice).toBeUndefined();
+    expect(f.actions.snapshot().get(f.action)?.pending).toBe(false);
+  } finally {
+    f.actions.dispose();
+  }
+});
+
 it("waiting cancellation opens an advertised prompt for the person to answer", async () => {
   const stops: unknown[] = [];
   const f = fixture((_id, args) => {
@@ -222,10 +240,12 @@ for (const detached of [false, true]) {
     const execution = new Promise<WhistleExecutionOutcome>((_resolve, fail) => {
       reject = fail;
     });
+    const toasts: unknown[] = [];
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const f = fixture(() => Promise.resolve({ type: "done" }), {
       execute: () => execution,
     });
+    f.interactions.subscribeToasts((toast) => toasts.push(toast));
     try {
       const running = f.actions.execute("probe", f.action, true);
       if (detached) f.actions.dispose();
@@ -238,17 +258,17 @@ for (const detached of [false, true]) {
         throw new Error("Missing redacted original cause");
       expect(Redacted.value(retained)).toBe(cause);
       if (detached) {
+        expect(toasts).toEqual([]);
         expect(f.actions.snapshot().size).toBe(0);
         expect(f.interactions.snapshot().notice).toBeUndefined();
       } else {
         expect(f.actions.snapshot().get(f.action)).toEqual({
           pending: false,
-          error: "Client row command failed",
         });
-        expect(f.interactions.snapshot().notice).toEqual({
-          tone: "error",
-          message: "Client row command failed",
-        });
+        expect(toasts).toEqual([
+          { variant: "error", message: "Client row command failed" },
+        ]);
+        expect(f.interactions.snapshot().notice).toBeUndefined();
       }
     } finally {
       f.actions.dispose();

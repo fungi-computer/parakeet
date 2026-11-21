@@ -147,6 +147,8 @@
     "package/dist/styles.css",
     "package/dist/use-approval-awaiting.d.ts",
     "package/dist/use-approval-awaiting.js",
+    "package/dist/use-asked-takeover.d.ts",
+    "package/dist/use-asked-takeover.js",
     "package/dist/use-decision.d.ts",
     "package/dist/use-decision.js",
     "package/dist/website-storage.d.ts",

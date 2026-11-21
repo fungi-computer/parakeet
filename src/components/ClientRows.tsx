@@ -85,17 +85,12 @@ export function ClientRows({
                   {decision.label}
                 </span>
               </Button>
-              {state?.error === undefined ? null : (
-                <p className="text-error" role="alert">
-                  {state.error}
-                </p>
-              )}
             </div>
           );
         }
         return (
           <div key={row.id} data-client-row={row.id} className="py-1">
-            <div className="flex items-start gap-2">
+            <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
                 data-client-row-dot=""
@@ -105,7 +100,8 @@ export function ClientRows({
               </span>
               <details className="min-w-0 flex-1">
                 <summary
-                  className={`cursor-pointer break-words leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
+                  title={row.title}
+                  className={`cursor-pointer truncate leading-4 ${row.tone === undefined ? "" : rowColors[row.tone]}`}
                 >
                   {row.title}
                   {row.inspection === undefined || row.detail === undefined
@@ -122,6 +118,7 @@ export function ClientRows({
                 <Button
                   size="xs"
                   variant="outline"
+                  className="shrink-0"
                   disabled={onOpen === undefined}
                   onClick={() => {
                     if (row.open !== undefined) onOpen?.(row.open);
@@ -199,14 +196,6 @@ export function ClientRows({
                 </DataList>
               </section>
             ) : null}
-            {row.actions?.map((action) => {
-              const error = actions.state.get(action)?.error;
-              return error === undefined ? null : (
-                <p key={action.id} className="text-error" role="alert">
-                  {error}
-                </p>
-              );
-            })}
           </div>
         );
       })}

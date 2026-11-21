@@ -47,6 +47,7 @@ import {
   sessionReadout,
   type ChatComposerProps,
 } from "./components/ChatComposer.js";
+import type { ParakeetToast } from "./commands/interactions.js";
 import { ClientRows } from "./components/ClientRows.js";
 import { useClientActions } from "./client-contributions.js";
 import { placeClientTimeline } from "./core/client-timeline.js";
@@ -100,6 +101,8 @@ export type ParakeetProps = Readonly<{
   formatAssistantText?: ((text: string) => string) | undefined;
   /** Host navigation for transcript links; true prevents browser navigation. */
   onLink?: ((href: string) => boolean) | undefined;
+  /** Send transient command information and failures to the host toast surface. */
+  onToast?: ((toast: ParakeetToast) => void) | undefined;
   /** Authorize and open a typed target through the host's navigation owner. */
   onOpen?: ((target: NonNullable<RowV1["open"]>) => void) | undefined;
   /** Optional caller-owned empty conversation state. */
@@ -949,10 +952,16 @@ export function Parakeet({
   commands,
   onLink,
   onOpen,
+  onToast,
 }: ParakeetProps): ReactElement {
   return (
     <MarkdownPolicyContext.Provider value={markdownPolicy}>
-      <ParakeetProvider session={session} clients={clients} authorOf={authorOf}>
+      <ParakeetProvider
+        session={session}
+        clients={clients}
+        authorOf={authorOf}
+        onToast={onToast}
+      >
         <ParakeetView
           hideSoleAuthor={hideSoleAuthor}
           disambiguateAuthors={disambiguateAuthors}
