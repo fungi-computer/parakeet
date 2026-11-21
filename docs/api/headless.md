@@ -1910,10 +1910,10 @@ an answer is only sent while the record is still the one that was shown.
 
 #### Parameters
 
-| Parameter     | Type                                                                                                                                                                                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `interaction` | `WhistleInteraction`                                                                                                                                                                                                                                          |
-| `input`       | `Readonly`\<\{ `view`: [`ApprovalFacts`](#approvalfacts); `source`: [`ApprovalSource`](#approvalsource); `home`: `string`; `width`: `number`; `now`: `number`; `noteLimit`: `number`; `stillCurrent`: () => `boolean`; `onFailure`: (`cause`) => `void`; \}\> |
+| Parameter     | Type                                                                                                                                                                                                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `interaction` | `WhistleInteraction`                                                                                                                                                                                                                                                                                  |
+| `input`       | `Readonly`\<\{ `view`: [`ApprovalFacts`](#approvalfacts); `source`: [`ApprovalSource`](#approvalsource); `home`: `string`; `width`: `number`; `now`: `number`; `noteLimit`: `number`; `stillCurrent`: () => `boolean`; `onFailure`: (`cause`) => `void`; `onUnshowable?`: (`message`) => `void`; \}\> |
 
 #### Returns
 
@@ -3344,9 +3344,9 @@ postpones it: the record stays pending in the ledger.
 
 #### Parameters
 
-| Parameter | Type                                                                                                                                                                                                                                                            |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `options` | `Readonly`\<\{ `source`: [`ApprovalSource`](#approvalsource) \| `undefined`; `store`: [`ParakeetInteractions`](#parakeetinteractions); `enabled`: `boolean`; `home`: `string`; `width`: `number`; `noteLimit`: `number`; `onFailure`: (`cause`) => `void`; \}\> |
+| Parameter | Type                                                                                                                                                                                                                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `options` | `Readonly`\<\{ `source`: [`ApprovalSource`](#approvalsource) \| `undefined`; `store`: [`ParakeetInteractions`](#parakeetinteractions); `enabled`: `boolean`; `home`: `string`; `width`: `number`; `noteLimit`: `number`; `onFailure`: (`cause`) => `void`; `onUnshowable?`: (`message`) => `void`; \}\> |
 
 #### Returns
 

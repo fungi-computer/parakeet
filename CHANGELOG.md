@@ -1,5 +1,25 @@
 # @fungi.computer/parakeet
 
+## 0.16.12
+
+### Patch Changes
+
+- Changes since 0.16.11:
+
+  - fix(parakeet): show the full command prefix on an Always confirmation
+  - fix(parakeet): deny only when the first question cannot be shown
+  - fix(parakeet): a refused approval prompt denies the request and says so once
+  - fix(parakeet): keep an approval card's title within a prompt's sixty
+    characters
+  - fix(grove): never take the composer over blank; say who must answer
+
+- Updated dependencies
+- Updated dependencies
+  - @fungi.computer/agar@0.26.0
+  - @fungi.computer/caps@0.12.8
+  - @fungi.computer/shiitake@0.22.1
+  - @fungi.computer/knapsack@0.4.25
+
 ## 0.16.11
 
 ### Patch Changes

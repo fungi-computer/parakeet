@@ -1,4 +1,5 @@
 import type { WhistleInteraction } from "@fungi.computer/whistle";
+import { interactionTitleLimit } from "@fungi.computer/whistle/wire";
 
 /** The ledger facts an approval card reads; the approvals ledger's own view satisfies it. */
 export type ApprovalFacts = Readonly<{
@@ -179,14 +180,34 @@ function appApprovalTitle(
 
 function connectedToolCard(view: ApprovalFacts, now: number): ApprovalCard {
   const { record } = view;
+  const app = record.description.app;
+  const wanted =
+    app === undefined
+      ? `Allow ${record.module} · ${record.operation}?`
+      : appApprovalTitle(app);
+  // An App's own words can run past a title. Then the title stays short and the
+  // whole action moves to a fact, so a long description never costs the person
+  // the question: a prompt over the limit is refused and nothing is shown.
+  const fits = wanted.length <= interactionTitleLimit;
+  const subject = lead(app?.displayName ?? record.module, 28);
+  const title = fits
+    ? wanted
+    : lead(`Allow ${subject} to do this?`, interactionTitleLimit);
+  const action =
+    app === undefined
+      ? `${record.module}.${record.operation}`
+      : app.operationLabel;
   return {
     content: {
-      title:
-        record.description.app === undefined
-          ? `Allow ${record.module} · ${record.operation}?`
-          : appApprovalTitle(record.description.app),
-      summary: `${record.requester.displayName} wants to use a connected tool.`,
+      title,
+      summary:
+        app === undefined
+          ? `${record.requester.displayName} wants to use a connected tool.`
+          : record.access === "write"
+            ? `${record.requester.displayName} wants to make a change in ${app.displayName}.`
+            : `${record.requester.displayName} wants to act outside Fungi through ${app.displayName}.`,
       facts: [
+        ...(fits ? [] : [{ label: "Action", value: action }]),
         {
           label: "Effect",
           value:
@@ -288,7 +309,17 @@ function escapeCard(
     confirmation: !offered
       ? undefined
       : {
-          title: `Always allow “${prefix}” in this project?`,
+          title: lead(
+            `Always allow “${prefix}” in this project?`,
+            interactionTitleLimit,
+          ),
+          // A standing rule shows exactly what it allows: when the title has
+          // to cut the prefix, the whole prefix is a fact on the confirmation.
+          facts:
+            `Always allow “${prefix}” in this project?`.length >
+            interactionTitleLimit
+              ? [{ label: "Command prefix", value: prefix }]
+              : undefined,
           body: lead(
             review.alwaysAllowCoverage ??
               `Any Workspace Agent here can then run \`${prefix} …\` without asking.`,
@@ -313,7 +344,7 @@ export function approvalCardCopy(
   options: Readonly<{ width: number; home: string; now: number }>,
 ): ApprovalCard {
   // A prompt's title is at most sixty characters.
-  const width = Math.min(options.width, 60);
+  const width = Math.min(options.width, interactionTitleLimit);
   return review === undefined
     ? connectedToolCard(view, options.now)
     : escapeCard(view, review, width, options.home, options.now);
@@ -426,6 +457,12 @@ export type ApprovalAbandoned = Readonly<{
 export type ApprovalOutcome =
   ApprovalAnswered | ApprovalRefused | ApprovalAbandoned;
 
+/** What the Agent reads when its approval could not be put in front of the person. */
+const unshowableNote =
+  "The approval request could not be shown to the member, so it was not approved. Nothing ran.";
+/** What the person reads when their request could not be put in front of them. */
+const unshowableToast =
+  "Couldn't show this request, so it was denied. Nothing ran. Ask your Agent to try again.";
 const failureMessage =
   "Couldn't send your answer. It may not have been recorded.";
 
@@ -450,9 +487,17 @@ export async function askApproval(
     stillCurrent: () => boolean;
     /** An error reached the person as a refusal; report its cause. */
     onFailure: (cause: unknown) => void;
+    /**
+     * A prompt could not be shown at all, so the request was denied for the
+     * person: the one message to show them, in plain words.
+     */
+    onUnshowable?: ((message: string) => void) | undefined;
   }>,
 ): Promise<ApprovalOutcome> {
   const { view, source } = input;
+  // True only while a prompt is being put in front of the person, so a prompt
+  // the interaction refuses is kept apart from every other failure.
+  let prompting = false;
   const card = approvalCardCopy(view, source.review, {
     width: input.width,
     home: input.home,
@@ -463,10 +508,14 @@ export async function askApproval(
     let decision: ApprovalDecision | undefined;
     let denialNote: string | undefined;
     let familyOn = false;
+    // A confirmation the interaction refuses is dropped, never answered for the person.
+    let alwaysRefused = false;
+    let familyRefused = false;
     while (decision === undefined) {
+      prompting = true;
       const answer = await interaction.prompt({
         type: "decision",
-        message: card.content.title,
+        message: lead(card.content.title, interactionTitleLimit),
         summary: familyOn
           ? `Automatic approval is on for ${record.description.app?.displayName ?? "this tool"}.`
           : card.content.summary,
@@ -476,10 +525,10 @@ export async function askApproval(
         details: card.content.details?.map((entry) => ({ ...entry })),
         options: [
           { value: "approve", label: "Approve once" },
-          ...(card.always === undefined
+          ...(card.always === undefined || alwaysRefused
             ? []
             : [{ value: "always", label: card.always }]),
-          ...(source.family === undefined || familyOn
+          ...(source.family === undefined || familyOn || familyRefused
             ? []
             : [{ value: "family", label: source.family.label }]),
           { value: "deny", label: "Deny" },
@@ -491,23 +540,40 @@ export async function askApproval(
           blank: "deny",
         },
       });
+      prompting = false;
       if (!input.stillCurrent()) return { kind: "abandoned" };
       if (answer.text !== undefined) {
         denialNote = answer.text.trim() || undefined;
         decision = "deny";
       } else if (answer.selected[0] === "always") {
         const confirmation = card.confirmation;
-        const confirmed = await interaction.prompt({
-          type: "decision",
-          message: confirmation?.title ?? card.content.title,
-          summary: card.confirmWarning,
-          body: confirmation?.body,
-          options: [
-            { value: "back", label: "Back" },
-            { value: "always-allow", label: card.confirmYes ?? "Always allow" },
-          ],
-          escape: "back",
-        });
+        let confirmed;
+        try {
+          confirmed = await interaction.prompt({
+            type: "decision",
+            message: lead(
+              confirmation?.title ?? card.content.title,
+              interactionTitleLimit,
+            ),
+            summary: card.confirmWarning,
+            facts: confirmation?.facts?.map((fact) => ({ ...fact })),
+            body: confirmation?.body,
+            options: [
+              { value: "back", label: "Back" },
+              {
+                value: "always-allow",
+                label: card.confirmYes ?? "Always allow",
+              },
+            ],
+            escape: "back",
+          });
+        } catch (cause) {
+          if (interaction.signal.aborted) throw cause;
+          // The main question comes back without this option; nothing is denied.
+          input.onFailure(cause);
+          alwaysRefused = true;
+          continue;
+        }
         if (!input.stillCurrent()) return { kind: "abandoned" };
         if (confirmed.selected[0] === "always-allow") decision = "always-allow";
       } else if (
@@ -515,16 +581,24 @@ export async function askApproval(
         source.family !== undefined
       ) {
         // A standing rule, like Always allow: it needs its own confirmation.
-        const confirmed = await interaction.prompt({
-          type: "decision",
-          message: `${source.family.label}?`,
-          summary: `All ${record.description.app?.displayName ?? "this tool"} requests that ${record.access === "write" ? "change data in Fungi" : "reach outside Fungi"} will run without asking, not just this action.`,
-          options: [
-            { value: "back", label: "Back" },
-            { value: "family", label: source.family.label },
-          ],
-          escape: "back",
-        });
+        let confirmed;
+        try {
+          confirmed = await interaction.prompt({
+            type: "decision",
+            message: lead(`${source.family.label}?`, interactionTitleLimit),
+            summary: `All ${record.description.app?.displayName ?? "this tool"} requests that ${record.access === "write" ? "change data in Fungi" : "reach outside Fungi"} will run without asking, not just this action.`,
+            options: [
+              { value: "back", label: "Back" },
+              { value: "family", label: source.family.label },
+            ],
+            escape: "back",
+          });
+        } catch (cause) {
+          if (interaction.signal.aborted) throw cause;
+          input.onFailure(cause);
+          familyRefused = true;
+          continue;
+        }
         if (!input.stillCurrent()) return { kind: "abandoned" };
         if (confirmed.selected[0] === "family") {
           familyOn = await source.family.enable();
@@ -550,6 +624,25 @@ export async function askApproval(
       : { kind: "answered" };
   } catch (cause) {
     if (interaction.signal.aborted) return { kind: "abandoned" };
+    if (prompting) {
+      // The question itself could not be shown, so nothing was ever asked and
+      // nothing can be approved: end the Agent's call now with a named reason
+      // instead of leaving it to its deadline. Reported once.
+      let reported: unknown = cause;
+      try {
+        await source.answer({
+          recordId: view.record.recordId,
+          decision: "deny",
+          expectedRevision: view.record.revision,
+          denialNote: unshowableNote,
+        });
+      } catch (denyCause) {
+        reported = denyCause;
+      }
+      input.onFailure(reported);
+      input.onUnshowable?.(unshowableToast);
+      return { kind: "refused", message: failureMessage };
+    }
     input.onFailure(cause);
     return { kind: "refused", message: failureMessage };
   }

@@ -27,9 +27,13 @@ export function useApprovalAwaiting(
     noteLimit: number;
     /** An error that reached the person as a refusal. */
     onFailure: (cause: unknown) => void;
+    /** The one message when the request could not be shown and was denied. */
+    onUnshowable?: ((message: string) => void) | undefined;
   }>,
 ): void {
   const { source, store, enabled, home, width, noteLimit, onFailure } = options;
+  const unshowable = useRef(options.onUnshowable);
+  unshowable.current = options.onUnshowable;
   // Only a different record, revision or right restarts the question: a
   // resize, a fresh callback or a reread of the same revision must not move
   // the person back to the first choice or reorder the queue.
@@ -84,6 +88,9 @@ export function useApprovalAwaiting(
       stillCurrent,
       onFailure: (cause) => {
         failure.current(cause);
+      },
+      onUnshowable: (message) => {
+        unshowable.current?.(message);
       },
     }).then((outcome) => {
       if (outcome.kind === "refused")

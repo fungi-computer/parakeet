@@ -41,6 +41,7 @@ import type {
   ParakeetSessionViewState,
 } from "../conversation.js";
 import { awaitingTakeover } from "../core/awaiting-answer.js";
+import { useAskedTakeover } from "../use-asked-takeover.js";
 import { completionFieldProps, completionKeyAction } from "./CompletionMenu.js";
 import { DecisionComposer } from "./DecisionComposer.js";
 import { SlashMenu } from "./SlashMenu.js";
@@ -636,8 +637,9 @@ export const ChatComposer = memo(function ChatComposer({
   const fileInput = useRef<HTMLInputElement>(null);
   const { busy } = presentations[status];
   // A waiting decision takes the composer over an empty draft, or on request.
-  const takeover =
-    slash === undefined ? undefined : awaitingTakeover(slash.awaiting, draft);
+  const takeover = useAskedTakeover(
+    slash === undefined ? undefined : awaitingTakeover(slash.awaiting, draft),
+  );
   const takeoverKey = takeover?.key;
   const seenTakeover = useRef<string | undefined>(undefined);
   const hadFocus = useRef(false);
