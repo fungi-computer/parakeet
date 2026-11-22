@@ -108,8 +108,7 @@ function groupDuration(tools: readonly ToolItem[]): number | undefined {
 /**
  * A failure is recovered when the Agent got past it: the next call of the same
  * kind that did not itself fail (chained through further failures) completed
- * and retried the same target. A script is retried by the next script; any
- * other call needs the same command or a shared path. Other kinds never
+ * and retried the same target: the same command or script, or a shared path. Other kinds never
  * recover it, so a read of a file does not undo a failed edit of that file.
  */
 function recoveredBy(calls: readonly ToolCallView[], index: number): boolean {
@@ -120,7 +119,6 @@ function recoveredBy(calls: readonly ToolCallView[], index: number): boolean {
     .find((other) => other.kind === call.kind && other.status !== "error");
   if (next?.status !== "completed") return false;
   return (
-    call.kind === "code" ||
     next.label === call.label ||
     next.paths.some((path) => call.paths.includes(path))
   );

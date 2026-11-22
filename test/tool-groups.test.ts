@@ -353,11 +353,11 @@ const script = (id: string, code: string): Call => ({
   arguments: { code },
 });
 
-it("recovers a script failure through the next script, chained through further failures", () => {
+it("recovers a script failure through the next retry of it, chained through further failures", () => {
   const calls = [
     script("s1", "return 1"),
-    script("s2", "return 2"),
-    script("s3", "return 3"),
+    script("s2", "return 1"),
+    script("s3", "return 1"),
   ];
   const group = onlyGroup(
     buildDurableTimeline(loop(calls, new Set(["s1", "s2"]))).items,
@@ -365,6 +365,20 @@ it("recovers a script failure through the next script, chained through further f
   expect(group.status).toBe("completed");
   expect(group.failedCount).toBe(0);
   expect(group.recoveredCount).toBe(2);
+});
+
+it("keeps a failed script failed when a later script does other work", () => {
+  const group = onlyGroup(
+    buildDurableTimeline(
+      loop(
+        [script("s1", "return files.list()"), script("s2", "return 2")],
+        new Set(["s1"]),
+      ),
+    ).items,
+  );
+  expect(group.status).toBe("error");
+  expect(group.failedCount).toBe(1);
+  expect(group.recoveredCount).toBe(0);
 });
 
 it("does not let an unrelated success hide a real failure", () => {

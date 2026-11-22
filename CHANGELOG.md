@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.17.6
+
+### Patch Changes
+
+- Changes since 0.17.5:
+
+  - fix(parakeet): recover a failed script only by retrying it
+
 ## 0.17.5
 
 ### Patch Changes
