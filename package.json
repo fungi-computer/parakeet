@@ -1,6 +1,6 @@
 {
   "name": "@fungi.computer/parakeet",
-  "version": "0.17.12",
+  "version": "0.17.13",
   "author": "Levi <levi@technomancy.dev>",
   "private": false,
   "description": "Standalone React composer for a typed Shiitake Session",
@@ -98,7 +98,7 @@
     "@fungi.computer/agar": "0.29.0",
     "@fungi.computer/bird-dog": "0.3.9",
     "@fungi.computer/cairn": "0.1.0",
-    "@fungi.computer/caps": "0.14.0",
+    "@fungi.computer/caps": "0.14.1",
     "@fungi.computer/gills": "0.4.0",
     "@fungi.computer/knapsack": "0.4.29",
     "@fungi.computer/mule": "0.3.1",
