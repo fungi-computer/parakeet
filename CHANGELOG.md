@@ -1,5 +1,18 @@
 # @fungi.computer/parakeet
 
+## 0.17.10
+
+### Patch Changes
+
+- Changes since 0.17.9:
+
+  - fix(parakeet): show an agent reply once when the model sends commentary and
+    a final answer
+
+- Updated dependencies
+  - @fungi.computer/shiitake@0.22.11
+  - @fungi.computer/agar@0.28.5
+
 ## 0.17.9
 
 ### Patch Changes

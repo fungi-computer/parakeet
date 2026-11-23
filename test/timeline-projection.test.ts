@@ -1436,3 +1436,35 @@ describe("assistant reasoning that a reader can read", () => {
     ).toBe("Weighing two options");
   });
 });
+
+it("renders the final answer once when a reply carries a commentary block and a final block", () => {
+  const assistant = messages.find(
+    (message) => message.value.role === "assistant",
+  );
+  if (assistant?.value.role !== "assistant")
+    throw new Error("Missing assistant fixture");
+  const signature = (phase: "commentary" | "final_answer") =>
+    JSON.stringify({ v: 1, id: `msg_${phase}`, phase });
+  const items = buildDurableTimeline([
+    {
+      ...assistant,
+      value: {
+        ...assistant.value,
+        content: [
+          {
+            type: "text",
+            text: "Hello",
+            textSignature: signature("commentary"),
+          },
+          {
+            type: "text",
+            text: "Hello",
+            textSignature: signature("final_answer"),
+          },
+        ],
+        stopReason: "stop",
+      },
+    },
+  ]).items;
+  expect(items).toMatchObject([{ kind: "assistant_message", text: "Hello" }]);
+});

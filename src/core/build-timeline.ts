@@ -3,6 +3,7 @@ import {
   type ParakeetAuthor,
   type ParakeetAuthorOf,
 } from "./author-labels.js";
+import { assistantTextBlocks } from "@fungi.computer/mule/assistant-text";
 import type {
   SessionActivity,
   SessionCompactionMarker,
@@ -170,11 +171,10 @@ type AssistantBlocks = Readonly<{
 function collectAssistantBlocks(
   value: Extract<SessionMessage["value"], { role: "assistant" }>,
 ): AssistantBlocks {
-  const text: string[] = [];
   const thinking: string[] = [];
   const tools: ToolItem[] = [];
+  const text = [...assistantTextBlocks(value.content)];
   for (const block of value.content) {
-    if (block.type === "text") text.push(block.text);
     // Redacted reasoning carries a placeholder, not text a reader can read.
     if (block.type === "thinking" && block.redacted !== true)
       thinking.push(block.thinking);
