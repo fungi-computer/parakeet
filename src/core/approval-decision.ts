@@ -200,12 +200,15 @@ function connectedToolCard(view: ApprovalFacts, now: number): ApprovalCard {
   return {
     content: {
       title,
+      // The request is parked, not held by a live turn: it waits as long as
+      // the person takes and the Agent carries on once they answer.
       summary:
-        app === undefined
+        (app === undefined
           ? `${record.requester.displayName} wants to use a connected tool.`
           : record.access === "write"
             ? `${record.requester.displayName} wants to make a change in ${app.displayName}.`
-            : `${record.requester.displayName} wants to act outside Fungi through ${app.displayName}.`,
+            : `${record.requester.displayName} wants to act outside Fungi through ${app.displayName}.`) +
+        " The Agent continues after you answer.",
       facts: [
         ...(fits ? [] : [{ label: "Action", value: action }]),
         {

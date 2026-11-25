@@ -107,10 +107,10 @@ it("says in plain words what the Agent wants, not that it uses a connected tool"
     record: { ...view.record, access: "write" as const },
   };
   expect(approvalCardCopy(write, undefined, options).content.summary).toBe(
-    "Research Agent wants to make a change in Notes.",
+    "Research Agent wants to make a change in Notes. The Agent continues after you answer.",
   );
   expect(approvalCardCopy(view, undefined, options).content.summary).toBe(
-    "Research Agent wants to act outside Fungi through Notes.",
+    "Research Agent wants to act outside Fungi through Notes. The Agent continues after you answer.",
   );
   const unlabelled = {
     ...view,
@@ -120,7 +120,7 @@ it("says in plain words what the Agent wants, not that it uses a connected tool"
     },
   };
   expect(approvalCardCopy(unlabelled, undefined, options).content.summary).toBe(
-    "Research Agent wants to use a connected tool.",
+    "Research Agent wants to use a connected tool. The Agent continues after you answer.",
   );
 });
 

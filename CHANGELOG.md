@@ -1,5 +1,18 @@
 # @fungi.computer/parakeet
 
+## 0.18.0
+
+### Minor Changes
+
+- Changes since 0.17.19:
+
+  - feat(hub): park approvals until the person answers
+
+### Patch Changes
+
+- @fungi.computer/agar@0.29.3
+  - @fungi.computer/shiitake@0.23.5
+
 ## 0.17.19
 
 ### Patch Changes
