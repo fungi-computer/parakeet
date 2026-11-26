@@ -29,7 +29,7 @@ const asked = "Answer to ask a1:\nQ (q): Which?\nSelected: Delete my files";
 function Texts() {
   return useTimeline().settled.map((item) =>
     item.kind === "user_message" ? (
-      <p data-outcome={item.outcome === true ? "yes" : "no"} key={item.id}>
+      <p data-outcome={item.outcome === undefined ? "no" : "yes"} key={item.id}>
         {item.text}
       </p>
     ) : null,
@@ -127,9 +127,9 @@ async function paragraphs(
 
 it("shows what an extension says a message means, never the text the Agent reads", async () => {
   const [text, outcome, typed] = await paragraphs((from) =>
-    from.correlation === "a1" ? "You chose: Work on a project" : undefined,
+    from.correlation === "a1" ? "Work on a project" : undefined,
   );
-  expect(text).toBe("You chose: Work on a project");
+  expect(text).toBe("Work on a project");
   expect(outcome).toBe("yes");
   // A person's own prompt with the same words stays what it is.
   expect(typed).toContain("Selected: Delete my files");

@@ -546,7 +546,12 @@ function ConversationTimeline({
   }, [timeline, timelineController]);
 
   return (
-    <div className="prose relative min-h-0 flex-1">
+    <div
+      className="prose relative min-h-0 flex-1"
+      // The reading width caps a conversation, not the empty state: its prompt
+      // is centred in the pane.
+      style={count === 0 ? { maxWidth: "none" } : undefined}
+    >
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {sessionReadout(sessionStatus.status, sessionStatus.viewState)}
       </div>
@@ -815,8 +820,8 @@ function ConversationStarters() {
     return (
       <div className="flex h-full items-center justify-center text-center">
         <div>
-          <p className="mb-1 text-xs text-base-content">Ready</p>
-          <p className="text-[10px] text-dim">What would you like to build?</p>
+          <p className="mb-1 text-sm text-base-content">Ready</p>
+          <p className="text-sm text-dim">What would you like to build?</p>
         </div>
       </div>
     );

@@ -159,7 +159,16 @@ export const TimelineItem = memo(function TimelineItem({
           </>
         );
       }
-      if (item.outcome === true)
+      if (item.outcome === "own")
+        return (
+          <div data-question-outcome>
+            <ChatMessage pending={false} speaker="user">
+              {item.text}
+            </ChatMessage>
+          </div>
+        );
+      // What happened, not something the person said: a quiet system line.
+      if (item.outcome === "system")
         return (
           <div className="px-3 text-sm text-dim" data-question-outcome>
             {item.text}

@@ -24,14 +24,14 @@ function mount(node: React.ReactNode) {
   return container;
 }
 
-it("draws a described extension message as a compact row, not a bubble", () => {
+it("draws a described extension message as the person's own message", () => {
   const item: UserMessageItem = {
     id: "m1",
     kind: "user_message",
     status: "confirmed",
     at: 1,
-    text: "You chose: Work on a project",
-    outcome: true,
+    text: "Work on a project",
+    outcome: "own",
     origin: { extensionId: "botanical-session-question", correlation: "a1" },
   };
   const container = mount(
@@ -41,8 +41,34 @@ it("draws a described extension message as a compact row, not a bubble", () => {
       toolDisclosure={initialToolDisclosure}
     />,
   );
-  expect(container.textContent).toBe("You chose: Work on a project");
+  expect(container.textContent).toBe("Work on a project");
   expect(container.querySelector("[data-question-outcome]")).not.toBeNull();
+  // Their own bubble, not the dim system line it used to be.
+  expect(container.querySelector(".text-dim")).toBeNull();
+});
+
+it.each([
+  "An Agent answered: Keep",
+  "Nobody answered in time, so nothing was decided",
+])("draws %s as a quiet system line, never as the person's message", (text) => {
+  const item: UserMessageItem = {
+    id: "m2",
+    kind: "user_message",
+    status: "confirmed",
+    at: 1,
+    text,
+    outcome: "system",
+    origin: { extensionId: "botanical-session-question", correlation: "a1" },
+  };
+  const container = mount(
+    <TimelineItem
+      item={item}
+      onToggleTool={() => undefined}
+      toolDisclosure={initialToolDisclosure}
+    />,
+  );
+  expect(container.textContent).toBe(text);
+  expect(container.querySelector(".text-dim")).not.toBeNull();
 });
 
 function runningAsk(id: string): ToolGroupItem {

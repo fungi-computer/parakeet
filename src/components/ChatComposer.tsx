@@ -150,6 +150,9 @@ export type ChatComposerProps = {
   onImagesChange?: ((images: ComposerController["images"]) => void) | undefined;
 };
 
+/** How long after a keystroke the field still counts as being typed in. */
+const typingQuietMs = 1_500;
+
 function HostComposerTextarea({
   placeholder,
   onChange,
@@ -646,14 +649,35 @@ export const ChatComposer = memo(function ChatComposer({
   );
   const seenTakeover = useRef<string | undefined>(undefined);
   const hadFocus = useRef(false);
+  const takesFocus = useRef(false);
+  // When the person last pressed a key in the field: a card that appears just
+  // after typing must not take the caret.
+  const lastKeystroke = useRef(0);
+  useEffect(() => {
+    const field = textareaRef.current;
+    if (field === null) return undefined;
+    const stamp = () => {
+      lastKeystroke.current = Date.now();
+    };
+    field.addEventListener("keydown", stamp);
+    return () => {
+      field.removeEventListener("keydown", stamp);
+    };
+  }, [textareaRef]);
   if (seenTakeover.current !== takeoverKey) {
     seenTakeover.current = takeoverKey;
-    // Focus follows into the list only from an idle, empty field; a person
-    // who is typing keeps the caret.
-    hadFocus.current =
-      takeoverKey !== undefined &&
-      draft === "" &&
-      document.activeElement === textareaRef.current;
+    const inField = document.activeElement === textareaRef.current;
+    const nowhere =
+      document.activeElement === null ||
+      document.activeElement === document.body;
+    const idle =
+      draft === "" && Date.now() - lastKeystroke.current > typingQuietMs;
+    // The card's keys work at once when focus is in an empty, idle field or
+    // nowhere; a person who is typing, or focused elsewhere, keeps the caret.
+    // Focus is not a selection: no row is highlighted by it.
+    takesFocus.current =
+      takeoverKey !== undefined && idle && (inField || nowhere);
+    hadFocus.current = takeoverKey !== undefined && idle && inField;
   }
   const restoreFocus = hadFocus.current;
   useEffect(() => {
@@ -802,7 +826,7 @@ export const ChatComposer = memo(function ChatComposer({
                 onLater={() => {
                   slash.store.awaiting.later(takeover.key);
                 }}
-                takeFocus={hadFocus.current}
+                takeFocus={takesFocus.current}
                 onRefusal={refuse}
               />
             )}

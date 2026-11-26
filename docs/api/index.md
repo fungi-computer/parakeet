@@ -833,7 +833,7 @@ The exact Shiitake operations consumed by the retained conversation UI.
 type ParakeetUserMessageItem = Readonly<{
   author?: ParakeetAuthor;
   origin?: SessionMessage["origin"];
-  outcome?: true;
+  outcome?: "own" | "system";
   id: string;
   kind: "user_message";
   requestId?: string;
@@ -1449,7 +1449,7 @@ function visibleToolCalls(group, open): readonly Readonly<{
   activeVerb: string;
   label: string;
   paths: readonly string[];
-  status: "error" | "unknown" | "running" | "completed";
+  status: "error" | "unknown" | "completed" | "running";
   durationMs?: number;
   exitCode?: number;
   error?: string;
@@ -1496,7 +1496,7 @@ Even a folded group shows recent calls, rather than hiding all tool work.
 readonly `Readonly`\<\{ `id`: `string`; `kind`:
 [`ParakeetToolKind`](#parakeettoolkind); `name`: `string`; `verb`: `string`;
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
-`status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
+`status`: `"error"` \| `"unknown"` \| `"completed"` \| `"running"`;
 `durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`;
 `recovered?`: `boolean`; `superseded?`: `boolean`; `parked?`: `boolean`;
 `identity?`: `Readonly`\<\{ `name`: `string`; `avatar`: \{ `v`: `1`;

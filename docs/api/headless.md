@@ -2207,7 +2207,7 @@ function mergeTerminals(
   incoming,
 ): readonly Readonly<{
   commandId: string;
-  outcome: "failed" | "cancelled" | "completed" | "interrupted";
+  outcome: "completed" | "failed" | "cancelled" | "interrupted";
   sequence: number;
   diagnostic: string | null;
   meta?: Json;
@@ -2220,13 +2220,13 @@ Preserve the first terminal for each command, in observed order.
 
 | Parameter  | Type                                                                                                                                                                                                       |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `current`  | readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"failed"` \| `"cancelled"` \| `"completed"` \| `"interrupted"`; `sequence`: `number`; `diagnostic`: `string` \| `null`; `meta?`: `Json`; \}\>[] |
-| `incoming` | readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"failed"` \| `"cancelled"` \| `"completed"` \| `"interrupted"`; `sequence`: `number`; `diagnostic`: `string` \| `null`; `meta?`: `Json`; \}\>[] |
+| `current`  | readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"completed"` \| `"failed"` \| `"cancelled"` \| `"interrupted"`; `sequence`: `number`; `diagnostic`: `string` \| `null`; `meta?`: `Json`; \}\>[] |
+| `incoming` | readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"completed"` \| `"failed"` \| `"cancelled"` \| `"interrupted"`; `sequence`: `number`; `diagnostic`: `string` \| `null`; `meta?`: `Json`; \}\>[] |
 
 #### Returns
 
-readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"failed"` \|
-`"cancelled"` \| `"completed"` \| `"interrupted"`; `sequence`: `number`;
+readonly `Readonly`\<\{ `commandId`: `string`; `outcome`: `"completed"` \|
+`"failed"` \| `"cancelled"` \| `"interrupted"`; `sequence`: `number`;
 `diagnostic`: `string` \| `null`; `meta?`: `Json`; \}\>[]
 
 ---
@@ -2691,7 +2691,7 @@ Shared tool status meaning, used by the browser and native presentations.
 
 | Parameter   | Type                                                     | Default value |
 | ----------- | -------------------------------------------------------- | ------------- |
-| `status`    | `"error"` \| `"unknown"` \| `"running"` \| `"completed"` | `undefined`   |
+| `status`    | `"error"` \| `"unknown"` \| `"completed"` \| `"running"` | `undefined`   |
 | `recovered` | `boolean`                                                | `false`       |
 
 #### Returns

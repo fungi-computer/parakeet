@@ -15,6 +15,7 @@ import {
   type SessionSnapshot,
 } from "@fungi.computer/shiitake/client";
 import type { ClientEntryV1 } from "@fungi.computer/shiitake/client-entry";
+import { describeMessages } from "./core/describe-timeline.js";
 import {
   createClientContributions,
   type ClientContribution,
@@ -78,7 +79,6 @@ import {
 import { isCancelledOutcome } from "./commands/run.js";
 import type { ParakeetSession } from "./session.js";
 import type { LocalPromptAdmission, TimelineItem } from "./store/types.js";
-import { z } from "zod";
 import { reportFailure } from "./lib/failure.js";
 import {
   createQueuedRecall,
@@ -414,49 +414,6 @@ function acquireDraftStorage(
     // An opaque-origin sandbox denies even reading the browser's getter.
     return { status: "unavailable", cause };
   }
-}
-
-const describedLine = z.string().min(1).max(500);
-
-/**
- * Replace the display of messages the producing extension's client can describe;
- * the Agent's text is untouched. A client entry reads its own slot only, and it
- * is installed code: a hook that throws, or returns anything but a short string,
- * leaves the original message and is reported once, like a failing contribution.
- */
-function describeMessages(
-  items: readonly TimelineItem[],
-  clients: readonly ClientEntryV1[],
-  slots: SessionExtensionSlots,
-  failed: (entryId: string, cause: unknown) => void,
-): readonly TimelineItem[] {
-  const describers = new Map<
-    string,
-    NonNullable<ClientEntryV1["describeMessage"]>
-  >();
-  for (const entry of clients)
-    if (entry.describeMessage !== undefined)
-      describers.set(entry.id, entry.describeMessage);
-  if (describers.size === 0) return items;
-  return items.map((item) => {
-    if (item.kind !== "user_message" || item.origin === undefined) return item;
-    const entryId = item.origin.extensionId;
-    const describe = describers.get(entryId);
-    if (describe === undefined) return item;
-    try {
-      const described = describe(item.origin, slots[entryId]);
-      if (described === undefined) return item;
-      const line = describedLine.safeParse(described);
-      if (!line.success) {
-        failed(entryId, new Error("Message description is not a short string"));
-        return item;
-      }
-      return { ...item, text: line.data, outcome: true };
-    } catch (cause) {
-      failed(entryId, cause);
-      return item;
-    }
-  });
 }
 
 function createConversationAtoms(

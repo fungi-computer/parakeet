@@ -1,5 +1,27 @@
 # @fungi.computer/parakeet
 
+## 0.19.8
+
+### Patch Changes
+
+- Changes since 0.19.7:
+
+  - fix(parakeet): keep a replaced group's id for the answer and type the
+    question lines by the protocol
+  - fix(parakeet): centre the empty conversation's prompt in the pane
+  - fix(parakeet): only the person's own answer is their bubble, and a parked
+    answer shows once
+  - fix(parakeet): fold an answered question's code row into the person's answer
+  - fix(parakeet): focus the card with nothing picked and show the answer as the
+    person's words
+  - fix(parakeet): keep the description reader's catch explicit and fix the
+    claim's proof config
+  - fix(parakeet): a question card takes the keys at once and the answer shows
+    as the person's message
+
+- Updated dependencies
+  - @fungi.computer/shiitake@0.24.4
+
 ## 0.19.7
 
 ### Patch Changes

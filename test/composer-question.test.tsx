@@ -343,3 +343,67 @@ it("Esc postpones the question and leaves the draft as typed", async () => {
     await page.close();
   }
 });
+
+const listOf = (page: Awaited<ReturnType<typeof mount>>) =>
+  page.container.querySelector<HTMLElement>('[role="listbox"]');
+
+it("a card that appears while nothing has focus takes the keys at once, with no row picked", async () => {
+  const page = await mount(false);
+  try {
+    expect(document.activeElement === page.textarea()).toBe(false);
+    await page.settle(() => {
+      page.push(slots(true));
+    });
+    await vi.waitFor(async () => {
+      await page.settle();
+      expect(page.group()).not.toBeNull();
+    });
+    expect(document.activeElement).toBe(listOf(page));
+    // Focus is not a selection.
+    expect(page.container.querySelector("[data-highlight]")).toBeNull();
+  } finally {
+    await page.close();
+  }
+});
+
+it("a card that appears while the person is typing leaves the caret, even if the field was just emptied", async () => {
+  const page = await mount(false);
+  try {
+    await page.type("x");
+    await page.type("");
+    page.textarea().focus();
+    page
+      .textarea()
+      .dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }),
+      );
+    await page.settle(() => {
+      page.push(slots(true));
+    });
+    await vi.waitFor(async () => {
+      await page.settle();
+      expect(page.group()).not.toBeNull();
+    });
+    expect(document.activeElement).toBe(page.textarea());
+  } finally {
+    await page.close();
+  }
+});
+
+it("a card over a field that holds a draft leaves the caret where it is", async () => {
+  const page = await mount(false);
+  try {
+    await page.type("half a thought");
+    page.textarea().focus();
+    await page.settle(() => {
+      page.push(slots(true));
+    });
+    await vi.waitFor(async () => {
+      await page.settle();
+      expect(page.group()).not.toBeNull();
+    });
+    expect(document.activeElement).toBe(page.textarea());
+  } finally {
+    await page.close();
+  }
+});
