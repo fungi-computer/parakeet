@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.19.9
+
+### Patch Changes
+
+- Changes since 0.19.8:
+
+  - fix(grove): lock the open conversation while a new one is created
+
 ## 0.19.8
 
 ### Patch Changes

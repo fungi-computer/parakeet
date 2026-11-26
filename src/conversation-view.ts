@@ -27,8 +27,9 @@ import type { ParakeetSession } from "./headless.js";
  *    opening is a no-op, and while a choice's own route echo is outstanding,
  *    other route values are stale echoes and are ignored.
  * 4. The view only ever shows a Session that has finished opening, so a
- *    composer is bound to the `open` Session; while another is `opening`, the
- *    pane is not typeable.
+ *    composer is bound to the `open` Session; while another is `opening`, or a
+ *    person's new Session is being created, the pane is not typeable
+ *    (`paneLocked`).
  */
 
 export type ConversationTarget = Readonly<{
@@ -373,6 +374,16 @@ export function shownConversation<Conversation extends ConversationTarget>(
   state: ViewState<Conversation>,
 ): Conversation | null {
   return previousOf(state.view);
+}
+
+/**
+ * Whether the shown pane must not take input: another conversation is
+ * opening, or a person's new Session is being created. An automatic creation
+ * only starts from `none`, so it never locks a shown pane. A failed or
+ * superseded creation clears `creating`, which unlocks the pane again.
+ */
+export function paneLocked(state: ViewState): boolean {
+  return state.view.kind === "opening" || state.creating?.cause === "person";
 }
 
 /** The conversation being opened, if one is. */

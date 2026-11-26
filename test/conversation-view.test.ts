@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   initialViewState,
+  paneLocked,
   transition,
   type ConversationTarget,
   type ViewEvent,
@@ -517,5 +518,40 @@ describe("created checks the auto cause before choosing", () => {
     expect(late.effects).toEqual([]);
     expect(late.state.view).toEqual({ kind: "open", conversation: a });
     expect(late.state.creating).toBeNull();
+  });
+});
+
+describe("the pane lock", () => {
+  it("locks the shown pane while a person's new Session is created", () => {
+    const requested = transition(open(a), { type: "create", cause: "person" });
+    expect(paneLocked(open(a))).toBe(false);
+    expect(paneLocked(requested.state)).toBe(true);
+    expect(requested.state.view).toEqual({ kind: "open", conversation: a });
+  });
+
+  it("unlocks when the creation fails or another choice supersedes it", () => {
+    const requested = transition(open(a), { type: "create", cause: "person" });
+    const ticket = requested.state.creating?.ticket ?? -1;
+    expect(
+      paneLocked(
+        transition(requested.state, { type: "create-failed", ticket }).state,
+      ),
+    ).toBe(false);
+    const chosen = transition(requested.state, {
+      type: "select",
+      target: b,
+      cause: "person",
+    });
+    expect(chosen.state.creating).toBeNull();
+    expect(paneLocked(chosen.state)).toBe(true);
+  });
+
+  it("stays locked through the opening and unlocks once it has opened", () => {
+    expect(paneLocked(opening(b, "person", a))).toBe(true);
+    expect(paneLocked(open(b))).toBe(false);
+  });
+
+  it("never locks for an automatic creation", () => {
+    expect(paneLocked(creating("auto"))).toBe(false);
   });
 });
