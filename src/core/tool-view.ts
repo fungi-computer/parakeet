@@ -911,17 +911,28 @@ export type ToolIdentity = Readonly<{
   avatar: Avatar;
 }>;
 
+const renameResult = z.strictObject({
+  name: z.string().min(1).max(256),
+  avatar: avatarEnvelopeSchema,
+});
+
+/**
+ * Whether a completed call's result is the one `self.rename` returns, wherever
+ * in its script the rename ran. A host uses this only to refresh the Agent's
+ * name; the row's identity label stays limited to a call that is just the rename.
+ */
+export function returnsAgentRename(item: ToolItem): boolean {
+  if (item.status !== "completed") return false;
+  const result = resultValue(item.result);
+  return result.kind === "json" && renameResult.safeParse(result.value).success;
+}
+
 /** Only a returned self.rename call can lend its result the identity label. */
 function selfRename(item: ToolItem): ToolIdentity | undefined {
   if (item.status !== "completed") return undefined;
   const result = resultValue(item.result);
   if (result.kind !== "json") return undefined;
-  const renamed = z
-    .strictObject({
-      name: z.string().min(1).max(256),
-      avatar: avatarEnvelopeSchema,
-    })
-    .safeParse(result.value);
+  const renamed = renameResult.safeParse(result.value);
   if (!renamed.success) return undefined;
   if (item.name === "self.rename") return renamed.data;
   if (item.name !== "execute") return undefined;

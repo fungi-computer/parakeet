@@ -4,7 +4,9 @@ import type {
   WhistleExecutionOutcome,
 } from "@fungi.computer/whistle";
 import { useEffect, useRef } from "react";
+import { z } from "zod";
 
+import type { AwaitingItem } from "../core/awaiting-answer.js";
 import type { ClientContribution } from "../core/client-contributions.js";
 import type { ParakeetInteractions } from "./interactions.js";
 import type { ParakeetCommandRuntime } from "./use-slash-commands.js";
@@ -19,7 +21,11 @@ type AwaitingRow = Readonly<{
   command: WhistleCommandKey;
   title: string;
   action: RowAction;
+  /** The tool call that asked, when the row's action input names it. */
+  toolCallId?: string | undefined;
 }>;
+
+const askingCall = z.object({ toolCallId: z.string() });
 
 /** Footer rows whose action asks the person to decide in the composer. */
 function awaitingRows(
@@ -34,6 +40,7 @@ function awaitingRows(
           command: { namespace: entryId, id: action.id },
           title: row.title,
           action,
+          toolCallId: askingCall.safeParse(action.input).data?.toolCallId,
         })),
     ),
   );
@@ -103,13 +110,19 @@ export function useAwaitingDriver(
       let leave: (() => void) | undefined;
       let failed = false;
       const unsubscribe = host.subscribe(() => {
-        if (leave === undefined && host.snapshot().prompt !== undefined)
-          leave = store.awaiting.add({
+        if (leave === undefined && host.snapshot().prompt !== undefined) {
+          const base = {
             key: row.key,
-            kind: "question",
+            kind: "question" as const,
             arrivedAt: Date.now(),
             host,
-          });
+          };
+          const item: AwaitingItem =
+            row.toolCallId === undefined
+              ? base
+              : { ...base, toolCallId: row.toolCallId };
+          leave = store.awaiting.add(item);
+        }
       });
       const base = {
         origin: "menu",

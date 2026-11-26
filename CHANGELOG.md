@@ -1,5 +1,22 @@
 # @fungi.computer/parakeet
 
+## 0.18.3
+
+### Patch Changes
+
+- Changes since 0.18.2:
+
+  - fix(shiitake): let a client entry describe its extension's own messages
+  - fix(parakeet): leave messages alone without outcomes and show the TUI row
+    compactly
+  - fix(parakeet): show answers from the question's own outcome and tie a card
+    to its call
+  - fix(parakeet): show answers as a row, name a waiting question, refresh a
+    renamed Agent
+
+- Updated dependencies
+  - @fungi.computer/shiitake@0.23.7
+
 ## 0.18.2
 
 ### Patch Changes

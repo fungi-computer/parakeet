@@ -22,6 +22,8 @@ export type UserMessageItem = Readonly<{
   author?: ParakeetAuthor | undefined;
   /** Durable extension producer, separate from host author attribution. */
   origin?: SessionMessage["origin"];
+  /** The text is the person's short reading of an extension's message, not the message. */
+  outcome?: true;
   /** Stable rendered-item identity. */
   id: string;
   /** User-message timeline discriminator. */

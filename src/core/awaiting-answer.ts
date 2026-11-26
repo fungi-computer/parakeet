@@ -19,6 +19,8 @@ export type AwaitingItem = Readonly<{
   arrivedAt: number;
   /** The conversation to draw and answer. */
   host: WhistleInteractionHost;
+  /** The tool call that asked this question, when the owner names it. */
+  toolCallId?: string | undefined;
   /** A draft owned by the pending record, retained while its host reconnects. */
   draft?: DecisionDraft;
 }>;

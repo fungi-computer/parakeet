@@ -159,6 +159,12 @@ export const TimelineItem = memo(function TimelineItem({
           </>
         );
       }
+      if (item.outcome === true)
+        return (
+          <div className="px-3 text-sm text-dim" data-question-outcome>
+            {item.text}
+          </div>
+        );
       return (
         <>
           {item.author ? (

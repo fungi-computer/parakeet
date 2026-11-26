@@ -598,6 +598,7 @@ type ParakeetProps = Readonly<{
   onLink?: (href) => boolean;
   onToast?: (toast) => void;
   onOpen?: (target) => void;
+  onAgentRenamed?: () => void;
   empty?: ReactNode;
   hostFacts?: ParakeetHostFacts;
   commands?: ParakeetCommandRuntime;
@@ -623,6 +624,7 @@ type ParakeetViewProps = Readonly<{
   formatAssistantText?: (text) => string;
   onLink?: (href) => boolean;
   onOpen?: (target) => void;
+  onAgentRenamed?: () => void;
   empty?: ReactNode;
   hostFacts?: ParakeetHostFacts;
   autoFocus?: boolean;
@@ -830,6 +832,7 @@ The exact Shiitake operations consumed by the retained conversation UI.
 type ParakeetUserMessageItem = Readonly<{
   author?: ParakeetAuthor;
   origin?: SessionMessage["origin"];
+  outcome?: true;
   id: string;
   kind: "user_message";
   requestId?: string;

@@ -415,6 +415,33 @@ function acquireDraftStorage(
   }
 }
 
+/**
+ * Replace the display of messages the producing extension's client can describe;
+ * the Agent's text is untouched. A client entry reads its own slot only.
+ */
+function describeMessages(
+  items: readonly TimelineItem[],
+  clients: readonly ClientEntryV1[],
+  slots: SessionExtensionSlots,
+): readonly TimelineItem[] {
+  const describers = new Map<
+    string,
+    NonNullable<ClientEntryV1["describeMessage"]>
+  >();
+  for (const entry of clients)
+    if (entry.describeMessage !== undefined)
+      describers.set(entry.id, entry.describeMessage);
+  if (describers.size === 0) return items;
+  return items.map((item) => {
+    if (item.kind !== "user_message" || item.origin === undefined) return item;
+    const line = describers.get(item.origin.extensionId)?.(
+      item.origin,
+      slots[item.origin.extensionId],
+    );
+    return line === undefined ? item : { ...item, text: line, outcome: true };
+  });
+}
+
 function createConversationAtoms(
   session: ParakeetSession,
   queryClient: QueryClient,
@@ -426,6 +453,7 @@ function createConversationAtoms(
   shown: (item: TimelineItem) => boolean,
   /** Where the host lets a person add a key safely, when it has a place. */
   keySettings: () => ParakeetToastAction | undefined,
+  clients: readonly ClientEntryV1[],
 ) {
   const journal = draftJournal(
     draftScope,
@@ -993,7 +1021,7 @@ function createConversationAtoms(
       hasNewerHistory: get(hasNewerHistoryAtom),
       loadingOlderHistory: get(loadingOlderHistoryAtom),
       settled: overlayToolOutput(
-        durable.items,
+        describeMessages(durable.items, clients, get(extensionsAtom)),
         get(toolActivityAtom) === undefined
           ? []
           : (get(snapshotAtom)?.toolOutput ?? []),
@@ -1810,6 +1838,7 @@ export function ParakeetProvider({
         contributions,
         shown,
         () => keySettings.current,
+        clients,
       ),
       session,
       store: createStore(),
@@ -1823,6 +1852,7 @@ export function ParakeetProvider({
     session,
     interactionStore,
     authorOf,
+    clients,
     footerPromptOwners,
     acquiredDraftStorage,
     draftScope,

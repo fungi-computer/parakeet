@@ -3,7 +3,13 @@ import { DiffView } from "@fungi.computer/caps/components/diff-view";
 import { Disclosure } from "@fungi.computer/caps/components/disclosure";
 import { Status } from "@fungi.computer/caps/components/status";
 import { Sigil } from "@fungi.computer/sigils";
-import { memo, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
 
 import {
   disclosureOpen,
@@ -192,6 +198,12 @@ function SectionView({
   }
 }
 
+/** The tool calls whose question card is open: each is waiting on the person. */
+export const AnswerWaitContext: React.Context<ReadonlySet<string>> =
+  createContext<ReadonlySet<string>>(new Set());
+
+const waitingWords = "Waiting for your answer";
+
 function CallBody({
   call,
   tool,
@@ -267,6 +279,8 @@ function CallRow({
   const defaultOpen = toolCallDefaultOpen(call);
   const open = disclosureOpen(disclosure, disclosureId, defaultOpen);
   const running = call.status === "running";
+  const asking = useContext(AnswerWaitContext);
+  const waiting = call.status === "running" && asking.has(call.id);
   return (
     <div data-parakeet-call={call.kind} data-status={call.status}>
       <Disclosure
@@ -290,7 +304,7 @@ function CallRow({
         summary={
           <>
             <span className="text-base-content">
-              {running ? call.activeVerb : call.verb}
+              {waiting ? waitingWords : running ? call.activeVerb : call.verb}
             </span>{" "}
             <span className="font-mono">{call.label}</span>
           </>
@@ -375,6 +389,7 @@ export const ToolGroup = memo(function ToolGroup({
   const open = disclosureOpen(disclosure, group.id, defaultOpen);
   const running = group.status === "running";
   const active = group.active;
+  const asking = useContext(AnswerWaitContext);
   const single = group.calls.length === 1 ? group.calls[0] : undefined;
   if (single !== undefined)
     return (
@@ -403,7 +418,9 @@ export const ToolGroup = memo(function ToolGroup({
         summary={
           running && active !== undefined ? (
             <>
-              <span className="text-base-content">{active.activeVerb}</span>{" "}
+              <span className="text-base-content">
+                {asking.has(active.id) ? waitingWords : active.activeVerb}
+              </span>{" "}
               <span className="font-mono">{active.label}</span> ·{" "}
               {String(group.calls.length)}{" "}
               {group.calls.length === 1 ? "call" : "calls"}

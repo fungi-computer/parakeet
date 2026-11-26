@@ -57,6 +57,8 @@ import {
   type ParakeetCommandRuntime,
   type SlashCommandController,
 } from "./commands/use-slash-commands.js";
+import { useAgentRenamed } from "./use-agent-renamed.js";
+import { AnswerWaitContext } from "./components/ToolGroup.js";
 import { TimelineItem } from "./components/TimelineItem.js";
 import { MarkdownPolicyContext } from "./components/MarkdownRenderer.js";
 
@@ -104,6 +106,8 @@ export type ParakeetProps = Readonly<{
   onToast?: ((toast: ParakeetToast) => void) | undefined;
   /** Authorize and open a typed target through the host's navigation owner. */
   onOpen?: ((target: NonNullable<RowV1["open"]>) => void) | undefined;
+  /** The Agent renamed itself in this conversation; refresh any copy of its name. */
+  onAgentRenamed?: (() => void) | undefined;
   /** Optional caller-owned empty conversation state. */
   empty?: ReactNode | undefined;
   /** What the host knows: model setup, billing and starter prompts. */
@@ -139,6 +143,8 @@ export type ParakeetViewProps = Readonly<{
   onLink?: ((href: string) => boolean) | undefined;
   /** Authorize and open a typed target through the host's navigation owner. */
   onOpen?: ((target: NonNullable<RowV1["open"]>) => void) | undefined;
+  /** The Agent renamed itself in this conversation; refresh any copy of its name. */
+  onAgentRenamed?: (() => void) | undefined;
   /** Optional caller-owned empty conversation state. */
   empty?: ReactNode | undefined;
   /** What the host knows: model setup, billing and starter prompts. */
@@ -170,6 +176,7 @@ export function ParakeetView({
   formatAssistantText,
   onLink,
   onOpen,
+  onAgentRenamed,
 }: ParakeetViewProps): ReactElement {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Opening a conversation puts the caret in the composer; a click elsewhere keeps it.
@@ -188,7 +195,20 @@ export function ParakeetView({
   const contributions = useClientContributions();
   // The decision in the composer is not also a footer row.
   const answering = slash.awaiting.current?.key;
+  // The calls whose question card is open are waiting on the person.
+  const askingCalls = useMemo(
+    () =>
+      new Set(
+        slash.awaiting.items.flatMap((item) =>
+          item.kind === "question" && item.toolCallId !== undefined
+            ? [item.toolCallId]
+            : [],
+        ),
+      ),
+    [slash.awaiting.items],
+  );
   const timelineController = useTimeline();
+  useAgentRenamed(timelineController.settled, onAgentRenamed);
   const placed = useMemo(
     () =>
       placeClientTimeline(
@@ -218,20 +238,22 @@ export function ParakeetView({
         }}
       >
         <div className="flex h-full w-full flex-col border-r border-base-300">
-          <ConversationTimeline
-            hideSoleAuthor={hideSoleAuthor === true}
-            disambiguateAuthors={
-              visitor === undefined && disambiguateAuthors === true
-            }
-            clientActions={clientActions}
-            onOpen={onOpen}
-            focusAfterJump={textareaRef}
-            empty={empty}
-            renderToolActions={renderToolActions}
-            claimsToolMedia={claimsToolMedia}
-            renderAssistantAttachment={renderAssistantAttachment}
-            formatAssistantText={formatAssistantText}
-          />
+          <AnswerWaitContext.Provider value={askingCalls}>
+            <ConversationTimeline
+              hideSoleAuthor={hideSoleAuthor === true}
+              disambiguateAuthors={
+                visitor === undefined && disambiguateAuthors === true
+              }
+              clientActions={clientActions}
+              onOpen={onOpen}
+              focusAfterJump={textareaRef}
+              empty={empty}
+              renderToolActions={renderToolActions}
+              claimsToolMedia={claimsToolMedia}
+              renderAssistantAttachment={renderAssistantAttachment}
+              formatAssistantText={formatAssistantText}
+            />
+          </AnswerWaitContext.Provider>
           {contributions.some(({ entryId, value }) =>
             value.panel.some(
               (row) => JSON.stringify([entryId, row.id]) !== answering,
@@ -951,6 +973,7 @@ export function Parakeet({
   onLink,
   onOpen,
   onToast,
+  onAgentRenamed,
 }: ParakeetProps): ReactElement {
   return (
     <MarkdownPolicyContext.Provider value={markdownPolicy}>
@@ -974,6 +997,7 @@ export function Parakeet({
           commands={commands}
           onLink={onLink}
           onOpen={onOpen}
+          onAgentRenamed={onAgentRenamed}
         />
       </ParakeetProvider>
     </MarkdownPolicyContext.Provider>
