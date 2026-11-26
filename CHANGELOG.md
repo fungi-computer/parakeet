@@ -1,5 +1,17 @@
 # @fungi.computer/parakeet
 
+## 0.19.6
+
+### Patch Changes
+
+- Changes since 0.19.5:
+
+  - perf(grove): cut the first view by about 95 KB gzip
+
+- Updated dependencies
+  - @fungi.computer/shiitake@0.24.2
+  - @fungi.computer/knapsack@0.4.38
+
 ## 0.19.5
 
 ### Patch Changes

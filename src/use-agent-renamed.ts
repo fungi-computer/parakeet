@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-import { returnsAgentRename } from "./core/tool-view.js";
+import { returnsAgentRename } from "./core/agent-rename-result.js";
 import type { TimelineItem } from "./store/types.js";
 
 /**

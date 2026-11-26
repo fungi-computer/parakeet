@@ -8,8 +8,8 @@ import type {
   WhistleRuntime,
 } from "@fungi.computer/whistle";
 import { z } from "zod";
+import type { buildDurableTimeline } from "./core/build-timeline.js";
 
-import { buildDurableTimeline } from "./core/build-timeline.js";
 import { formatWhen, oneLine } from "./core/picker-text.js";
 import {
   sessionActivityStatus,
@@ -208,6 +208,11 @@ export function sessionCommandDefinitions(
           const snapshot = await session.read();
           if (sessionActivityStatus(sessionViewState(snapshot)) !== "idle")
             throw new Error("Wait for the current run to finish, then fork.");
+          // The timeline builder carries the tool-call view (script parser,
+          // diff engine); only a fork needs it, so a window that merely lists
+          // commands does not load it.
+          const { buildDurableTimeline } =
+            await import("./core/build-timeline.js");
           const candidates = buildDurableTimeline(
             snapshot.messages ?? [],
             snapshot.compactions ?? [],
