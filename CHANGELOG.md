@@ -1,5 +1,13 @@
 # @fungi.computer/parakeet
 
+## 0.19.7
+
+### Patch Changes
+
+- @fungi.computer/agar@0.30.1
+  - @fungi.computer/shiitake@0.24.3
+  - @fungi.computer/knapsack@0.4.39
+
 ## 0.19.6
 
 ### Patch Changes
