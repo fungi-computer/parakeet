@@ -56,7 +56,7 @@ restore(prompt): DecisionState;
 ```
 
 Redraw a compatible choice without replaying any submitted answer. With nothing
-remembered, an approval has nothing selected: the person may have chosen
+remembered, a decision has nothing selected: the person may have chosen
 something this draft lost, and Send must not guess for them.
 
 ###### Parameters
@@ -386,7 +386,7 @@ type ParakeetInteractions = Readonly<{
   close: () => void;
   inspect: (inspection) => void;
   report: (notice) => void;
-  toast: (toast) => void;
+  toast: (toast) => boolean;
   subscribeToasts: (listener) => () => void;
   attach: (present) => () => void;
   lastEnd: () => WhistleInteractionEnd["status"] | undefined;
@@ -2071,7 +2071,7 @@ with text is never, unless the person asked for the decision.
 function initialDecisionState(): DecisionState;
 ```
 
-The state a decision starts in.
+A decision's initial state with the first row highlighted; no card starts in it.
 
 #### Returns
 

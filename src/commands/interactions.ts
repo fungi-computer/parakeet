@@ -93,8 +93,8 @@ export type ParakeetInteractions = Readonly<{
   inspect: (inspection: ParakeetInteractionState["inspection"]) => void;
   /** Replace or clear the attention notice, starting a new command turn. */
   report: (notice: ParakeetNotice | undefined) => void;
-  /** Announce a transient message to every toast subscriber. */
-  toast: (toast: ParakeetToast) => void;
+  /** Announce a transient message to every toast subscriber; false when none listens. */
+  toast: (toast: ParakeetToast) => boolean;
   /** Receive transient messages; the renderer decides how to show them. */
   subscribeToasts: (listener: (toast: ParakeetToast) => void) => () => void;
   /** Become the runtime's presenter until the returned disposer runs. */
@@ -148,6 +148,7 @@ export function createParakeetInteractions(): ParakeetInteractions {
   const toastListeners = new Set<(toast: ParakeetToast) => void>();
   const toast = (next: ParakeetToast) => {
     for (const listener of toastListeners) listener(next);
+    return toastListeners.size > 0;
   };
   /** Information is a toast; a success only echoes what the person did. */
   const announce = (message: WhistleMessageNotice) => {

@@ -237,7 +237,7 @@ async function mount(asking: boolean) {
   };
 }
 
-it("a question takes over an empty composer, numbers only move, and Enter answers", async () => {
+it("a question sits above the field, numbers only move, and Enter answers the picked row", async () => {
   const page = await mount(true);
   try {
     await vi.waitFor(async () => {
@@ -246,8 +246,14 @@ it("a question takes over an empty composer, numbers only move, and Enter answer
     });
     const group = page.group();
     expect(group?.getAttribute("aria-label")).toBe("Agent question 1 of 1");
-    expect(page.textarea().closest("[hidden]")).not.toBeNull();
+    // The field stays usable while the question waits.
+    expect(page.textarea().closest("[hidden]")).toBeNull();
     expect(group?.textContent).toContain("1. Blue (recommended)");
+    // Nothing is preselected: neither Send nor Enter answers until a pick.
+    expect(page.container.querySelector("[data-highlight]")).toBeNull();
+    expect(page.button("Send").disabled).toBe(true);
+    await page.key("Enter");
+    expect(page.call.mock.calls.some(([, args]) => answers(args))).toBe(false);
     await page.key("2");
     expect(page.call.mock.calls.some(([, args]) => answers(args))).toBe(false);
     expect(
@@ -274,7 +280,7 @@ it("a question takes over an empty composer, numbers only move, and Enter answer
   }
 });
 
-it("a question does not take over a non-empty draft", async () => {
+it("a question shows over a non-empty draft without touching it", async () => {
   const page = await mount(false);
   try {
     await page.type("half a thought");
@@ -283,21 +289,10 @@ it("a question does not take over a non-empty draft", async () => {
     });
     await vi.waitFor(async () => {
       await page.settle();
-      expect(page.container.textContent).toContain(
-        "Which color should we use?",
-      );
-    });
-    expect(page.group()).toBeNull();
-    expect(page.textarea().value).toBe("half a thought");
-    // Answer in the footer row is the person asking for it.
-    await page.settle(() => {
-      page.button("Answer").click();
-    });
-    await vi.waitFor(async () => {
-      await page.settle();
       expect(page.group()).not.toBeNull();
     });
     expect(page.textarea().value).toBe("half a thought");
+    expect(page.textarea().closest("[hidden]")).toBeNull();
   } finally {
     await page.close();
   }
@@ -326,21 +321,12 @@ it("Later is a neutral key that postpones without answering", async () => {
   }
 });
 
-it("draft returns after Esc", async () => {
+it("Esc postpones the question and leaves the draft as typed", async () => {
   const page = await mount(false);
   try {
     await page.type("keep this");
     await page.settle(() => {
       page.push(slots(true));
-    });
-    await vi.waitFor(async () => {
-      await page.settle();
-      expect(page.container.textContent).toContain(
-        "Which color should we use?",
-      );
-    });
-    await page.settle(() => {
-      page.button("Answer").click();
     });
     await vi.waitFor(async () => {
       await page.settle();

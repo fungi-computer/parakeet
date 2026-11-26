@@ -60,7 +60,7 @@ describe("a pending approval's retained choice", () => {
     message: "Allow Tourtois to add a widget to your dashboard?",
     options: [
       { value: "approve", label: "Approve once" },
-      { value: "family", label: "Always allow Tourtois to change data" },
+      { value: "family", label: "Always allow Tourtois to make changes" },
       { value: "deny", label: "Deny" },
     ],
     other: { label: "Deny and say why…", blank: "deny", maxLength: 512 },
@@ -116,10 +116,10 @@ describe("a pending approval's retained choice", () => {
   it("does not reuse a family confirmation as the reconstructed main approval", () => {
     const confirmation: DecisionPrompt = {
       type: "decision",
-      message: "Always allow Tourtois to change data?",
+      message: "Always allow Tourtois to make changes?",
       options: [
         { value: "back", label: "Back" },
-        { value: "family", label: "Always allow Tourtois to change data" },
+        { value: "family", label: "Always allow Tourtois to make changes" },
       ],
       escape: "back",
     };

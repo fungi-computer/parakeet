@@ -221,6 +221,11 @@ export type ToolCallView = Readonly<{
   error?: string | undefined;
   /** A failed call that a later completed call in its run recovered from. */
   recovered?: boolean | undefined;
+  /**
+   * The call stopped on purpose to wait for a person's approval: nothing ran,
+   * nothing failed, and the answer arrives later as a new message.
+   */
+  parked?: boolean | undefined;
   /** Set when this call renamed the Agent itself; the row draws its live head. */
   identity?: ToolIdentity | undefined;
   /** Expanded body sections, in display order. */
@@ -398,6 +403,21 @@ function parseJsonText(text: string): JsonText {
   } catch (cause) {
     return { kind: "invalid", cause };
   }
+}
+
+/**
+ * The Hub reports a parked write as a tool error whose text starts with its
+ * `approval_pending` code; the typed code does not reach the client, so the
+ * prefix is the contract, pinned by apps/hub/test/agent-connector-source.test.ts.
+ * The row says "Sent for approval": the durable result cannot say what the
+ * person answered later, so it never claims the request is still waiting.
+ */
+function parkedForApproval(result: ToolItem["result"]): boolean {
+  const value = resultValue(result);
+  return (
+    value.kind === "text" &&
+    /^\s*(?:error:?\s*)?approval_pending:/iu.test(value.text)
+  );
 }
 
 function resultValue(result: ToolItem["result"]): ResultValue {
@@ -971,6 +991,9 @@ export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
   // body and diff only when a visible renderer asks for those fields. Failed
   // edits still inspect the result here because their status can be encoded in
   // a successful transport envelope.
+  // An App write that parks for approval reports `approval_pending` through the
+  // error channel so the Agent stops; for the person it is a wait, not a fault.
+  const parked = item.status === "error" && parkedForApproval(item.result);
   let details:
     | Readonly<{
         error: string | undefined;
@@ -982,7 +1005,7 @@ export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
     if (details !== undefined) return details;
     const value = resultValue(item.result);
     const body = resultBody(value, kind);
-    const failed = item.status === "error" || refused;
+    const failed = (item.status === "error" || refused) && !parked;
     const failure = failed
       ? (body.failure ?? "The tool reported an error.")
       : undefined;
@@ -1019,7 +1042,7 @@ export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
     };
     return details;
   };
-  const failed = item.status === "error" || refused;
+  const failed = (item.status === "error" || refused) && !parked;
   return {
     activeVerb,
     durationMs:
@@ -1039,11 +1062,12 @@ export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
     name: item.name,
     live: item.status === "running" ? item.live : undefined,
     paths: target.paths,
+    parked: parked ? true : undefined,
     recovered: failed && recovered,
     get sections() {
       return getDetails().sections;
     },
-    status: failed ? "error" : item.status,
+    status: parked ? "unknown" : failed ? "error" : item.status,
     verb,
   };
 }

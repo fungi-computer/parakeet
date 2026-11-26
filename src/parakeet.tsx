@@ -33,7 +33,6 @@ import {
   useStatus,
   useTimeline,
 } from "./conversation.js";
-import { awaitingTakeover } from "./core/awaiting-answer.js";
 import { initialToolDisclosure, toggleDisclosure } from "./core/tool-groups.js";
 import {
   authorDisplayNames,
@@ -187,9 +186,8 @@ export function ParakeetView({
   });
   const clientActions = useClientActions(commands ?? ownCommands);
   const contributions = useClientContributions();
-  const { draft } = useComposer();
   // The decision in the composer is not also a footer row.
-  const answering = awaitingTakeover(slash.awaiting, draft)?.key;
+  const answering = slash.awaiting.current?.key;
   const timelineController = useTimeline();
   const placed = useMemo(
     () =>

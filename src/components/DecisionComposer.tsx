@@ -3,7 +3,7 @@ import { KeycapButton } from "@fungi.computer/caps/components/keycap";
 import { Input } from "@fungi.computer/caps/components/input";
 import { Listbox } from "@fungi.computer/caps/components/listbox";
 import { isImeComposing } from "@fungi.computer/caps/lib/ime";
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type {
   AwaitingItem,
@@ -26,6 +26,11 @@ export type DecisionComposerProps = Readonly<{
   onLater: () => void;
   /** The person was typing in the composer, so focus follows into the list. */
   takeFocus: boolean;
+  /**
+   * Show a refusal as a toast and say whether anyone received it. When nobody
+   * did (or without this), the card shows the text inline instead.
+   */
+  onRefusal?: ((message: string) => boolean) | undefined;
 }>;
 
 const kindNames = { question: "Question", approval: "Approval" } as const;
@@ -41,6 +46,7 @@ export function DecisionComposer({
   total,
   onLater,
   takeFocus,
+  onRefusal,
 }: DecisionComposerProps) {
   const decision = useDecision(item, { position, total, later: onLater });
   if (decision.view === undefined) return null;
@@ -50,6 +56,7 @@ export function DecisionComposer({
       dispatch={decision.dispatch}
       onLater={decision.later}
       takeFocus={takeFocus}
+      onRefusal={onRefusal}
     />
   );
 }
@@ -63,12 +70,23 @@ export function DecisionPanel({
   dispatch,
   onLater,
   takeFocus,
+  onRefusal,
 }: Readonly<{
   view: DecisionView;
   dispatch: (intent: DecisionIntent) => void;
   onLater: () => void;
   takeFocus: boolean;
+  onRefusal?: ((message: string) => boolean) | undefined;
 }>) {
+  // A refusal is a toast, never text that reflows the card; it stays inline
+  // only when no toast surface took it.
+  const refused = view.status?.tone === "error" ? view.status.text : undefined;
+  const [toasted, setToasted] = useState<string>();
+  useEffect(() => {
+    if (refused !== undefined && onRefusal?.(refused) === true)
+      setToasted(refused);
+  }, [refused, onRefusal]);
+  const refusal = toasted === refused ? refused : undefined;
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
   const typing = view.phase === "other";
@@ -265,7 +283,7 @@ export function DecisionPanel({
               },
             })}
       />
-      {view.status === undefined ? null : (
+      {view.status === undefined || refusal !== undefined ? null : (
         <p
           className={
             view.status.tone === "error"
@@ -285,7 +303,8 @@ export function DecisionPanel({
           onClick={() => {
             dispatch({ type: "enter" });
           }}
-          tone="primary"
+          // A disabled Send is a muted key, never a tinted one that reads as an error.
+          tone={view.canSend ? "primary" : "neutral"}
         />
       </div>
     </div>

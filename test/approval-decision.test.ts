@@ -230,7 +230,7 @@ const LONG = "x".repeat(70);
 it("a family label over sixty characters still shows its confirmation and never denies", async () => {
   const enable = vi.fn(() => Promise.resolve(true));
   const owner = source({
-    family: { label: `Always allow ${LONG} to change data`, enable },
+    family: { label: `Always allow ${LONG} to make changes`, enable },
   });
   const { interaction, asked } = person([
     { selected: ["family"] },
@@ -456,7 +456,7 @@ it("a refusal and a lost response both reach the person in words", async () => {
 it("the family choice turns the rule on, then asks again without offering it twice", async () => {
   const enable = vi.fn(() => Promise.resolve(true));
   const owner = source({
-    family: { label: "Always allow Notes to change data", enable },
+    family: { label: "Always allow Notes to make changes", enable },
   });
   const { interaction, asked } = person([
     { selected: ["family"] },
@@ -477,7 +477,7 @@ it("the family choice turns the rule on, then asks again without offering it twi
 it("the family rule needs its own confirmation, whose default and Esc are Back", async () => {
   const enable = vi.fn(() => Promise.resolve(true));
   const owner = source({
-    family: { label: "Always allow Notes to change data", enable },
+    family: { label: "Always allow Notes to make changes", enable },
   });
   const { interaction, asked } = person([
     { selected: ["family"] },
@@ -488,7 +488,7 @@ it("the family rule needs its own confirmation, whose default and Esc are Back",
   expect(enable).not.toHaveBeenCalled();
   expect(asked[1]).toMatchObject({
     type: "decision",
-    message: "Always allow Notes to change data?",
+    message: "Always allow Notes to make changes?",
     options: [{ value: "back" }, { value: "family" }],
     escape: "back",
   });
@@ -560,4 +560,39 @@ it("says nothing about undo for a reversible App write, and warns for an irrever
     ).content.details?.map((entry) => entry.label) ?? [];
   expect(detail("reversible")).not.toContain("Undo");
   expect(detail("irreversible-external")).toContain("Undo");
+});
+
+it("names an App write by its own label and never as changing data", () => {
+  const view = {
+    canAnswer: true,
+    record: {
+      recordId: "record:1",
+      revision: 1,
+      requester: {
+        displayName: "Shiitake",
+        agentId: "agent:1",
+        sessionId: "session:1",
+        principalId: "agent:1",
+      },
+      module: "app:tourtois",
+      operation: "layout.place",
+      access: "write" as const,
+      reversibility: "reversible" as const,
+      expiresAt: 1_000_000,
+      description: {
+        app: {
+          displayName: "Tourtois",
+          operationLabel: "Add a widget to your dashboard",
+        },
+        inputBytes: 10,
+        inputSha256: "0123456789abcdef".repeat(4),
+      },
+    },
+  };
+  const card = approvalCardCopy(view, undefined, options);
+  expect(card.content.title).toBe(
+    "Allow Tourtois to add a widget to your dashboard?",
+  );
+  expect(JSON.stringify(card.content)).not.toMatch(/Changes data|change data/u);
+  expect(card.content.facts ?? []).toEqual([]);
 });

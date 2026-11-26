@@ -4,7 +4,6 @@ import type { WhistleInteractionSnapshot } from "@fungi.computer/whistle/interac
 
 import {
   decisionView,
-  initialDecisionState,
   unselectedDecisionState,
   reduceDecision,
   type AwaitingItem,
@@ -75,11 +74,10 @@ export function useDecision(
   // Several keys can arrive before React renders; each must see the last one.
   const latest = useRef<Held>();
   const prompt = shown.current;
-  // An approval never preselects a choice, however it came to be drawn.
-  const start = () =>
-    item.kind === "approval"
-      ? unselectedDecisionState()
-      : initialDecisionState();
+  // No decision preselects a choice, however it came to be drawn: a card that
+  // replaces another (a repeated ask, a withdrawn turn) must not let a Send
+  // meant for the first card answer with this one's recommended option.
+  const start = unselectedDecisionState;
   const held = (): DecisionState => {
     if (prompt === undefined) return start();
     if (
@@ -127,7 +125,7 @@ export function useDecision(
       const effect = outcome.effect;
       // Backing out of a second question returns to nothing selected.
       remember(
-        item.kind === "approval" && effect?.type === "back"
+        effect?.type === "back"
           ? { ...outcome.state, highlight: -1 }
           : outcome.state,
       );

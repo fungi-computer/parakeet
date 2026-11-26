@@ -180,7 +180,7 @@ export type DecisionOutcome = Readonly<{
   effect?: DecisionEffect;
 }>;
 
-/** The state a decision starts in. */
+/** A decision's initial state with the first row highlighted; no card starts in it. */
 export function initialDecisionState(): DecisionState {
   return {
     highlight: 0,
@@ -191,7 +191,7 @@ export function initialDecisionState(): DecisionState {
   };
 }
 
-/** The state of an approval: nothing selected, so Send and Enter wait for a pick. */
+/** The state every decision starts in: nothing selected, so Send and Enter wait for a pick. */
 export function unselectedDecisionState(): DecisionState {
   return { ...initialDecisionState(), highlight: -1 };
 }
@@ -229,7 +229,7 @@ export class DecisionDraft {
 
   /**
    * Redraw a compatible choice without replaying any submitted answer. With
-   * nothing remembered, an approval has nothing selected: the person may have
+   * nothing remembered, a decision has nothing selected: the person may have
    * chosen something this draft lost, and Send must not guess for them.
    */
   restore(prompt: DecisionPrompt): DecisionState {

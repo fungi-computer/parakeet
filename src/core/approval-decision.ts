@@ -211,16 +211,25 @@ function connectedToolCard(view: ApprovalFacts, now: number): ApprovalCard {
         " The Agent continues after you answer.",
       facts: [
         ...(fits ? [] : [{ label: "Action", value: action }]),
-        {
-          label: "Effect",
-          value:
-            (record.access === "write"
-              ? "Changes data in Fungi"
-              : "Changes things outside Fungi") +
-            (record.reversibility === "irreversible-external"
-              ? " · can't be undone"
-              : ""),
-        },
+        // An App's write is already named by its own plain label in the title
+        // or the Action fact; "Changes data in Fungi" only alarms. Reaching
+        // outside Fungi and an undoable-never write still say so.
+        ...(record.access === "write" && app !== undefined
+          ? record.reversibility === "irreversible-external"
+            ? [{ label: "Effect", value: "Can't be undone" }]
+            : []
+          : [
+              {
+                label: "Effect",
+                value:
+                  (record.access === "write"
+                    ? "Changes data in Fungi"
+                    : "Changes things outside Fungi") +
+                  (record.reversibility === "irreversible-external"
+                    ? " · can't be undone"
+                    : ""),
+              },
+            ]),
       ],
       // Nothing backs "can be undone" for an App write, so only a warning shows.
       details: entries([
@@ -595,7 +604,7 @@ export async function askApproval(
           confirmed = await interaction.prompt({
             type: "decision",
             message: lead(`${source.family.label}?`, interactionTitleLimit),
-            summary: `All ${record.description.app?.displayName ?? "this tool"} requests that ${record.access === "write" ? "change data in Fungi" : "reach outside Fungi"} will run without asking, not just this action.`,
+            summary: `All ${record.description.app?.displayName ?? "this tool"} requests that ${record.access === "write" ? "make changes" : "reach outside Fungi"} will run without asking, not just this action.`,
             options: [
               { value: "back", label: "Back" },
               { value: "family", label: source.family.label },

@@ -450,7 +450,15 @@ export function buildDurableTimeline(
         toolIndex = index;
     }
     const active = items[toolIndex];
-    if (active?.kind === "tool")
+    // The owner emits a turn's tool results per batch, in call order, so a
+    // later call's result means every earlier call is over, whatever the live
+    // activity still names; its own result never arrived, so it stays "result
+    // unavailable" instead of "running". If results ever stream per call, a
+    // slower earlier call would be hidden here: revisit this guard then.
+    const passed = items
+      .slice(toolIndex + 1)
+      .some((item) => item.kind === "tool" && item.result !== undefined);
+    if (active?.kind === "tool" && !passed)
       items[toolIndex] = { ...active, status: "running" };
   }
   // Later calls must not grow a tool group across a committed event.

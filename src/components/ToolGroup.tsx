@@ -303,6 +303,7 @@ function CallRow({
         trailing={
           <>
             {call.recovered === true ? <span>recovered</span> : null}
+            {call.parked === true ? <span>Sent for approval</span> : null}
             {call.exitCode === undefined ? null : (
               <Badge
                 size="sm"
@@ -321,7 +322,11 @@ function CallRow({
             <Status
               motion={running ? "bounce" : "none"}
               title={
-                call.status === "unknown" ? "result unavailable" : call.status
+                call.parked === true
+                  ? "Sent for approval"
+                  : call.status === "unknown"
+                    ? "result unavailable"
+                    : call.status
               }
               tone={statusTone(call.status, call.recovered === true)}
             />
@@ -421,13 +426,20 @@ export const ToolGroup = memo(function ToolGroup({
             {group.recoveredCount > 0 ? (
               <span>{String(group.recoveredCount)} recovered</span>
             ) : null}
+            {group.calls.some((call) => call.parked === true) ? (
+              <span>Sent for approval</span>
+            ) : null}
             {group.durationMs === undefined ? null : (
               <span>{formatToolDuration(group.durationMs)}</span>
             )}
             <Status
               motion={running ? "bounce" : "none"}
               title={
-                group.status === "unknown" ? "result unavailable" : group.status
+                group.calls.some((call) => call.parked === true)
+                  ? "Sent for approval"
+                  : group.status === "unknown"
+                    ? "result unavailable"
+                    : group.status
               }
               tone={statusTone(group.status)}
             />

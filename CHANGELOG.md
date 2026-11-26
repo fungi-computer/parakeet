@@ -1,5 +1,16 @@
 # @fungi.computer/parakeet
 
+## 0.18.1
+
+### Patch Changes
+
+- Changes since 0.18.0:
+
+  - fix(parakeet): keep a refusal visible without a toast host and wait honestly
+  - fix(parakeet): show a refused answer as a toast and keep a disabled Send
+    neutral
+  - fix(parakeet): keep the composer usable and never preselect an answer
+
 ## 0.18.0
 
 ### Minor Changes

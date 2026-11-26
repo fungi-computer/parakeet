@@ -523,6 +523,7 @@ type ParakeetToolCallView = Readonly<{
   exitCode?: number;
   error?: string;
   recovered?: boolean;
+  parked?: boolean;
   identity?: {
     name: string;
     avatar: Avatar;
@@ -1447,6 +1448,7 @@ function visibleToolCalls(group, open): readonly Readonly<{
   exitCode?: number;
   error?: string;
   recovered?: boolean;
+  parked?: boolean;
   identity?: Readonly<{
      name: string;
      avatar: {
@@ -1489,12 +1491,12 @@ readonly `Readonly`\<\{ `id`: `string`; `kind`:
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
 `status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
 `durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`;
-`recovered?`: `boolean`; `identity?`: `Readonly`\<\{ `name`: `string`; `avatar`:
-\{ `v`: `1`; `character`: `"mushroom"` \| `"cat"` \| `"burger"`; `appearance`:
-`z.ZodRecord`\<`z.ZodString`, `z.ZodUnion`\<readonly \[..., ..., ...\]\>\>;
-`expression`: `string`; `renderStyle`: \| `"plain"` \| `"pencil"` \| `"manga"`
-\| `"riso"` \| `"halftone"` \| `"blueprint"` \| `"crt"` \| `"watercolor"`; \};
-\}\>; `sections`: readonly
+`recovered?`: `boolean`; `parked?`: `boolean`; `identity?`: `Readonly`\<\{
+`name`: `string`; `avatar`: \{ `v`: `1`; `character`: `"mushroom"` \| `"cat"` \|
+`"burger"`; `appearance`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnion`\<readonly
+\[..., ..., ...\]\>\>; `expression`: `string`; `renderStyle`: \| `"plain"` \|
+`"pencil"` \| `"manga"` \| `"riso"` \| `"halftone"` \| `"blueprint"` \| `"crt"`
+\| `"watercolor"`; \}; \}\>; `sections`: readonly
 [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`: `Readonly`\<\{
 `lines`: readonly `string`[]; `droppedBytes`: `number`; `revision`: `number`;
 \}\>; \}\>[]

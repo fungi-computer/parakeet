@@ -40,7 +40,6 @@ import type {
   ParakeetStatus,
   ParakeetSessionViewState,
 } from "../conversation.js";
-import { awaitingTakeover } from "../core/awaiting-answer.js";
 import { useAskedTakeover } from "../use-asked-takeover.js";
 import { completionFieldProps, completionKeyAction } from "./CompletionMenu.js";
 import { DecisionComposer } from "./DecisionComposer.js";
@@ -636,17 +635,24 @@ export const ChatComposer = memo(function ChatComposer({
   const slashListId = `${textareaId}-commands`;
   const fileInput = useRef<HTMLInputElement>(null);
   const { busy } = presentations[status];
-  // A waiting decision takes the composer over an empty draft, or on request.
-  const takeover = useAskedTakeover(
-    slash === undefined ? undefined : awaitingTakeover(slash.awaiting, draft),
-  );
+  // A waiting decision sits above the draft field, never over it: the person
+  // can keep typing while it waits, whatever the draft holds.
+  const takeover = useAskedTakeover(slash?.awaiting.current);
   const takeoverKey = takeover?.key;
+  const toast = slash?.store.toast;
+  const refuse = useCallback(
+    (message: string) => toast?.({ variant: "error", message }) === true,
+    [toast],
+  );
   const seenTakeover = useRef<string | undefined>(undefined);
   const hadFocus = useRef(false);
   if (seenTakeover.current !== takeoverKey) {
     seenTakeover.current = takeoverKey;
+    // Focus follows into the list only from an idle, empty field; a person
+    // who is typing keeps the caret.
     hadFocus.current =
       takeoverKey !== undefined &&
+      draft === "" &&
       document.activeElement === textareaRef.current;
   }
   const restoreFocus = hadFocus.current;
@@ -686,7 +692,14 @@ export const ChatComposer = memo(function ChatComposer({
           ? "Stop the current turn. Queued messages keep running in order."
           : sendLabel
       }
-      tone={actionVariant === "primary" ? "primary" : "neutral"}
+      // While a card waits, its Send is the primary key; the field's arrow
+      // is primary only once there is a draft to send.
+      tone={
+        actionVariant === "primary" &&
+        (takeover === undefined || sendState === "ready")
+          ? "primary"
+          : "neutral"
+      }
     />
   );
   const attach =
@@ -756,16 +769,14 @@ export const ChatComposer = memo(function ChatComposer({
       </div>
       <ComposerShell
         aria-label="Message composer"
-        action={
-          takeover === undefined && row === undefined ? sendAction : undefined
-        }
+        action={row === undefined ? sendAction : undefined}
         menu={
           slash === undefined ? undefined : (
             <SlashMenu slash={slash} listId={slashListId} />
           )
         }
         attachments={
-          takeover === undefined && images.length > 0 ? (
+          images.length > 0 ? (
             <ComposerAttachments
               images={images}
               onRemove={
@@ -792,10 +803,10 @@ export const ChatComposer = memo(function ChatComposer({
                   slash.store.awaiting.later(takeover.key);
                 }}
                 takeFocus={hadFocus.current}
+                onRefusal={refuse}
               />
             )}
-            {/* The draft stays mounted, so it and its history return untouched. */}
-            <div hidden={takeover !== undefined}>
+            <div>
               <HostComposerTextarea
                 queuedRecall={queuedRecall}
                 placeholder={placeholder}
@@ -813,10 +824,7 @@ export const ChatComposer = memo(function ChatComposer({
             </div>
           </>
         }
-        row={
-          // A decision brings its own Later and Send row to the bottom edge.
-          takeover !== undefined ? undefined : row
-        }
+        row={row}
       />
       {slash === undefined ? null : (
         <p className="sr-only" id={`${textareaId}-guidance`}>

@@ -64,7 +64,7 @@ const source: ApprovalSource = {
     return Promise.resolve({ kind: "answered" });
   },
   family: {
-    label: "Always allow Tourtois to change data",
+    label: "Always allow Tourtois to make changes",
     enable: () => Promise.resolve(true),
   },
 };

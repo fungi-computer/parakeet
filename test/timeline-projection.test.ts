@@ -1468,3 +1468,57 @@ it("renders the final answer once when a reply carries a commentary block and a 
   ]).items;
   expect(items).toMatchObject([{ kind: "assistant_message", text: "Hello" }]);
 });
+
+it("does not call a call running once a later call's result has passed it", () => {
+  const assistant = (id: string, at: number): SessionMessage => ({
+    id: `assistant-${id}`,
+    commandId: "running-command",
+    sequence: at,
+    value: {
+      role: "assistant",
+      api: "pi",
+      provider: "camel",
+      model: "auto",
+      content: [
+        {
+          type: "toolCall",
+          id,
+          name: "execute",
+          arguments: { code: `return "${id}";` },
+        },
+      ],
+      stopReason: "toolUse",
+      timestamp: at,
+      usage,
+    },
+  });
+  const user: SessionMessage = {
+    id: "user-1",
+    commandId: "running-command",
+    sequence: 1,
+    value: { role: "user", content: "Go", timestamp: 1 },
+  };
+  const result: SessionMessage = {
+    id: "result-b",
+    commandId: "running-command",
+    sequence: 5,
+    value: {
+      role: "toolResult",
+      toolCallId: "b",
+      toolName: "execute",
+      content: [{ type: "text", text: "ok" }],
+      isError: false,
+      timestamp: 5,
+    },
+  };
+  const statuses = (list: readonly SessionMessage[]) =>
+    buildDurableTimeline(list, [], runningFacts({ activeTool: "execute" }))
+      .items.flatMap((item) => (item.kind === "tool_group" ? item.tools : []))
+      .map((tool) => `${tool.id}:${tool.status}`);
+  // "a" never got a result, but "b" ran and finished after it: "a" is over.
+  expect(
+    statuses([user, assistant("a", 2), assistant("b", 4), result]),
+  ).toEqual(["a:unknown", "b:completed"]);
+  // The last call without a result is still the live one.
+  expect(statuses([user, assistant("a", 2)])).toEqual(["a:running"]);
+});

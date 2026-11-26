@@ -434,3 +434,22 @@ it("keeps the script when it does more than the one call", () => {
   expect(view.label).toBe("ls");
   expect(view.sections.map(({ kind }) => kind)).toEqual(["command", "script"]);
 });
+
+it("shows a write parked for approval as a wait, not a failure", () => {
+  const parked = toolCallView(
+    call(
+      "execute",
+      { code: 'return await env.TOURTOIS.layout.place({gillId:"inbox"});' },
+      "approval_pending: This write has NOT run. It waits for a person's approval; you will get the result as a new message. Do not retry it. (ref abc)",
+      true,
+    ),
+  );
+  expect(parked.parked).toBe(true);
+  expect(parked.status).toBe("unknown");
+  expect(parked.error).toBeUndefined();
+  const failed = toolCallView(
+    call("execute", { code: "return 1;" }, "TypeError: nope", true),
+  );
+  expect(failed.parked).toBeUndefined();
+  expect(failed.status).toBe("error");
+});
