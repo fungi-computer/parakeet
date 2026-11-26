@@ -34,14 +34,13 @@ function mount(node: React.ReactNode): HTMLElement {
   return container;
 }
 
-it("is one labelled status with the step's copy and the mascot, never a spinner", () => {
+it("is one labelled status with the step's copy and the mascot", () => {
   const container = mount(<BootCurtain message="Signing you in" />);
   const curtain = container.querySelectorAll("[data-boot-curtain]");
   expect(curtain).toHaveLength(1);
   expect(curtain[0]?.getAttribute("role")).toBe("status");
   expect(curtain[0]?.textContent).toBe("Signing you in");
   expect(container.querySelector(".boot-curtain-face")).not.toBeNull();
-  expect(container.querySelector(".caps-loader")).toBeNull();
 });
 
 it("changes its copy in place, so a later step is the same curtain", () => {
@@ -60,11 +59,21 @@ it("changes its copy in place, so a later step is the same curtain", () => {
   expect(before?.textContent).toBe("Setting up your Team");
 });
 
-it("draws the static face until the live one is ready, so the face never leaves", () => {
+it("holds a fixed-size stage with the Caps Loader and draws no stand-in; the live face fades in once ready", () => {
   const container = mount(<BootCurtain message="Signing you in" />);
-  expect(container.querySelectorAll(".boot-curtain-standin svg")).toHaveLength(
-    1,
-  );
+  const stage = container.querySelector(".boot-curtain-stage");
+  expect(stage).not.toBeNull();
+  // Only the live Sprite is ever in the stage: no hand-made SVG face.
+  expect(stage?.querySelector(".boot-curtain-standin")).toBeNull();
+  expect(stage?.querySelector(".boot-curtain-live svg")).toBeNull();
+  // The Caps Loader holds the stage, decorative, until the live face is ready.
+  const loader = stage?.querySelector(".caps-loader");
+  expect(loader).not.toBeNull();
+  expect(loader?.getAttribute("aria-hidden")).toBe("true");
+  const live = container.querySelector(".boot-curtain-live");
+  expect(live).not.toBeNull();
+  // Hidden until Sprite reports ready (jsdom never reaches ready).
+  expect(live?.hasAttribute("data-ready")).toBe(false);
 });
 
 it("shows a boot failure as an alert with the cause, a reference and its actions", () => {

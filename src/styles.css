@@ -47,8 +47,19 @@
   position: absolute;
   inset: 0;
 }
-.boot-curtain-standin svg {
-  display: block;
+/* The live face stays invisible until Sprite reports it drawn, then fades in
+ * inside the same box; the empty stage already holds its size. */
+.boot-curtain-live {
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.boot-curtain-live[data-ready] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-curtain-live {
+    transition: none;
+  }
 }
 .boot-curtain-face {
   width: 6rem;

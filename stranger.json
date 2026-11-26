@@ -62,8 +62,6 @@
     "package/dist/components/ToolGroup.js",
     "package/dist/components/avatar-presentation.d.ts",
     "package/dist/components/avatar-presentation.js",
-    "package/dist/components/boot-curtain-face.d.ts",
-    "package/dist/components/boot-curtain-face.js",
     "package/dist/components/sprite-service.d.ts",
     "package/dist/components/sprite-service.js",
     "package/dist/conversation-opening.d.ts",

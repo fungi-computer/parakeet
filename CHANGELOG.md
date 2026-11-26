@@ -1,5 +1,21 @@
 # @fungi.computer/parakeet
 
+## 0.19.0
+
+### Minor Changes
+
+- Changes since 0.18.4:
+
+  - fix(parakeet): tell the person a message description failed with a toast
+  - feat(parakeet): hold the loading stage with the Caps Loader until Shiitake
+    is ready
+  - fix(parakeet): show only the live Sprite on the loading screen
+
+### Patch Changes
+
+- Updated dependencies
+  - @fungi.computer/caps@0.14.3
+
 ## 0.18.4
 
 ### Patch Changes

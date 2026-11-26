@@ -478,13 +478,13 @@ function createConversationAtoms(
     if (reportedDescriptions.has(entryId)) return;
     reportedDescriptions.add(entryId);
     reportFailure(`client message description ${entryId}`, cause);
-    const message =
-      cause instanceof Error
-        ? cause.message
-        : "A client could not describe a message";
-    // The timeline is derived while rendering; the notice waits for after it.
+    // The raw error stays in the log: it is installed code's own text. The
+    // person gets a toast, sent after the render that derived the timeline.
     queueMicrotask(() => {
-      interactions.report({ tone: "error", message });
+      interactions.toast({
+        variant: "error",
+        message: `${entryId} couldn't describe a message; showing it as sent.`,
+      });
     });
   };
   const journal = draftJournal(

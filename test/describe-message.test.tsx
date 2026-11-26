@@ -6,6 +6,10 @@ import { expect, it, vi } from "vitest";
 import { ParakeetProvider, useTimeline } from "../src/headless.js";
 import { ExtensionId } from "@fungi.computer/shiitake/extensions";
 import type { ClientEntryV1 } from "@fungi.computer/shiitake/client-entry";
+import {
+  createParakeetInteractions,
+  type ParakeetInteractions,
+} from "../src/commands/interactions.js";
 import type { ParakeetSession } from "../src/session.js";
 import {
   commandHandler,
@@ -34,6 +38,7 @@ function Texts() {
 
 async function paragraphs(
   describeMessage: NonNullable<ClientEntryV1["describeMessage"]>,
+  store: ParakeetInteractions = createParakeetInteractions(),
 ): Promise<readonly [string | null, string | null, string | null]> {
   const snapshot = sessionSnapshot({
     messages: [
@@ -91,7 +96,11 @@ async function paragraphs(
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <ParakeetProvider session={session} clients={[entry]}>
+          <ParakeetProvider
+            session={session}
+            clients={[entry]}
+            interactionStore={store}
+          >
             <Texts />
           </ParakeetProvider>
         </QueryClientProvider>,
@@ -126,15 +135,26 @@ it("shows what an extension says a message means, never the text the Agent reads
   expect(typed).toContain("Selected: Delete my files");
 });
 
-it("keeps the original message when an entry's description throws", async () => {
+it("keeps the original message when an entry's description throws, and toasts once without the raw error", async () => {
   const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const store = createParakeetInteractions();
+  const toasts: string[] = [];
+  store.subscribeToasts((toast) => {
+    expect(toast.variant).toBe("error");
+    toasts.push(toast.message);
+  });
   try {
     const [text, outcome] = await paragraphs(() => {
       throw new Error("boom");
-    });
+    }, store);
     expect(text).toBe(asked);
     expect(outcome).toBe("no");
+    // The raw error goes to the log only; the person reads plain words.
     expect(spy).toHaveBeenCalled();
+    expect(toasts).toEqual([
+      "botanical-session-question couldn't describe a message; showing it as sent.",
+    ]);
+    expect(store.snapshot().notice).toBeUndefined();
   } finally {
     spy.mockRestore();
   }
