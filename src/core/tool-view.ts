@@ -222,6 +222,11 @@ export type ToolCallView = Readonly<{
   /** A failed call that a later completed call in its run recovered from. */
   recovered?: boolean | undefined;
   /**
+   * A failed call that a later call in its run got past with a success, though
+   * not by retrying it. It is old news: compact and folded, its dot still red.
+   */
+  superseded?: boolean | undefined;
+  /**
    * The call stopped on purpose to wait for a person's approval: nothing ran,
    * nothing failed, and the answer arrives later as a new message.
    */
@@ -300,6 +305,16 @@ const verbs = {
   read: ["Read", "Reading"],
   search: ["Searched", "Searching"],
 } as const satisfies Record<ToolKind, readonly [string, string]>;
+
+/** What a call that failed says it did: never a success verb. */
+const failureVerbs = {
+  code: "Couldn't run script",
+  command: "Couldn't run",
+  edit: "Couldn't update",
+  other: "Couldn't call",
+  read: "Couldn't read",
+  search: "Couldn't search",
+} as const satisfies Record<ToolKind, string>;
 
 const pathArgs = z.looseObject({ path: z.string() });
 const filePathArgs = z.looseObject({ file_path: z.string() });
@@ -978,7 +993,11 @@ function selfRename(item: ToolItem): ToolIdentity | undefined {
 }
 
 /** Build the renderer-neutral view of one call. */
-export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
+export function toolCallView(
+  item: ToolItem,
+  recovered = false,
+  superseded = false,
+): ToolCallView {
   const kind = toolKind(item.name);
   const ordinaryTarget = callTarget(item, kind);
   const identity = selfRename(item);
@@ -1075,11 +1094,12 @@ export function toolCallView(item: ToolItem, recovered = false): ToolCallView {
     paths: target.paths,
     parked: parked ? true : undefined,
     recovered: failed && recovered,
+    superseded: failed && !recovered && superseded ? true : undefined,
     get sections() {
       return getDetails().sections;
     },
     status: parked ? "unknown" : failed ? "error" : item.status,
-    verb,
+    verb: failed ? failureVerbs[kind] : verb,
   };
 }
 

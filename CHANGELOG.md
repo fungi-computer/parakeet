@@ -1,5 +1,15 @@
 # @fungi.computer/parakeet
 
+## 0.19.1
+
+### Patch Changes
+
+- Changes since 0.19.0:
+
+  - fix(parakeet): word a failed tool call as a failure, in its row and the
+    summary
+  - fix(parakeet): fold a failed tool call the run went past into a compact row
+
 ## 0.19.0
 
 ### Minor Changes

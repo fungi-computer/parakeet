@@ -316,7 +316,22 @@ it("keeps a stable group id and a live running line while calls append", () => {
   expect(toolGroupDefaultOpen(during)).toBe(true);
 });
 
-it("marks a group failed, counts failures, and opens the failed call", () => {
+it("marks a group failed, counts failures, and opens the failed call that nothing went past", () => {
+  const calls = [
+    read("r1", "a.ts"),
+    read("r2", "b.ts"),
+    bash("b1", "pnpm test"),
+  ];
+  const group = onlyGroup(
+    buildDurableTimeline(loop(calls, new Set(["b1"]))).items,
+  );
+  expect(group.status).toBe("error");
+  expect(group.failedCount).toBe(1);
+  expect(toolGroupDefaultOpen(group)).toBe(true);
+  expect(group.calls.map(toolCallDefaultOpen)).toEqual([false, false, true]);
+});
+
+it("folds a failure the run went past with a later success: still counted, never a big red block", () => {
   const calls = [
     read("r1", "a.ts"),
     bash("b1", "pnpm test"),
@@ -327,7 +342,10 @@ it("marks a group failed, counts failures, and opens the failed call", () => {
   );
   expect(group.status).toBe("error");
   expect(group.failedCount).toBe(1);
-  expect(toolGroupDefaultOpen(group)).toBe(true);
+  expect(group.calls[1]?.superseded).toBe(true);
+  expect(group.calls[1]?.recovered).not.toBe(true);
+  // The shared rule keeps the error open for the terminal; the web folds it
+  // because the run went past it (ToolGroup.tsx).
   expect(group.calls.map(toolCallDefaultOpen)).toEqual([false, true, false]);
 });
 
@@ -381,7 +399,7 @@ it("keeps a failed script failed when a later script does other work", () => {
   expect(group.recoveredCount).toBe(0);
 });
 
-it("does not let an unrelated success hide a real failure", () => {
+it("does not let an unrelated success hide a real failure from the count", () => {
   const calls = [
     bash("b1", "pnpm test"),
     script("s1", "return 1"),
@@ -394,6 +412,8 @@ it("does not let an unrelated success hide a real failure", () => {
   expect(group.status).toBe("error");
   expect(group.failedCount).toBe(1);
   expect(group.recoveredCount).toBe(0);
+  // Later successes went past the failure: it stays counted and flagged.
+  expect(group.calls[0]?.superseded).toBe(true);
   expect(group.calls.map(toolCallDefaultOpen)).toEqual([
     true,
     false,

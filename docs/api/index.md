@@ -523,6 +523,7 @@ type ParakeetToolCallView = Readonly<{
   exitCode?: number;
   error?: string;
   recovered?: boolean;
+  superseded?: boolean;
   parked?: boolean;
   identity?: {
     name: string;
@@ -1453,6 +1454,7 @@ function visibleToolCalls(group, open): readonly Readonly<{
   exitCode?: number;
   error?: string;
   recovered?: boolean;
+  superseded?: boolean;
   parked?: boolean;
   identity?: Readonly<{
      name: string;
@@ -1496,12 +1498,13 @@ readonly `Readonly`\<\{ `id`: `string`; `kind`:
 `activeVerb`: `string`; `label`: `string`; `paths`: readonly `string`[];
 `status`: `"error"` \| `"unknown"` \| `"running"` \| `"completed"`;
 `durationMs?`: `number`; `exitCode?`: `number`; `error?`: `string`;
-`recovered?`: `boolean`; `parked?`: `boolean`; `identity?`: `Readonly`\<\{
-`name`: `string`; `avatar`: \{ `v`: `1`; `character`: `"mushroom"` \| `"cat"` \|
-`"burger"`; `appearance`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnion`\<readonly
-\[..., ..., ...\]\>\>; `expression`: `string`; `renderStyle`: \| `"plain"` \|
-`"pencil"` \| `"manga"` \| `"riso"` \| `"halftone"` \| `"blueprint"` \| `"crt"`
-\| `"watercolor"`; \}; \}\>; `sections`: readonly
+`recovered?`: `boolean`; `superseded?`: `boolean`; `parked?`: `boolean`;
+`identity?`: `Readonly`\<\{ `name`: `string`; `avatar`: \{ `v`: `1`;
+`character`: `"mushroom"` \| `"cat"` \| `"burger"`; `appearance`:
+`z.ZodRecord`\<`z.ZodString`, `z.ZodUnion`\<readonly \[..., ..., ...\]\>\>;
+`expression`: `string`; `renderStyle`: \| `"plain"` \| `"pencil"` \| `"manga"`
+\| `"riso"` \| `"halftone"` \| `"blueprint"` \| `"crt"` \| `"watercolor"`; \};
+\}\>; `sections`: readonly
 [`ParakeetToolCallSection`](#parakeettoolcallsection)[]; `live?`: `Readonly`\<\{
 `lines`: readonly `string`[]; `droppedBytes`: `number`; `revision`: `number`;
 \}\>; \}\>[]
@@ -1515,7 +1518,8 @@ function toolCallDefaultOpen(call): boolean;
 ```
 
 A failed call opens by default so its error is visible; a recovered one stays
-compact.
+compact. A renderer that wants the error-first view of a failure the run went
+past (`superseded`) can fold it; the terminal keeps it open.
 
 #### Parameters
 

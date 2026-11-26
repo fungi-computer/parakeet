@@ -59,13 +59,28 @@ const nouns = {
   search: ["searched", "pattern", "patterns"],
 } as const satisfies Record<ToolKind, readonly [string, string, string]>;
 
+const failedNouns = {
+  code: ["script", "scripts"],
+  command: ["command", "commands"],
+  edit: ["edit", "edits"],
+  other: ["tool call", "tool calls"],
+  read: ["read", "reads"],
+  search: ["search", "searches"],
+} as const satisfies Record<ToolKind, readonly [string, string]>;
+
 /**
  * One-line summary from typed kinds, in first-seen order:
  * `Read 3 files, ran 2 commands, edited 1 file`. Files count distinct paths.
  */
 function summarizeToolCalls(calls: readonly ToolCallView[]): string {
   const counts = new Map<ToolKind, { calls: number; paths: Set<string> }>();
+  const failures = new Map<ToolKind, number>();
   for (const call of calls) {
+    // A failed call is named as a failure, never counted among what got done.
+    if (call.status === "error") {
+      failures.set(call.kind, (failures.get(call.kind) ?? 0) + 1);
+      continue;
+    }
     const entry = counts.get(call.kind) ?? { calls: 0, paths: new Set() };
     entry.calls += 1;
     for (const path of call.paths) entry.paths.add(path);
@@ -79,6 +94,10 @@ function summarizeToolCalls(calls: readonly ToolCallView[]): string {
       countsFiles && entry.paths.size > 0 ? entry.paths.size : entry.calls;
     return `${verb} ${String(count)} ${count === 1 ? singular : plural}`;
   });
+  for (const [kind, count] of failures)
+    phrases.push(
+      `${String(count)} ${count === 1 ? failedNouns[kind][0] : failedNouns[kind][1]} failed`,
+    );
   const text = phrases.join(", ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -131,8 +150,14 @@ export function toolGroup(
   const first = tools.map((tool) => toolCallView(tool));
   const calls = tools.map((tool, index) => {
     const call = first[index];
-    return call !== undefined && recoveredBy(first, index)
-      ? toolCallView(tool, true)
+    if (call !== undefined && recoveredBy(first, index))
+      return toolCallView(tool, true);
+    // A later success means the Agent moved on from this failure.
+    const superseded = first
+      .slice(index + 1)
+      .some((later) => later.status === "completed");
+    return superseded && call?.status === "error"
+      ? toolCallView(tool, false, true)
       : (call ?? toolCallView(tool));
   });
   const status = groupStatus(calls);
@@ -225,7 +250,11 @@ export function visibleToolCalls(
   return open ? group.calls : group.calls.slice(-3);
 }
 
-/** A failed call opens by default so its error is visible; a recovered one stays compact. */
+/**
+ * A failed call opens by default so its error is visible; a recovered one stays
+ * compact. A renderer that wants the error-first view of a failure the run went
+ * past (`superseded`) can fold it; the terminal keeps it open.
+ */
 export function toolCallDefaultOpen(call: ToolCallView): boolean {
   return call.status === "error" && call.recovered !== true;
 }

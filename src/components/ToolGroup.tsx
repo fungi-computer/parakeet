@@ -227,9 +227,15 @@ function CallBody({
       {call.error === undefined ? null : (
         <p
           className={`not-prose m-0 break-words font-mono text-[11px] ${
-            call.recovered === true ? "text-dim" : "text-error"
+            call.recovered === true || call.superseded === true
+              ? "text-dim"
+              : "text-error"
           }`}
-          role={call.recovered === true ? undefined : "alert"}
+          role={
+            call.recovered === true || call.superseded === true
+              ? undefined
+              : "alert"
+          }
         >
           {call.error}
         </p>
@@ -276,7 +282,8 @@ function CallRow({
   renderToolActions?: ((item: ToolItem) => ReactNode) | undefined;
   claimsToolMedia?: ((item: ToolItem) => boolean) | undefined;
 }>) {
-  const defaultOpen = toolCallDefaultOpen(call);
+  // A failure the run went past with a later success stays folded: old news.
+  const defaultOpen = toolCallDefaultOpen(call) && call.superseded !== true;
   const open = disclosureOpen(disclosure, disclosureId, defaultOpen);
   const running = call.status === "running";
   const asking = useContext(AnswerWaitContext);
@@ -310,13 +317,16 @@ function CallRow({
           </>
         }
         tone={
-          call.status === "error" && call.recovered !== true
+          call.status === "error" &&
+          call.recovered !== true &&
+          call.superseded !== true
             ? "error"
             : "neutral"
         }
         trailing={
           <>
             {call.recovered === true ? <span>recovered</span> : null}
+            {call.superseded === true ? <span>failed</span> : null}
             {call.parked === true ? <span>Sent for approval</span> : null}
             {call.exitCode === undefined ? null : (
               <Badge
@@ -432,11 +442,32 @@ export const ToolGroup = memo(function ToolGroup({
             </span>
           )
         }
-        tone={group.status === "error" ? "error" : "neutral"}
+        // Only a failure nobody got past paints the group; an old one is a status dot.
+        tone={
+          group.calls.some(
+            (call) =>
+              call.status === "error" &&
+              call.recovered !== true &&
+              call.superseded !== true,
+          )
+            ? "error"
+            : "neutral"
+        }
         trailing={
           <>
             {group.failedCount > 0 ? (
-              <span className="text-error">
+              <span
+                className={
+                  group.calls.some(
+                    (call) =>
+                      call.status === "error" &&
+                      call.recovered !== true &&
+                      call.superseded !== true,
+                  )
+                    ? "text-error"
+                    : "text-dim"
+                }
+              >
                 {String(group.failedCount)} failed
               </span>
             ) : null}

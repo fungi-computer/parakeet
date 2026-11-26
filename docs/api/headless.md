@@ -2764,17 +2764,18 @@ readonly `string`[]
 ### toolCallView()
 
 ```ts
-function toolCallView(item, recovered?): ParakeetToolCallView;
+function toolCallView(item, recovered?, superseded?): ParakeetToolCallView;
 ```
 
 Build the renderer-neutral view of one call.
 
 #### Parameters
 
-| Parameter   | Type                                            | Default value |
-| ----------- | ----------------------------------------------- | ------------- |
-| `item`      | [`ParakeetToolItem`](index.md#parakeettoolitem) | `undefined`   |
-| `recovered` | `boolean`                                       | `false`       |
+| Parameter    | Type                                            | Default value |
+| ------------ | ----------------------------------------------- | ------------- |
+| `item`       | [`ParakeetToolItem`](index.md#parakeettoolitem) | `undefined`   |
+| `recovered`  | `boolean`                                       | `false`       |
+| `superseded` | `boolean`                                       | `false`       |
 
 #### Returns
 
