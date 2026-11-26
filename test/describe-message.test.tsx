@@ -32,7 +32,9 @@ function Texts() {
   );
 }
 
-it("shows what an extension says a message means, never the text the Agent reads", async () => {
+async function paragraphs(
+  describeMessage: NonNullable<ClientEntryV1["describeMessage"]>,
+): Promise<readonly [string | null, string | null, string | null]> {
   const snapshot = sessionSnapshot({
     messages: [
       {
@@ -77,8 +79,7 @@ it("shows what an extension says a message means, never the text the Agent reads
       timeline: { cells: [], omitted: 0 },
       waiting: null,
     }),
-    describeMessage: (from) =>
-      from.correlation === "a1" ? "You chose: Work on a project" : undefined,
+    describeMessage,
   };
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -101,16 +102,55 @@ it("shows what an extension says a message means, never the text the Agent reads
       expect(container.querySelectorAll("p")).toHaveLength(2);
     });
     const [described, typed] = [...container.querySelectorAll("p")];
-    expect(described?.textContent).toBe("You chose: Work on a project");
-    expect(described?.getAttribute("data-outcome")).toBe("yes");
-    // A person's own prompt with the same words stays what it is.
-    expect(typed?.textContent).toContain("Selected: Delete my files");
-    expect(typed?.getAttribute("data-outcome")).toBe("no");
+    return [
+      described?.textContent ?? null,
+      described?.getAttribute("data-outcome") ?? null,
+      typed?.textContent ?? null,
+    ];
   } finally {
     act(() => {
       root.unmount();
     });
     client.clear();
     container.remove();
+  }
+}
+
+it("shows what an extension says a message means, never the text the Agent reads", async () => {
+  const [text, outcome, typed] = await paragraphs((from) =>
+    from.correlation === "a1" ? "You chose: Work on a project" : undefined,
+  );
+  expect(text).toBe("You chose: Work on a project");
+  expect(outcome).toBe("yes");
+  // A person's own prompt with the same words stays what it is.
+  expect(typed).toContain("Selected: Delete my files");
+});
+
+it("keeps the original message when an entry's description throws", async () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    const [text, outcome] = await paragraphs(() => {
+      throw new Error("boom");
+    });
+    expect(text).toBe(asked);
+    expect(outcome).toBe("no");
+    expect(spy).toHaveBeenCalled();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it("keeps the original message when a description is not a short string", async () => {
+  const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  try {
+    // SAFETY: the test hands a host a hook that breaks its declared return type on purpose.
+    const [number] = await paragraphs(() => JSON.parse("42") as string);
+    expect(number).toBe(asked);
+    const [long] = await paragraphs(() => "x".repeat(501));
+    expect(long).toBe(asked);
+    const [empty] = await paragraphs(() => "");
+    expect(empty).toBe(asked);
+  } finally {
+    spy.mockRestore();
   }
 });

@@ -78,6 +78,7 @@ import {
 import { isCancelledOutcome } from "./commands/run.js";
 import type { ParakeetSession } from "./session.js";
 import type { LocalPromptAdmission, TimelineItem } from "./store/types.js";
+import { z } from "zod";
 import { reportFailure } from "./lib/failure.js";
 import {
   createQueuedRecall,
@@ -415,14 +416,19 @@ function acquireDraftStorage(
   }
 }
 
+const describedLine = z.string().min(1).max(500);
+
 /**
  * Replace the display of messages the producing extension's client can describe;
- * the Agent's text is untouched. A client entry reads its own slot only.
+ * the Agent's text is untouched. A client entry reads its own slot only, and it
+ * is installed code: a hook that throws, or returns anything but a short string,
+ * leaves the original message and is reported once, like a failing contribution.
  */
 function describeMessages(
   items: readonly TimelineItem[],
   clients: readonly ClientEntryV1[],
   slots: SessionExtensionSlots,
+  failed: (entryId: string, cause: unknown) => void,
 ): readonly TimelineItem[] {
   const describers = new Map<
     string,
@@ -434,11 +440,22 @@ function describeMessages(
   if (describers.size === 0) return items;
   return items.map((item) => {
     if (item.kind !== "user_message" || item.origin === undefined) return item;
-    const line = describers.get(item.origin.extensionId)?.(
-      item.origin,
-      slots[item.origin.extensionId],
-    );
-    return line === undefined ? item : { ...item, text: line, outcome: true };
+    const entryId = item.origin.extensionId;
+    const describe = describers.get(entryId);
+    if (describe === undefined) return item;
+    try {
+      const described = describe(item.origin, slots[entryId]);
+      if (described === undefined) return item;
+      const line = describedLine.safeParse(described);
+      if (!line.success) {
+        failed(entryId, new Error("Message description is not a short string"));
+        return item;
+      }
+      return { ...item, text: line.data, outcome: true };
+    } catch (cause) {
+      failed(entryId, cause);
+      return item;
+    }
   });
 }
 
@@ -455,6 +472,21 @@ function createConversationAtoms(
   keySettings: () => ParakeetToastAction | undefined,
   clients: readonly ClientEntryV1[],
 ) {
+  // A failing description is reported once per entry, not on every recompute.
+  const reportedDescriptions = new Set<string>();
+  const reportDescriptionFailure = (entryId: string, cause: unknown) => {
+    if (reportedDescriptions.has(entryId)) return;
+    reportedDescriptions.add(entryId);
+    reportFailure(`client message description ${entryId}`, cause);
+    const message =
+      cause instanceof Error
+        ? cause.message
+        : "A client could not describe a message";
+    // The timeline is derived while rendering; the notice waits for after it.
+    queueMicrotask(() => {
+      interactions.report({ tone: "error", message });
+    });
+  };
   const journal = draftJournal(
     draftScope,
     draftStorage.status === "available" ? draftStorage.storage : undefined,
@@ -1021,7 +1053,12 @@ function createConversationAtoms(
       hasNewerHistory: get(hasNewerHistoryAtom),
       loadingOlderHistory: get(loadingOlderHistoryAtom),
       settled: overlayToolOutput(
-        describeMessages(durable.items, clients, get(extensionsAtom)),
+        describeMessages(
+          durable.items,
+          clients,
+          get(extensionsAtom),
+          reportDescriptionFailure,
+        ),
         get(toolActivityAtom) === undefined
           ? []
           : (get(snapshotAtom)?.toolOutput ?? []),

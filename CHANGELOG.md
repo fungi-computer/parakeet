@@ -1,5 +1,16 @@
 # @fungi.computer/parakeet
 
+## 0.18.4
+
+### Patch Changes
+
+- Changes since 0.18.3:
+
+  - fix(parakeet): guard a client entry's message description
+
+- Updated dependencies
+  - @fungi.computer/shiitake@0.23.8
+
 ## 0.18.3
 
 ### Patch Changes
