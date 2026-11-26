@@ -524,7 +524,7 @@ it.each([false, true])("routes the model key (%s)", (available) => {
     hints: [],
     interactions: store.snapshot(),
     store,
-    awaiting: { items: [], position: 0, total: 0, forced: false },
+    awaiting: { items: [], position: 0, total: 0 },
     move: () => false,
     highlight: () => undefined,
     complete: () => false,

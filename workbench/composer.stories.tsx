@@ -148,7 +148,6 @@ function slashFor(item: AwaitingItem | undefined): SlashCommandController {
     store,
     awaiting: {
       ...awaitingQueue(item === undefined ? [] : [item], new Set()),
-      forced: false,
     },
     move: () => false,
     highlight: () => undefined,

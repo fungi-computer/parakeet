@@ -14,7 +14,7 @@ import type {
 import { useDecision } from "../use-decision.js";
 import { PromptHeader } from "./InteractionPanel.js";
 
-/** Props for the decision that has taken over the composer. */
+/** Props for a waiting decision, drawn above the draft field. */
 export type DecisionComposerProps = Readonly<{
   /** The waiting decision to answer. */
   item: AwaitingItem;
@@ -36,7 +36,7 @@ export type DecisionComposerProps = Readonly<{
 const kindNames = { question: "Question", approval: "Approval" } as const;
 
 /**
- * The composer while the Agent waits on the person: the decision's rows,
+ * A decision the Agent waits on, above the draft field: the decision's rows,
  * an Other line, and Send / Later. It binds one waiting decision to its
  * reducer and draws the result.
  */
@@ -90,13 +90,21 @@ export function DecisionPanel({
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
   const typing = view.phase === "other";
+  // The highlighted row before Tab went to the type-it field; -1 for none.
+  const returnTo = useRef(-1);
   const wasTyping = useRef(false);
   useEffect(() => {
     if (takeFocus) list.current?.focus();
   }, [takeFocus]);
   useEffect(() => {
     if (typing) input.current?.focus();
-    else if (wasTyping.current && document.activeElement === input.current)
+    // The field leaves the page with its row, which drops focus to the body;
+    // focus returns to the options instead of being lost.
+    else if (
+      wasTyping.current &&
+      (document.activeElement === input.current ||
+        document.activeElement === document.body)
+    )
       list.current?.focus();
     wasTyping.current = typing;
   }, [typing]);
@@ -116,18 +124,31 @@ export function DecisionPanel({
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     const { key } = event;
     if (
-      act(event, key === "ArrowDown", () => {
+      // Arrows and Vim's j/k move; any other letter starts the type-it answer
+      // with that letter, as the terminal does.
+      act(event, key === "ArrowDown" || key === "j", () => {
         dispatch({ type: "move", delta: 1 });
       }) ||
-      act(event, key === "ArrowUp", () => {
+      act(event, key === "ArrowUp" || key === "k", () => {
         dispatch({ type: "move", delta: -1 });
       }) ||
       act(event, key === "Enter", () => {
         dispatch({ type: "enter" });
       }) ||
+      // Space picks a single choice like Enter, and toggles one of several.
       act(event, key === " ", () => {
-        dispatch({ type: "toggle" });
+        dispatch({ type: view.multiple ? "toggle" : "enter" });
       }) ||
+      // Tab leaves the list for the type-it field when the card has one.
+      act(
+        event,
+        key === "Tab" && !event.shiftKey && field !== undefined,
+        () => {
+          // Remember what was highlighted, so Shift+Tab gives it back.
+          returnTo.current = rows.findIndex((row) => row.highlighted);
+          dispatch({ type: "pick", number: rows.length });
+        },
+      ) ||
       act(event, key === "Escape", () => {
         dispatch({ type: "escape" });
       }) ||
@@ -155,6 +176,18 @@ export function DecisionPanel({
       }) ||
       act(event, key === "Escape", () => {
         dispatch({ type: "escape" });
+      }) ||
+      // Shift+Tab returns from the field to the options.
+      act(event, key === "Tab" && event.shiftKey, () => {
+        // Back to what was highlighted before Tab, or to nothing: leaving the
+        // field never chooses an option the person did not.
+        const back = returnTo.current;
+        returnTo.current = -1;
+        dispatch(
+          back >= 0 && back < rows.length - 1
+            ? { type: "pick", number: back + 1 }
+            : { type: "escape" },
+        );
       })
     )
       return;

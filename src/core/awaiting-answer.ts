@@ -72,17 +72,6 @@ export function awaitingQueue(
   };
 }
 
-/**
- * The item that owns the composer right now. An empty draft is taken over;
- * a draft with text is never, unless the person asked for the decision.
- */
-export function awaitingTakeover(
-  awaiting: AwaitingQueue & Readonly<{ forced: boolean }>,
-  draft: string,
-): AwaitingItem | undefined {
-  return draft === "" || awaiting.forced ? awaiting.current : undefined;
-}
-
 /** The decision prompt both renderers draw. */
 export type DecisionPrompt = WhistlePromptOf<"decision">;
 

@@ -238,6 +238,26 @@
   margin-inline: calc(-1 * var(--spacing-xs));
   padding-inline: var(--spacing-xs);
 }
+/* The card removed the list's own ring (a box around every row), so keyboard
+ * focus is a thin Caps ring on the highlighted row. While nothing is
+ * highlighted no row is ringed, because a ring on the first row would read as
+ * a preselected, recommended answer; the whole list gets a faint outline
+ * instead. Drawing either never picks anything. */
+.chat-composer .parakeet-decision-list:focus-visible {
+  outline: none;
+}
+.chat-composer
+  .parakeet-decision-list:focus-visible
+  [role="option"]:has([data-highlight]) {
+  box-shadow: inset 0 0 0 2px var(--caps-focus-ring);
+}
+.chat-composer
+  .parakeet-decision-list:focus-visible:not(:has([data-highlight])) {
+  outline: 1px solid
+    color-mix(in oklab, var(--caps-focus-ring) 35%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--radius-box);
+}
 /* A decision's highlight is the reducer's, not the list's own active row. */
 .parakeet-decision .parakeet-decision-list [role="option"] {
   padding-inline: var(--spacing-xs);

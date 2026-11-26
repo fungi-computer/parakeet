@@ -350,12 +350,11 @@ A toast's way forward, such as opening the host's key settings.
 type ParakeetAwaiting = Readonly<{
   items: readonly AwaitingItem[];
   later: ReadonlySet<string>;
-  forced: boolean;
   requests: number;
 }>;
 ```
 
-The decisions waiting on the person, which the composer takes over for.
+The decisions waiting on the person; the current one shows above the composer.
 
 ---
 
@@ -459,10 +458,7 @@ type SlashCommandController = Readonly<{
   hints: readonly KeyHint[];
   interactions: ParakeetInteractionState;
   store: ParakeetInteractions;
-  awaiting: AwaitingQueue &
-    Readonly<{
-      forced: boolean;
-    }>;
+  awaiting: AwaitingQueue;
   move: (delta) => boolean;
   highlight: (index) => void;
   complete: () => boolean;
@@ -2028,42 +2024,6 @@ leaves the composer but stays counted: it is the footer row.
 #### Returns
 
 [`AwaitingQueue`](#awaitingqueue)
-
----
-
-### awaitingTakeover()
-
-```ts
-function awaitingTakeover(
-  awaiting,
-  draft,
-):
-  | Readonly<{
-      key: string;
-      kind: AwaitingKind;
-      arrivedAt: number;
-      host: WhistleInteractionHost;
-      toolCallId?: string;
-      draft?: DecisionDraft;
-    }>
-  | undefined;
-```
-
-The item that owns the composer right now. An empty draft is taken over; a draft
-with text is never, unless the person asked for the decision.
-
-#### Parameters
-
-| Parameter  | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `awaiting` | `Readonly`\<\{ `items`: readonly `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `toolCallId?`: `string`; `draft?`: [`DecisionDraft`](#decisiondraft); \}\>[]; `current?`: `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind); `arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `toolCallId?`: `string`; `draft?`: [`DecisionDraft`](#decisiondraft); \}\>; `position`: `number`; `total`: `number`; \}\> & `Readonly`\<\{ `forced`: `boolean`; \}\> |
-| `draft`    | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-
-#### Returns
-
-\| `Readonly`\<\{ `key`: `string`; `kind`: [`AwaitingKind`](#awaitingkind);
-`arrivedAt`: `number`; `host`: `WhistleInteractionHost`; `toolCallId?`:
-`string`; `draft?`: [`DecisionDraft`](#decisiondraft); \}\> \| `undefined`
 
 ---
 

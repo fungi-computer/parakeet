@@ -50,14 +50,12 @@ export type ParakeetToastAction = Readonly<{
   onSelect: () => void;
 }>;
 
-/** The decisions waiting on the person, which the composer takes over for. */
+/** The decisions waiting on the person; the current one shows above the composer. */
 export type ParakeetAwaiting = Readonly<{
   /** Every waiting decision, in the order it joined. */
   items: readonly AwaitingItem[];
   /** Keys the person postponed with Later; they wait in the footer row. */
   later: ReadonlySet<string>;
-  /** The person asked for the composer even though a draft is in it. */
-  forced: boolean;
   /** Counts each request to answer, so a stalled item can start over. */
   requests: number;
 }>;
@@ -137,7 +135,6 @@ export function createParakeetInteractions(): ParakeetInteractions {
     awaiting: {
       items: [],
       later: new Set(),
-      forced: false,
       requests: 0,
     },
   };
@@ -168,7 +165,6 @@ export function createParakeetInteractions(): ParakeetInteractions {
     setAwaiting({
       items: items.filter((item) => item.key !== key),
       later: new Set([...later].filter((postponed) => postponed !== key)),
-      forced: false,
     });
   };
   const addAwaiting = (item: AwaitingItem) => {
@@ -320,7 +316,6 @@ export function createParakeetInteractions(): ParakeetInteractions {
         if (!state.awaiting.items.some((item) => item.key === key)) return;
         setAwaiting({
           later: new Set([...state.awaiting.later, key]),
-          forced: false,
         });
       },
       focus: () => {
@@ -333,7 +328,6 @@ export function createParakeetInteractions(): ParakeetInteractions {
             earliest === undefined
               ? later
               : new Set([...later].filter((key) => key !== earliest.key)),
-          forced: items.length > 0,
           requests: requests + 1,
         });
       },

@@ -76,15 +76,8 @@ export type SlashCommandController = Readonly<{
   interactions: ParakeetInteractionState;
   /** The conversation store, for closing and retrying dialogs. */
   store: ParakeetInteractions;
-  /**
-   * The decision the composer is answering, if any. It takes over an empty
-   * composer, or any composer once the person asked for it (`forced`).
-   */
-  awaiting: AwaitingQueue &
-    Readonly<{
-      /** The person asked for the composer even though a draft is in it. */
-      forced: boolean;
-    }>;
+  /** The decisions waiting on the person; the current one shows above the composer. */
+  awaiting: AwaitingQueue;
   /** Move the highlight; false when no list is open. */
   move: (delta: -1 | 1) => boolean;
   /** Highlight one row (pointer hover). */
@@ -153,10 +146,10 @@ export function useSlashCommands(
     )
       store.inspect(undefined);
   }, [contributions, interactions.inspection, store]);
-  const awaiting = {
-    ...awaitingQueue(interactions.awaiting.items, interactions.awaiting.later),
-    forced: interactions.awaiting.forced,
-  };
+  const awaiting = awaitingQueue(
+    interactions.awaiting.items,
+    interactions.awaiting.later,
+  );
   const snapshot = useSyncExternalStore(
     commands.subscribe,
     commands.snapshot,

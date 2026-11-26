@@ -1,5 +1,24 @@
 # @fungi.computer/parakeet
 
+## 0.19.5
+
+### Patch Changes
+
+- Changes since 0.19.4:
+
+  - fix(parakeet): drop the forced flag from the workbench story and the
+    reference
+  - fix(tui): give the card the keys on request, show who has them, and drop
+    dead takeover code
+  - fix(parakeet): no row ring while nothing is highlighted
+  - fix(parakeet): focus ring on the row, keep Shift+Tab honest, one typing rule
+    everywhere
+  - fix(parakeet): navigate a question card by keyboard and center the failure
+    dot
+
+- Updated dependencies
+  - @fungi.computer/caps@0.14.4
+
 ## 0.19.4
 
 ### Patch Changes

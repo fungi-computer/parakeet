@@ -190,7 +190,6 @@ export {
 export { useClientActions } from "./client-contributions.js";
 export {
   awaitingQueue,
-  awaitingTakeover,
   decisionView,
   decisionViewText,
   initialDecisionState,
